@@ -52,6 +52,29 @@
         "ownerUid": { "type": "string" }
       },
       "required": ["name", "ownerUid", "content"]
+    },
+    "ChatSession": {
+      "title": "Chat Session",
+      "description": "Stores AI chat history for users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "messages": { 
+          "type": "array", 
+          "items": {
+            "type": "object",
+            "properties": {
+              "role": { "type": "string", "enum": ["model", "user"] },
+              "text": { "type": "string" },
+              "timestamp": { "type": "string", "format": "date-time" }
+            }
+          }
+        },
+        "lastUpdatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "messages"]
     }
   },
   "firestore": {
@@ -66,6 +89,10 @@
     "/user_documents/{docId}": {
       "schema": "UserDocument",
       "description": "User uploaded legal documents"
+    },
+    "/chat_sessions/{sessionId}": {
+      "schema": "ChatSession",
+      "description": "AI Chat History"
     }
   }
 }
