@@ -72,7 +72,7 @@ service cloud.firestore {
     }
 
     function isValidProperty(data) {
-      return data.keys().hasOnly(['title', 'price', 'location', 'bedrooms', 'bathrooms', 'area', 'imageUrl', 'videoUrl', 'status', 'isVerified', 'verificationStatus', 'paymentMethods', 'publishDate', 'unitCode', 'legalDocs', 'authorUid']) &&
+      return data.keys().hasOnly(['title', 'price', 'location', 'bedrooms', 'bathrooms', 'area', 'imageUrl', 'images', 'videoUrl', 'digitalTwinUrl', 'status', 'isVerified', 'verificationStatus', 'paymentMethods', 'publishDate', 'unitCode', 'legalDocs', 'authorUid', 'description', 'registrationNumber', 'courtSignatureValidity', 'isResale']) &&
              data.keys().hasAll(['title', 'price', 'location', 'status']) &&
              data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
              data.price is number && data.price >= 0 &&
@@ -81,15 +81,21 @@ service cloud.firestore {
              (!('bedrooms' in data) || data.bedrooms is number) &&
              (!('bathrooms' in data) || data.bathrooms is number) &&
              (!('area' in data) || data.area is number) &&
-             (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() < 2000)) &&
-             (!('videoUrl' in data) || (data.videoUrl is string && data.videoUrl.size() < 2000)) &&
+             (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() < 2000000)) &&
+             (!('images' in data) || (data.images is list && data.images.size() <= 20)) &&
+             (!('videoUrl' in data) || (data.videoUrl is string && data.videoUrl.size() < 2000000)) &&
+             (!('digitalTwinUrl' in data) || (data.digitalTwinUrl is string && data.digitalTwinUrl.size() < 2000)) &&
              (!('isVerified' in data) || data.isVerified is bool) &&
              (!('verificationStatus' in data) || data.verificationStatus in ['Pending', 'Verified', 'Rejected']) &&
              (!('paymentMethods' in data) || (data.paymentMethods is list && data.paymentMethods.size() <= 10)) &&
              (!('publishDate' in data) || (data.publishDate is string && data.publishDate.size() < 50)) &&
              (!('unitCode' in data) || (data.unitCode is string && data.unitCode.size() < 50)) &&
              (!('legalDocs' in data) || (data.legalDocs is list && data.legalDocs.size() <= 10)) &&
-             (!('authorUid' in data) || data.authorUid is string);
+             (!('authorUid' in data) || data.authorUid is string) &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 50000)) &&
+             (!('registrationNumber' in data) || (data.registrationNumber is string && data.registrationNumber.size() < 100)) &&
+             (!('courtSignatureValidity' in data) || data.courtSignatureValidity is bool) &&
+             (!('isResale' in data) || data.isResale is bool);
     }
 
     function isValidNotification(data) {
@@ -115,6 +121,15 @@ service cloud.firestore {
              (!('accessStatus' in data) || (data.accessStatus is string && data.accessStatus.size() < 50)) &&
              (!('size' in data) || data.size is number) &&
              (!('storagePath' in data) || (data.storagePath is string && data.storagePath.size() < 1000));
+    }
+
+    function isValidChatSession(data) {
+      return data.keys().hasOnly(['id', 'userId', 'title', 'messages', 'lastUpdatedAt']) &&
+             data.keys().hasAll(['userId', 'title', 'messages']) &&
+             data.userId is string &&
+             data.title is string && data.title.size() < 500 &&
+             data.messages is list && data.messages.size() <= 200 &&
+             (!('lastUpdatedAt' in data) || data.lastUpdatedAt is string || data.lastUpdatedAt is timestamp);
     }
 
     function uidNotModified() {
@@ -156,6 +171,13 @@ service cloud.firestore {
       allow create: if isAdmin() && isValidNotification(request.resource.data);
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidNotification(request.resource.data) && request.resource.data.userId == resource.data.userId;
       allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    match /chat_sessions/{sessionId} {
+      allow read, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow list: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidChatSession(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidChatSession(request.resource.data) && request.resource.data.userId == resource.data.userId;
     }
   }
 }
