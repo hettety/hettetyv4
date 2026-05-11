@@ -2,6 +2,29 @@ import { Property, UserProfile, Purchase } from './types';
 
 const MOCK_PROPERTIES: Property[] = [
   {
+    id: 'sarai-elan',
+    title: 'ELAN Sarai - Madinet Masr (Unit X1A)',
+    price: 8500000,
+    location: 'Sarai, New Cairo',
+    bedrooms: 3,
+    bathrooms: 3,
+    area: 165.68,
+    imageUrl: 'https://storage.googleapis.com/hatch-dev-user-assets/27249261175/ca-52-19e3-4.jpg',
+    images: [
+      'https://storage.googleapis.com/hatch-dev-user-assets/27249261175/ca-52-19e3-5.jpg',
+      'https://storage.googleapis.com/hatch-dev-user-assets/27249261175/ca-52-19e3-4.jpg'
+    ],
+    status: 'For Sale',
+    isVerified: true,
+    verificationStatus: 'Verified',
+    unitCode: 'SARAI-ELAN-1',
+    publishDate: new Date().toISOString().split('T')[0],
+    registrationNumber: 'RS-1959-Sarai',
+    courtSignatureValidity: true,
+    isResale: false,
+    paymentMethods: ['Installment', 'Cash'],
+  },
+  {
     id: '1',
     title: 'Luxury Villa in New Cairo',
     price: 15000000,
