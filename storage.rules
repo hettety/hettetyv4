@@ -11,6 +11,12 @@ service firebase.storage {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    // Property images
+    match /properties/{fileName} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
     // Match user documents
     match /user_documents/{userId}/{fileName} {
       // Only the owner can read or write their own documents
