@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
@@ -7,30 +9,39 @@
   --font-cairo: "Cairo", sans-serif;
 
   /* Navy Blue (Primary) */
-  --color-brand-50: #f0f4f8;
-  --color-brand-100: #d9e2ec;
-  --color-brand-200: #bcccdc;
-  --color-brand-300: #9fb3c8;
-  --color-brand-400: #829ab1;
-  --color-brand-500: #1e3a8a;
-  --color-brand-600: #1e40af;
-  --color-brand-700: #1d4ed8;
-  --color-brand-800: #1e3a8a;
-  --color-brand-900: #0f172a;
-  --color-brand-950: #020617;
+  --color-brand-50: #f4f6fa;
+  --color-brand-100: #e4eaf2;
+  --color-brand-200: #cad6e7;
+  --color-brand-300: #a4bed7;
+  --color-brand-400: #79a1c3;
+  --color-brand-500: #426990;
+  --color-brand-600: #1b2c4d; /* Logo Navy */
+  --color-brand-700: #162440;
+  --color-brand-800: #101c31;
+  --color-brand-900: #0a1323;
+  --color-brand-950: #050b16;
 
   /* Orange (Accent) */
-  --color-accent-50: #fff7ed;
-  --color-accent-100: #ffedd5;
-  --color-accent-200: #fed7aa;
-  --color-accent-300: #fdba74;
-  --color-accent-400: #fb923c;
-  --color-accent-500: #f97316;
-  --color-accent-600: #ea580c;
-  --color-accent-700: #c2410c;
-  --color-accent-800: #9a3412;
-  --color-accent-900: #7c2d12;
-  --color-accent-950: #431407;
+  --color-accent-50: #fef8f3;
+  --color-accent-100: #fdece0;
+  --color-accent-200: #fad1b4;
+  --color-accent-300: #f6b386;
+  --color-accent-400: #f29352;
+  --color-accent-500: #e67e22; /* Logo Orange */
+  --color-accent-600: #cc6c18;
+  --color-accent-700: #a95516;
+  --color-accent-800: #884318;
+  --color-accent-900: #703816;
+  --color-accent-950: #3d1b0a;
+
+  /* Override Slate 900 to Logo Navy so all text-slate-900 uses the logo color */
+  --color-slate-900: #1b2c4d;
+}
+
+@layer base {
+  body {
+    @apply transition-colors duration-500 bg-white dark:bg-slate-950 text-[#1b2c4d] dark:text-slate-100;
+  }
 }
 
 @keyframes fade-in {
@@ -49,6 +60,24 @@
 
 .animate-slide-up {
   animation: slide-up 0.5s ease-out;
+}
+
+/* Custom scrollbar utility */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #e2e8f0;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #cbd5e1;
 }
 
 /* Hide scrollbar for Chrome, Safari and Opera */
