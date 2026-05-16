@@ -60,7 +60,7 @@ service cloud.firestore {
     }
 
     function isValidUser(data) {
-      return data.keys().hasOnly(['uid', 'name', 'email', 'role', 'createdAt', 'phone', 'preferences']) &&
+      return data.keys().hasOnly(['uid', 'name', 'email', 'role', 'createdAt', 'phone', 'preferences', 'favorites']) &&
              data.keys().hasAll(['uid', 'email', 'role']) &&
              data.uid is string && data.uid.size() < 100 &&
              data.email is string && data.email.size() < 255 &&
@@ -68,7 +68,8 @@ service cloud.firestore {
              (!('name' in data) || (data.name is string && data.name.size() < 255)) &&
              (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() < 100) || data.createdAt is timestamp) &&
              (!('phone' in data) || (data.phone is string && data.phone.size() < 50)) &&
-             (!('preferences' in data) || (data.preferences is string && data.preferences.size() < 10000));
+             (!('preferences' in data) || (data.preferences is string && data.preferences.size() < 10000)) &&
+             (!('favorites' in data) || (data.favorites is list && data.favorites.size() <= 100));
     }
 
     function isValidProperty(data) {
@@ -178,6 +179,14 @@ service cloud.firestore {
       allow list: if isAuthenticated() && resource.data.userId == request.auth.uid;
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidChatSession(request.resource.data);
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidChatSession(request.resource.data) && request.resource.data.userId == resource.data.userId;
+    }
+
+    match /purchases/{purchaseId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isSuperAdmin();
     }
   }
 }
