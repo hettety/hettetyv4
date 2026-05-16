@@ -13,10 +13,10 @@ import {
   DollarSign, BedDouble, Bath, Maximize, Loader2,
   Check, FileCheck, Key, RefreshCw, LayoutTemplate,
   User, ArrowLeft, Phone, Target, CreditCard, PlusCircle, Edit2, Save, LogOut, Shield, Trash2, Bell, Lock as LockIcon,
-  Plus, History, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, MessageSquare, Sun, Moon
+  Plus, History, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, MessageSquare, Sun, Moon, Heart
 } from 'lucide-react';
 import { GoogleGenAI, Type } from '@google/genai';
-import { AddListingPage } from './components/AddListingPage';
+import { AddListingPage } from './components/add-listing-page';
 import { INITIAL_ENTITY_DATA, TRANSLATIONS } from './constants';
 import { Property, ChatMessage, UserDocument, Page, Notification, ChatSession } from './types';
 import imageCompression from 'browser-image-compression';
@@ -241,7 +241,15 @@ const Logo: React.FC<{ color?: string; className?: string }> = ({ color = "curre
   );
 };
 
-const PropertyCard: React.FC<{ property: Property; onView3D: () => void; onClick?: () => void; t: any; isRtl: boolean }> = ({ property, onView3D, onClick, t, isRtl }) => (
+const PropertyCard: React.FC<{ 
+  property: Property; 
+  onView3D: () => void; 
+  onToggleFavorite?: () => void;
+  isFavorited?: boolean;
+  onClick?: () => void; 
+  t: any; 
+  isRtl: boolean 
+}> = ({ property, onView3D, onToggleFavorite, isFavorited, onClick, t, isRtl }) => (
   <div onClick={onClick} className={`group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl dark:shadow-none transition-all duration-300 overflow-hidden flex flex-col h-full animate-fade-in ${onClick ? 'cursor-pointer' : ''}`}>
     <div className="relative h-64 overflow-hidden">
       <img src={property.imageUrl} alt={property.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
@@ -249,9 +257,17 @@ const PropertyCard: React.FC<{ property: Property; onView3D: () => void; onClick
         {property.status === 'For Sale' ? t.prop_forsale : t.prop_forrent}
       </div>
       {(property.isVerified || property.verificationStatus === 'Verified') && (
-        <div className={`absolute top-4 ${isRtl ? 'left-4' : 'right-4'} bg-green-500 text-white px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm`}>
+        <div className={`absolute top-4 ${isRtl ? 'left-4' : 'right-12'} bg-green-500 text-white px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm`}>
           <ShieldCheck size={12} /> {property.verificationStatus === 'Verified' ? (isRtl ? 'أصلي + ثقة وقانون' : 'Verified Legal') : t.prop_verified}
         </div>
+      )}
+      {onToggleFavorite && (
+        <button 
+          onClick={(e) => { e.stopPropagation(); onToggleFavorite(); }}
+          className={`absolute top-4 ${isRtl ? 'left-4' : 'right-4'} p-2 rounded-full backdrop-blur-md transition-all shadow-lg ${isFavorited ? 'bg-red-500 text-white' : 'bg-white/40 text-white hover:bg-white/60'}`}
+        >
+          <Heart size={18} fill={isFavorited ? 'currentColor' : 'none'} />
+        </button>
       )}
       <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex justify-between items-end">
         <button onClick={(e) => { e.stopPropagation(); onView3D(); }} className="bg-white/20 hover:bg-white text-white hover:text-brand-900 backdrop-blur border border-white/50 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 cursor-pointer">
@@ -625,7 +641,7 @@ const Features = ({ t }: { t: any }) => (
         <h2 className="text-3xl font-heading font-bold text-slate-900 dark:text-white mb-4 italic tracking-tight">{t.feat_title}</h2>
         <p className="text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">{t.feat_desc}</p>
       </div>
-      <div className="grid md:grid-cols-4 gap-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
         {[
           { icon: <ShieldCheck className="w-8 h-8" />, title: t.feat_1_title, desc: t.feat_1_desc },
           { icon: <FileCheck className="w-8 h-8" />, title: t.feat_2_title, desc: t.feat_2_desc },
@@ -1620,25 +1636,25 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
                 )}
               </div>
               <div className="p-8">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{property.title}</h2>
+          <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">{property.title}</h2>
                 {property.verificationStatus === 'Verified' && (
-                  <span className="bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-400 text-xs px-2 py-1 rounded-full font-bold flex items-center gap-1">
-                    <ShieldCheck size={14}/> {isRtl ? 'أصلي + ثقة وقانون' : 'Verified Legal'}
+                  <span className="bg-green-500 text-white text-[10px] px-2 py-1 rounded-full font-black flex items-center gap-1 uppercase tracking-wider">
+                    <ShieldCheck size={12}/> {isRtl ? 'أصلي + ثقة وقانون' : 'Verified Legal'}
                   </span>
                 )}
               </div>
-              <p className="text-slate-500 dark:text-slate-400 flex items-center gap-1 mb-1"><MapPin size={16}/> {property.location}</p>
-              <div className="flex items-center gap-4 text-sm text-slate-400 dark:text-slate-500">
+              <p className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mb-2 font-medium"><MapPin size={16} className="text-brand-500"/> {property.location}</p>
+              <div className="flex items-center gap-4 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
                 {property.unitCode && <span>{isRtl ? 'كود الوحدة:' : 'Unit Code:'} {property.unitCode}</span>}
                 {property.publishDate && <span>{isRtl ? 'تاريخ النشر:' : 'Published:'} {property.publishDate}</span>}
               </div>
             </div>
-            <div className="text-right">
-              <div className="text-2xl font-bold text-brand-600 dark:text-brand-400">{property.price.toLocaleString()} EGP</div>
-              <div className="text-sm text-slate-500 dark:text-slate-400">{property.status}</div>
+            <div className="text-right sm:bg-slate-50 sm:dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 self-stretch sm:self-auto flex sm:flex-col justify-between items-center sm:items-end">
+              <div className="text-2xl font-black text-brand-600 dark:text-brand-400">{property.price.toLocaleString()} EGP</div>
+              <div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded sm:mt-1">{property.status}</div>
             </div>
           </div>
 
@@ -1733,13 +1749,18 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
   );
 };
 
-const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail }: { t: any, isRtl: boolean, onBrowse: () => void, onLogout: () => void, onLogin: () => void, userEmail: string | null }) => {
+const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFavorites, allProperties, onToggleFavorite, open3D }: { t: any, isRtl: boolean, onBrowse: () => void, onLogout: () => void, onLogin: () => void, userEmail: string | null, userFavorites: string[], allProperties: Property[], onToggleFavorite: (id: string) => void, open3D: (id: string) => void }) => {
   const [profile, setProfile] = useState<any>(null);
   const [purchases, setPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
   const [saving, setSaving] = useState(false);
+  const [activeSubTab, setActiveSubTab] = useState<'purchases' | 'favorites'>('purchases');
+
+  const favoriteProperties = allProperties.filter(p => userFavorites.includes(p.id));
+  const completedPurchases = purchases.filter(p => p.status?.toLowerCase() === 'completed' || p.status?.toLowerCase() === 'finished');
+  const inProgressPurchases = purchases.filter(p => p.status?.toLowerCase() === 'processing' || p.status?.toLowerCase() === 'pending');
 
   useEffect(() => {
     if (!auth.currentUser) {
@@ -1755,20 +1776,31 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail }: { t: 
           setEditForm(userDoc.data());
         }
         
-        // Fetch purchases (mocked for now but could be real)
+        // Fetch real purchases from Firestore
+        const q = query(
+          collection(db, 'purchases'), 
+          where('userId', '==', auth.currentUser!.uid)
+        );
+        const querySnapshot = await getDocs(q);
+        const purchaseData = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          property: allProperties.find(p => p.id === (doc.data() as any).propertyId)
+        }));
+        setPurchases(purchaseData);
+      } catch (err) {
+        console.error("Error fetching purchases:", err);
         const res = await api.getProfile(userEmail);
         if (res.success && res.data) {
           setPurchases(res.data.purchases);
         }
-      } catch (err) {
-        handleFirestoreError(err, OperationType.GET, `users/${auth.currentUser?.uid}`);
       } finally {
         setLoading(false);
       }
     };
     
     fetchProfile();
-  }, [userEmail]);
+  }, [userEmail, allProperties]);
 
   const handleSave = async () => {
     if (!auth.currentUser) return;
@@ -1886,31 +1918,136 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail }: { t: 
         </div>
 
         <div className="md:col-span-2">
-          <h2 className="text-xl font-bold text-slate-900 mb-6">{isRtl ? 'سجل المشتريات' : 'Purchase History'}</h2>
-          <div className="space-y-4">
-            {purchases.map(p => (
-              <div key={p.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex gap-4 items-center">
-                <img src={p.property?.imageUrl} className="w-24 h-24 rounded-lg object-cover" />
-                <div className="flex-1">
-                  <div className="flex justify-between items-start">
-                    <h4 className="font-bold text-slate-900">{p.property?.title}</h4>
-                    <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded uppercase">{p.status}</span>
-                  </div>
-                  <p className="text-sm text-slate-500 mb-2">{p.property?.location}</p>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="font-bold text-brand-600">{p.property?.price.toLocaleString()} EGP</span>
-                    <span className="text-slate-400">{isRtl ? 'تاريخ:' : 'Date:'} {p.purchaseDate}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {purchases.length === 0 && (
-              <div className="text-center p-8 bg-slate-50 rounded-xl text-slate-500 border border-slate-200">
-                <p className="mb-4">{isRtl ? 'لا توجد مشتريات حتى الآن.' : 'No purchases yet.'}</p>
-                <Button onClick={onBrowse}>{isRtl ? 'تصفح العقارات' : 'Browse Properties'}</Button>
-              </div>
-            )}
+          {/* Sub Navigation */}
+          <div className="flex gap-4 mb-8 border-b border-slate-100 dark:border-slate-800">
+            <button 
+              onClick={() => setActiveSubTab('purchases')}
+              className={`pb-4 px-2 font-bold text-sm uppercase tracking-wider transition-all relative ${activeSubTab === 'purchases' ? 'text-brand-600' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              {t.prof_purchases}
+              {activeSubTab === 'purchases' && <motion.div layoutId="subtab" className="absolute bottom-0 left-0 right-0 h-1 bg-brand-600 rounded-full" />}
+            </button>
+            <button 
+              onClick={() => setActiveSubTab('favorites')}
+              className={`pb-4 px-2 font-bold text-sm uppercase tracking-wider transition-all relative ${activeSubTab === 'favorites' ? 'text-brand-600' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              {t.prof_favorites}
+              {activeSubTab === 'favorites' && <motion.div layoutId="subtab" className="absolute bottom-0 left-0 right-0 h-1 bg-brand-600 rounded-full" />}
+            </button>
           </div>
+
+          {activeSubTab === 'purchases' && (
+            <div className="space-y-12">
+              {/* Completed Section */}
+              <section>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                  <div className="p-2 bg-green-50 dark:bg-green-900/20 text-green-600 rounded-lg">
+                    <CheckCircle size={18} />
+                  </div>
+                  {t.prof_completed} 
+                  <span className="text-sm font-normal text-slate-400 font-sans">({completedPurchases.length})</span>
+                </h2>
+                {completedPurchases.length > 0 ? (
+                  <div className="space-y-4">
+                    {completedPurchases.map(p => (
+                      <div key={p.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row gap-5 items-start sm:items-center">
+                        <img src={p.property?.imageUrl} className="w-full sm:w-32 h-24 rounded-xl object-cover" />
+                        <div className="flex-1">
+                          <div className="flex justify-between items-start mb-2">
+                            <h4 className="font-bold text-slate-900 dark:text-white text-lg">{p.property?.title}</h4>
+                            <span className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-[10px] font-black rounded-lg uppercase tracking-wider">{p.status}</span>
+                          </div>
+                          <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mb-3"><MapPin size={14}/> {p.property?.location}</p>
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="font-bold text-brand-600 dark:text-brand-400">{p.property?.price.toLocaleString()} EGP</span>
+                            <span className="text-slate-400 text-xs flex items-center gap-1"><Clock size={12}/> {p.purchaseDate}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="bg-slate-50 dark:bg-slate-900/50 p-10 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-center">
+                    <History className="mx-auto text-slate-300 dark:text-slate-700 mb-3" size={40} />
+                    <p className="text-slate-500 dark:text-slate-400 font-medium">{isRtl ? 'لا توجد مشتريات مكتملة بعد.' : 'No completed purchases yet.'}</p>
+                  </div>
+                )}
+              </section>
+
+              {/* In Progress Section */}
+              <section>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                  <div className="p-2 bg-amber-50 dark:bg-amber-900/20 text-amber-600 rounded-lg">
+                    <RefreshCw size={18} className="animate-spin-slow" />
+                  </div>
+                  {t.prof_in_progress}
+                  <span className="text-sm font-normal text-slate-400 font-sans">({inProgressPurchases.length})</span>
+                </h2>
+                {inProgressPurchases.length > 0 ? (
+                  <div className="space-y-4">
+                    {inProgressPurchases.map(p => (
+                      <div key={p.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row gap-5 items-start sm:items-center relative overflow-hidden group">
+                        <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
+                        <img src={p.property?.imageUrl} className="w-full sm:w-32 h-24 rounded-xl object-cover" />
+                        <div className="flex-1">
+                          <div className="flex justify-between items-start mb-2">
+                            <h4 className="font-bold text-slate-900 dark:text-white text-lg">{p.property?.title}</h4>
+                            <span className="px-3 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-[10px] font-black rounded-lg uppercase tracking-wider animate-pulse">{p.status}</span>
+                          </div>
+                          <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mb-3"><MapPin size={14}/> {p.property?.location}</p>
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="font-bold text-brand-600 dark:text-brand-400">{p.property?.price.toLocaleString()} EGP</span>
+                            <span className="text-slate-400 text-xs">{p.purchaseDate}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="bg-slate-50 dark:bg-slate-900/50 p-10 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-center">
+                    <Clock className="mx-auto text-slate-300 dark:text-slate-700 mb-3" size={40} />
+                    <p className="text-slate-500 dark:text-slate-400 font-medium">{isRtl ? 'لا توجد طلبات قيد التنفيذ.' : 'No in-progress requests.'}</p>
+                  </div>
+                )}
+              </section>
+            </div>
+          )}
+
+          {activeSubTab === 'favorites' && (
+            <div className="animate-fade-in">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                <div className="p-2 bg-red-50 dark:bg-red-900/20 text-red-600 rounded-lg">
+                  <Heart size={18} fill="currentColor" />
+                </div>
+                {t.prof_fav_title}
+                <span className="text-sm font-normal text-slate-400 font-sans">({favoriteProperties.length})</span>
+              </h2>
+              {favoriteProperties.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  {favoriteProperties.map(p => (
+                    <PropertyCard 
+                      key={p.id} 
+                      property={p} 
+                      onView3D={() => open3D(p.id)} 
+                      onToggleFavorite={() => onToggleFavorite(p.id)}
+                      isFavorited={true}
+                      t={t} 
+                      isRtl={isRtl} 
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-slate-50 dark:bg-slate-900/50 p-20 rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 text-center">
+                  <div className="w-20 h-20 bg-white dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-sm">
+                    <Heart size={40} className="text-slate-200 dark:text-slate-700" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-2">{t.prof_empty_fav}</h3>
+                  <p className="text-slate-500 dark:text-slate-400 mb-8 max-w-xs mx-auto">{t.prof_empty_fav_desc}</p>
+                  <Button onClick={onBrowse} variant="primary" className="px-10">{t.prof_start_browsing}</Button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -2264,6 +2401,7 @@ export default function App() {
   const [isAiSearching, setIsAiSearching] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
+  const [userFavorites, setUserFavorites] = useState<string[]>([]);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -2367,9 +2505,11 @@ export default function App() {
             const userData = userDoc.data();
             setIsAdmin(userData.role === 'admin' || isSuper);
             setUserName(userData.name || user.displayName);
+            setUserFavorites(userData.favorites || []);
           } else {
             setIsAdmin(isSuper);
             setUserName(user.displayName);
+            setUserFavorites([]);
           }
         } catch (error) {
           console.error("Error fetching user data:", error);
@@ -2407,9 +2547,31 @@ export default function App() {
   const handleLogout = async () => {
     try {
       await signOut(auth);
+      setUserFavorites([]);
       handleNav('home');
     } catch (error) {
       console.error("Logout error:", error);
+    }
+  };
+
+  const toggleFavorite = async (propertyId: string) => {
+    if (!auth.currentUser) {
+      handleNav('login');
+      return;
+    }
+
+    const newFavorites = userFavorites.includes(propertyId)
+      ? userFavorites.filter(id => id !== propertyId)
+      : [...userFavorites, propertyId];
+
+    setUserFavorites(newFavorites);
+
+    try {
+      await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+        favorites: newFavorites
+      });
+    } catch (err) {
+      console.error("Error updating favorites:", err);
     }
   };
 
@@ -2586,15 +2748,6 @@ export default function App() {
             <div className="hidden lg:flex items-center gap-8 xl:gap-12">
               <NavLink page="home" label={t.nav_home} />
               <NavLink page="listings" label={t.nav_listings} />
-              <button 
-                onClick={() => handleNav('3d-experience')} 
-                className={`text-sm font-black transition-all flex items-center gap-2 cursor-pointer relative group uppercase tracking-widest ${currentPage === '3d-experience' ? 'text-brand-600 dark:text-brand-400' : 'text-slate-700 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400'}`}
-              >
-                <div className="p-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg group-hover:bg-brand-50 dark:group-hover:bg-brand-900/40 transition-colors">
-                  <Box size={16} className={currentPage === '3d-experience' ? 'text-brand-600' : 'text-slate-500 group-hover:text-brand-500'} />
-                </div>
-                {t.nav_3d_exp}
-              </button>
               <NavLink page="legal" label={t.nav_trust} />
               <button 
                 onClick={() => handleNav('ai-chat')} 
@@ -2667,72 +2820,49 @@ export default function App() {
             
             <div className="h-10 w-px bg-slate-100 dark:bg-slate-800 mx-2 hidden sm:block"></div>
             
-            <div className="hidden sm:flex items-center gap-3">
-              {isAdmin && (
-                <button onClick={() => handleNav('add-listing')} className="p-2.5 rounded-xl hover:bg-brand-50 dark:hover:bg-brand-900/30 text-brand-600 dark:text-brand-400 transition-all cursor-pointer group" aria-label="Add Listing">
-                  <PlusCircle size={22} className="group-hover:rotate-90 transition-transform" />
-                </button>
-              )}
-              {isSuperAdmin && (
-                <button onClick={() => handleNav('manage-users')} className="p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" title={isRtl ? 'إدارة المستخدمين' : 'Manage Users'}>
-                  <Shield size={22} />
-                </button>
-              )}
-            </div>
-            
-            <button 
-              onClick={() => handleNav(userEmail ? 'profile' : 'login')} 
-              className={`flex items-center gap-3 rounded-2xl transition-all duration-300 cursor-pointer overflow-hidden ${userEmail ? 'p-1 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 pr-4 pl-1 hover:shadow-lg' : 'px-8 py-3 bg-brand-600 text-white font-black uppercase tracking-widest text-xs hover:bg-brand-700 shadow-xl shadow-brand-500/20 transform hover:-translate-y-0.5 active:scale-95'}`}
-            >
-              {userEmail && (
-                <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white text-sm font-black shadow-lg shadow-brand-200">
-                  {userName ? userName.charAt(0).toUpperCase() : 'U'}
-                </div>
-              )}
-              <span className={`text-sm font-black ${userEmail ? 'text-slate-800 dark:text-slate-200 tracking-tight' : ''}`}>
-                {userEmail ? (userName || 'Member') : (isRtl ? 'دخول' : 'Sign In')}
-              </span>
-            </button>
-            
             <button className="lg:hidden cursor-pointer text-slate-900 dark:text-white p-3 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
               {mobileMenuOpen ? <X size={26} /> : <Menu size={26} />}
             </button>
           </div>
         </div>
       </div>
+      </nav>
 
+      {/* Mobile Menu Overlay - Move out of nav for better compatibility */}
       {mobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 z-[60] bg-white dark:bg-slate-950 p-8 flex flex-col items-center justify-start overflow-y-auto animate-fade-in transition-colors duration-500">
-          <div className="w-full flex justify-between items-center mb-12">
-             <Logo className="h-10 w-auto text-brand-900 dark:text-white transition-colors" />
-             <button className="p-3 bg-slate-100 dark:bg-slate-900 rounded-full" onClick={() => setMobileMenuOpen(false)}>
-                <X size={24} className="text-slate-900 dark:text-white" />
+        <div className="lg:hidden fixed inset-0 z-[100] bg-white dark:bg-slate-950 p-6 flex flex-col items-center justify-start overflow-y-auto animate-fade-in shadow-2xl">
+          <div className="w-full flex justify-between items-center mb-10">
+             <Logo className="h-10 w-auto text-brand-900 dark:text-white" />
+             <button className="p-3 bg-slate-100 dark:bg-slate-900 rounded-full text-slate-900 dark:text-white active:scale-90 transition-transform" onClick={() => setMobileMenuOpen(false)}>
+                <X size={24} />
              </button>
           </div>
           
-          <div className="w-full space-y-4 flex flex-col items-center text-center">
-            <button onClick={() => handleNav('home')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">
+          <div className="w-full space-y-2 flex flex-col items-center text-center">
+            <button onClick={() => handleNav('home')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
               {t.nav_home}
             </button>
-            <button onClick={() => handleNav('listings')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">
+            <button onClick={() => handleNav('listings')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
               {t.nav_listings}
             </button>
-            <button onClick={() => handleNav('3d-experience')} className="w-full py-4 text-2xl font-black text-brand-600 dark:text-emerald-400 uppercase tracking-tighter flex items-center justify-center gap-3">
-              <Box size={24} /> {t.nav_3d_exp}
-            </button>
-            <button onClick={() => handleNav('legal')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">
+            <button onClick={() => handleNav('legal')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
               {t.nav_trust}
             </button>
-            <button onClick={() => handleNav('ai-chat')} className="w-full py-6 mt-4 bg-brand-600 text-white rounded-[2rem] font-black text-2xl uppercase tracking-widest flex items-center justify-center gap-4 shadow-2xl shadow-brand-500/40">
-              <Sparkles size={24} className="animate-pulse" /> {t.nav_ai}
+            {userEmail && (
+              <button onClick={() => handleNav('add-listing')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
+                {isRtl ? 'إضافة عقار' : 'Add Listing'}
+              </button>
+            )}
+            <button onClick={() => handleNav('ai-chat')} className="w-full py-6 mt-6 bg-brand-600 text-white rounded-[2rem] font-black text-2xl uppercase tracking-widest flex items-center justify-center gap-4 shadow-2xl shadow-brand-500/40 active:scale-95 transition-transform">
+              <Sparkles size={24} /> {t.nav_ai}
             </button>
-            <button onClick={() => handleNav('about')} className="w-full py-4 text-xl font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+            <button onClick={() => handleNav('about')} className="w-full py-6 text-lg font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
               {t.footer_about}
             </button>
 
-            <div className="w-full pt-12 mt-12 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-4">
+            <div className="w-full pt-10 mt-10 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-4">
               <div className="flex gap-4">
-                <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="flex-1 py-4 rounded-2xl bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-black uppercase tracking-widest text-sm border border-slate-100 dark:border-slate-800">
+                <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="flex-1 py-4 rounded-2xl bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-black uppercase tracking-widest text-xs border border-slate-100 dark:border-slate-800">
                   {lang === 'en' ? 'اللغة العربية' : 'English Language'}
                 </button>
                 <button 
@@ -2744,7 +2874,7 @@ export default function App() {
               </div>
               <button 
                 onClick={() => handleNav(userEmail ? 'profile' : 'login')} 
-                className="w-full py-5 rounded-2xl bg-slate-900 dark:bg-brand-600 text-white font-black uppercase tracking-[0.2em] text-sm shadow-xl"
+                className="w-full py-5 rounded-2xl bg-slate-900 dark:bg-brand-600 text-white font-black uppercase tracking-[0.2em] text-sm shadow-xl active:scale-[0.98] transition-all"
               >
                  {userEmail ? (isRtl ? 'الملف الشخصي' : 'Go to Profile') : (isRtl ? 'تسجيل الدخول' : 'Sign In Now')}
               </button>
@@ -2752,7 +2882,6 @@ export default function App() {
           </div>
         </div>
       )}
-      </nav>
 
       <main className="flex-1 bg-slate-50 dark:bg-slate-950 transition-colors duration-500">
         {currentPage === 'home' && (
@@ -2772,10 +2901,21 @@ export default function App() {
                 <div><h2 className="text-3xl font-heading font-bold text-brand-900 dark:text-white mb-2">{t.prop_featured}</h2><p className="text-slate-600 dark:text-slate-400">{t.prop_subtitle}</p></div>
                 <button onClick={() => handleNav('listings')} className="text-accent-600 dark:text-accent-400 font-bold flex items-center gap-1 hover:gap-2 transition-all cursor-pointer">{t.prop_view_all} {isRtl ? <ArrowLeft size={18} /> : <ArrowRight size={18} />}</button>
               </div>
-              <div className="grid md:grid-cols-3 gap-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
                 {loadingProps 
                   ? [1,2,3].map(i => <div key={i} className="h-96 bg-slate-200 rounded-2xl animate-pulse"></div>)
-                  : properties.slice(0, 3).map(p => <PropertyCard key={p.id} property={p} onView3D={() => open3D(p.id)} onClick={() => setViewingProperty(p)} t={t} isRtl={isRtl} />)
+                  : properties.slice(0, 3).map(p => (
+                    <PropertyCard 
+                      key={p.id} 
+                      property={p} 
+                      onView3D={() => open3D(p.id)} 
+                      onToggleFavorite={() => toggleFavorite(p.id)}
+                      isFavorited={userFavorites.includes(p.id)}
+                      onClick={() => setViewingProperty(p)} 
+                      t={t} 
+                      isRtl={isRtl} 
+                    />
+                  ))
                 }
               </div>
             </div>
@@ -2784,10 +2924,10 @@ export default function App() {
 
         {currentPage === 'listings' && (
           <div className="py-12 max-w-7xl mx-auto px-4">
-            <div className="mb-8 flex flex-col md:flex-row gap-4 justify-between items-center">
-               <h1 className="text-3xl font-heading font-bold text-slate-900 dark:text-white">{t.prop_avail}</h1>
-               <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
-                 <div className="relative flex-1 md:w-64 flex gap-2">
+            <div className="mb-8 flex flex-col lg:flex-row gap-6 justify-between items-start lg:items-center">
+               <h1 className="text-3xl lg:text-4xl font-heading font-black text-slate-900 dark:text-white uppercase tracking-tight">{t.prop_avail}</h1>
+               <div className="flex flex-col sm:flex-row flex-wrap gap-4 w-full lg:w-auto">
+                 <div className="relative flex-1 min-w-[240px] flex gap-2">
                    <div className="relative flex-1">
                      <Search className={`absolute top-3 text-slate-400 w-4 h-4 ${isRtl ? 'right-3' : 'left-3'}`} />
                      <input 
@@ -2843,7 +2983,7 @@ export default function App() {
                  <select 
                    value={sortBy}
                    onChange={(e) => setSortBy(e.target.value as any)}
-                   className="py-2.5 px-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-brand-500 outline-none text-black dark:text-white"
+                   className="py-2.5 px-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-brand-500 outline-none text-black dark:text-white flex-1 sm:flex-none sm:min-w-[180px]"
                  >
                    <option value="default">{isRtl ? 'الترتيب الافتراضي' : 'Default Sort'}</option>
                    <option value="price-asc">{isRtl ? 'السعر: من الأقل للأعلى' : 'Price: Low to High'}</option>
@@ -2853,10 +2993,21 @@ export default function App() {
                  </select>
                </div>
             </div>
-            <div className="grid md:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
                {loadingProps 
                   ? [1,2,3,4,5,6].map(i => <div key={i} className="h-96 bg-slate-200 rounded-2xl animate-pulse"></div>)
-                  : filteredProperties.map(p => <PropertyCard key={p.id} property={p} onView3D={() => open3D(p.id)} onClick={() => setViewingProperty(p)} t={t} isRtl={isRtl} />)
+                  : filteredProperties.map(p => (
+                    <PropertyCard 
+                      key={p.id} 
+                      property={p} 
+                      onView3D={() => open3D(p.id)} 
+                      onToggleFavorite={() => toggleFavorite(p.id)}
+                      isFavorited={userFavorites.includes(p.id)}
+                      onClick={() => setViewingProperty(p)} 
+                      t={t} 
+                      isRtl={isRtl} 
+                    />
+                  ))
                }
             </div>
           </div>
@@ -2874,14 +3025,50 @@ export default function App() {
         {currentPage === 'tours' && <Tours3DPage onCta={() => handleNav('3d-experience')} t={t} isRtl={isRtl} />}
         {currentPage === '3d' && selectedPropertyId && <Viewer3D propertyId={selectedPropertyId} onClose={() => { setSelectedPropertyId(null); handleNav('listings'); }} t={t} isRtl={isRtl} />}
         {currentPage === '3d-experience' && <ComingSoon3D t={t} isRtl={isRtl} />}
-        {currentPage === 'profile' && <ProfilePage t={t} isRtl={isRtl} onBrowse={() => handleNav('listings')} onLogout={handleLogout} onLogin={() => handleNav('login')} userEmail={userEmail} />}
+        {currentPage === 'profile' && (
+          <ProfilePage 
+            t={t} 
+            isRtl={isRtl} 
+            onBrowse={() => handleNav('listings')} 
+            onLogout={handleLogout} 
+            onLogin={() => handleNav('login')} 
+            userEmail={userEmail}
+            userFavorites={userFavorites}
+            allProperties={properties}
+            onToggleFavorite={toggleFavorite}
+            open3D={open3D}
+          />
+        )}
         {currentPage === 'payment' && paymentProperty && (
           <PaymentPage 
             property={paymentProperty} 
             onConfirm={async () => {
-              await api.purchaseProperty(paymentProperty.id);
-              handleNav('profile');
-              setPaymentProperty(null);
+              try {
+                if (auth.currentUser) {
+                  await addDoc(collection(db, 'purchases'), {
+                    userId: auth.currentUser.uid,
+                    propertyId: paymentProperty.id,
+                    status: 'processing',
+                    createdAt: new Date().toISOString()
+                  });
+                  
+                  // Add a notification
+                  await addDoc(collection(db, 'notifications'), {
+                    userId: auth.currentUser.uid,
+                    title: isRtl ? 'طلب شراء قيد المراجعة' : 'Purchase Request Received',
+                    message: isRtl 
+                      ? `تم استلام طلبك للعقار ${paymentProperty.title}. سيقوم أحد خبرائنا بالتواصل معك قريباً.` 
+                      : `Your request for ${paymentProperty.title} has been received. Our expert will contact you shortly.`,
+                    date: new Date().toISOString(),
+                    read: false
+                  });
+                }
+                handleNav('profile');
+                setPaymentProperty(null);
+              } catch (err: any) {
+                console.error("Purchase error:", err);
+                alert(`Error: ${err?.message || String(err)}`);
+              }
             }} 
             onCancel={() => {
               setPaymentProperty(null);
@@ -2965,7 +3152,7 @@ export default function App() {
       )}
 
       <footer className="bg-slate-900 dark:bg-black text-slate-400 py-12 border-t border-slate-800 transition-colors duration-500">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid md:grid-cols-4 gap-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-12">
           <div><div className="flex items-center gap-2 mb-4 text-white"><Logo color="white" className="h-8" /></div><p className="text-sm">{t.footer_desc}</p></div>
           <div>
             <h4 className="text-white font-bold mb-4">{t.footer_services}</h4>
