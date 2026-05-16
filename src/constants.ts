@@ -179,7 +179,15 @@ export const TRANSLATIONS = {
     consent_marketing_desc: "Used to deliver personalized advertisements.",
     consent_terms_agree: "I have read and agree to the Terms & Conditions and Privacy Policy",
     nav_privacy: "Privacy Policy",
-    nav_cookie: "Cookie Policy"
+    nav_cookie: "Cookie Policy",
+    prof_purchases: "Purchases",
+    prof_favorites: "Favorites",
+    prof_completed: "Completed",
+    prof_in_progress: "In Progress",
+    prof_fav_title: "Favorite Properties",
+    prof_empty_fav: "Your wishlist is empty",
+    prof_empty_fav_desc: "Browse properties you love and save them here for quick access later.",
+    prof_start_browsing: "Start Browsing"
   },
   ar: {
     prop_forsale: "للبيع",
@@ -357,6 +365,14 @@ export const TRANSLATIONS = {
     consent_marketing_desc: "تستخدم لتقديم إعلانات مخصصة.",
     consent_terms_agree: "لقد قرأت وأوافق على الشروط والأحكام وسياسة الخصوصية",
     nav_privacy: "سياسة الخصوصية",
-    nav_cookie: "سياسة ملفات تعريف الارتباط"
+    nav_cookie: "سياسة ملفات تعريف الارتباط",
+    prof_purchases: "المشتريات",
+    prof_favorites: "المفضلة",
+    prof_completed: "مكتملة",
+    prof_in_progress: "قيد التنفيذ",
+    prof_fav_title: "عقاراتي المفضلة",
+    prof_empty_fav: "قائمة المفضلة فارغة",
+    prof_empty_fav_desc: "ابحث عن العقارات التي تحبها وأضفها إلى قائمتك المفضلة للعودة إليها لاحقاً.",
+    prof_start_browsing: "تصفح العقارات الآن"
   }
 };
