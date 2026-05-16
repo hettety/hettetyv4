@@ -11,6 +11,7 @@
         "phone": { "type": "string", "description": "Phone number" },
         "role": { "type": "string", "enum": ["user", "admin"], "description": "User role" },
         "preferences": { "type": "string", "description": "User property preferences" },
+        "favorites": { "type": "array", "items": { "type": "string" }, "description": "List of favorite property IDs" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Account creation timestamp" }
       },
       "required": ["uid", "email", "role"]
@@ -75,6 +76,19 @@
         "lastUpdatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "title", "messages"]
+    },
+    "Purchase": {
+      "title": "Purchase",
+      "description": "Records property purchase or interest requests",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "propertyId": { "type": "string" },
+        "userId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "processing", "completed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["propertyId", "userId", "status"]
     }
   },
   "firestore": {
@@ -93,6 +107,10 @@
     "/chat_sessions/{sessionId}": {
       "schema": "ChatSession",
       "description": "AI Chat History"
+    },
+    "/purchases/{purchaseId}": {
+      "schema": "Purchase",
+      "description": "User purchase records"
     }
   }
 }
