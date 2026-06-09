@@ -58,7 +58,8 @@ service cloud.firestore {
       return isAuthenticated() &&
         (request.auth.token.email == "marwaneltaweel0@gmail.com" ||
          request.auth.token.email == "abdallahahmedpilot2426@gmail.com" ||
-         request.auth.token.email == "pro.mahmoud.h@gmail.com");
+         request.auth.token.email == "pro.mahmoud.h@gmail.com" ||
+         request.auth.token.email == "modyhashim2006@gmail.com");
     }
 
     function isValidUser(data) {
