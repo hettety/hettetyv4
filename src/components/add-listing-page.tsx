@@ -29,6 +29,39 @@ const uploadToStorage = async (file: Blob, originalName: string) => {
   return getDownloadURL(storageRef);
 };
 
+// Firebase Storage requires the Blaze plan on newer projects. When it isn't
+// enabled the upload fails, so we fall back to the legacy approach of storing
+// heavily-compressed base64 data URLs inside the Firestore document itself.
+// Remembered for the session so we don't pay a failed request per file.
+let storageUnavailable = false;
+
+const isDataUrl = (s: string) => s.startsWith('data:');
+
+// ~110KB of base64 per image; capped so the property document (which also
+// duplicates the first image in imageUrl) stays under Firestore's 1MB limit.
+const FALLBACK_MAX_IMAGES = 6;
+const FALLBACK_VIDEO_LIMIT = 500 * 1024;
+
+// Storage hosts the file when available, so we can afford much better quality
+// than the 0.08MB/800px settings needed to squeeze base64 into Firestore.
+const STORAGE_COMPRESSION = { maxSizeMB: 0.5, maxWidthOrHeight: 1920, useWebWorker: true };
+const FIRESTORE_COMPRESSION = { maxSizeMB: 0.08, maxWidthOrHeight: 800, useWebWorker: true };
+
+/** Compresses and stores an image, preferring Storage with a base64 fallback. */
+const storeImage = async (file: File): Promise<string> => {
+  if (!storageUnavailable) {
+    try {
+      const compressed = await imageCompression(file, STORAGE_COMPRESSION);
+      return await uploadToStorage(compressed, file.name);
+    } catch (err) {
+      console.warn('Storage upload failed — falling back to inline base64 (Storage needs the Blaze plan)', err);
+      storageUnavailable = true;
+    }
+  }
+  const compressed = await imageCompression(file, FIRESTORE_COMPRESSION);
+  return fileToDataUrl(compressed);
+};
+
 export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onAdd: (prop: Omit<Property, 'id'>) => Promise<void>, t: any, isRtl: boolean, isAdmin: boolean, isSuperAdmin: boolean }) => {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
@@ -109,15 +142,23 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
     setUploadProgress(5);
     const uploadedUrls: string[] = [];
     let failures = 0;
+    let skippedForSize = 0;
+    // Base64 fallback images already attached to this listing count against the cap.
+    let base64Count = images.filter(isDataUrl).length;
 
     for (let i = 0; i < imageFiles.length; i++) {
       const file = imageFiles[i];
-      // Storage hosts the file now, so we can afford much better quality than
-      // the old 0.1MB/800px settings used to squeeze base64 into Firestore.
-      const options = { maxSizeMB: 0.5, maxWidthOrHeight: 1920, useWebWorker: true };
       try {
-        const compressed = await imageCompression(file, options);
-        uploadedUrls.push(await uploadToStorage(compressed, file.name));
+        const url = await storeImage(file);
+        if (isDataUrl(url)) {
+          if (base64Count >= FALLBACK_MAX_IMAGES) {
+            skippedForSize++;
+            setUploadProgress(5 + Math.round(((i + 1) / imageFiles.length) * 90));
+            continue;
+          }
+          base64Count++;
+        }
+        uploadedUrls.push(url);
       } catch (err) {
         failures++;
         console.error("Image upload failed", err);
@@ -131,6 +172,11 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
     }
     if (failures) {
       alert(isRtl ? `تعذر رفع ${failures} من الصور` : `${failures} image(s) failed to upload`);
+    }
+    if (skippedForSize) {
+      alert(isRtl
+        ? `الحد الأقصى ${FALLBACK_MAX_IMAGES} صور للعقار الواحد حاليًا (تم تخطي ${skippedForSize}). لرفع صور أكثر وبجودة أعلى فعّل خطة Blaze في Firebase.`
+        : `Max ${FALLBACK_MAX_IMAGES} photos per listing for now (${skippedForSize} skipped). Enable the Firebase Blaze plan for more photos at higher quality.`);
     }
     setUploadProgress(100);
     setTimeout(() => setUploading(false), 400);
@@ -159,12 +205,34 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
     setUploading(true);
     setUploadProgress(30);
     try {
-      const url = await uploadToStorage(file, file.name);
-      setFormData(prev => ({ ...prev, videoUrl: url }));
-      setUploadProgress(100);
+      if (!storageUnavailable) {
+        const url = await uploadToStorage(file, file.name);
+        setFormData(prev => ({ ...prev, videoUrl: url }));
+        setUploadProgress(100);
+        return;
+      }
+      throw new Error('storage-unavailable');
     } catch (err) {
-      console.error("Video upload failed", err);
-      alert(isRtl ? 'فشل رفع الفيديو' : 'Video upload failed');
+      if ((err as Error).message !== 'storage-unavailable') {
+        console.warn('Storage video upload failed — trying base64 fallback', err);
+        storageUnavailable = true;
+      }
+      // Without Storage the video has to live inside the Firestore document,
+      // which only leaves room for very small clips.
+      if (file.size <= FALLBACK_VIDEO_LIMIT) {
+        try {
+          const dataUrl = await fileToDataUrl(file);
+          setFormData(prev => ({ ...prev, videoUrl: dataUrl }));
+          setUploadProgress(100);
+        } catch (readErr) {
+          console.error("Video upload failed", readErr);
+          alert(isRtl ? 'فشل رفع الفيديو' : 'Video upload failed');
+        }
+      } else {
+        alert(isRtl
+          ? 'رفع الفيديوهات الكبيرة يتطلب تفعيل خطة Blaze في Firebase. حاليًا الحد الأقصى 500 كيلوبايت للفيديو.'
+          : 'Large video uploads require the Firebase Blaze plan. The current limit is 500KB per video.');
+      }
     } finally {
       setTimeout(() => setUploading(false), 400);
     }
