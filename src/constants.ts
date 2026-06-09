@@ -9,6 +9,7 @@ export const SUPER_ADMIN_EMAILS = [
   'abdallahahmedpilot2426@gmail.com',
   'marwaneltaweel0@gmail.com',
   'pro.mahmoud.h@gmail.com',
+  'modyhashim2006@gmail.com',
 ];
 
 export const TRANSLATIONS = {
