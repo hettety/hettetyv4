@@ -11,7 +11,7 @@ import {
   MessageSquareText, FileText, Box, ArrowRight,
   CheckCircle, PlayCircle, Send, Upload, Clock,
   DollarSign, BedDouble, Bath, Maximize, Loader2,
-  Check, FileCheck, Key, RefreshCw, LayoutTemplate,
+  Check, FileCheck, Key, RefreshCw,
   User, ArrowLeft, Phone, Target, CreditCard, PlusCircle, Edit2, Save, LogOut, Shield, Trash2, Bell, Lock as LockIcon,
   Plus, History, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, MessageSquare, Sun, Moon, Heart
 } from 'lucide-react';
@@ -564,60 +564,109 @@ const AuthForm = ({ type, onSwitch, onSubmit, t, isRtl }: { type: 'login' | 'reg
   )
 };
 
-const ComingSoon3D = ({ t, isRtl }: { t: any, isRtl: boolean }) => {
+// --- 3D Experience Sector ---
+// Lists every property that has photos and opens the interactive 3D showroom.
+// Used both as the full #3d-experience page and (with `limit`) as the home teaser.
+const Experience3DPage = ({ properties, loading, onView3D, onBrowse, isRtl, limit, onViewAll }: {
+  properties: Property[];
+  loading?: boolean;
+  onView3D: (id: string) => void;
+  onBrowse: () => void;
+  isRtl: boolean;
+  limit?: number;
+  onViewAll?: () => void;
+}) => {
+  const ready = properties.filter(p => (p.images?.filter(Boolean).length ?? 0) > 0 || !!p.imageUrl);
+  const shown = limit ? ready.slice(0, limit) : ready;
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-16 animate-fade-in transition-colors duration-500">
-       {/* Text Section */}
-       <div className="text-center mb-12 max-w-3xl mx-auto">
-          <div className="inline-flex items-center gap-2 bg-brand-100 dark:bg-brand-900 text-brand-700 dark:text-brand-300 px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest mb-4">
-             <Clock size={14} /> {t.tour_3d_badge}
+      {/* Header */}
+      <div className="text-center mb-12 max-w-3xl mx-auto">
+        <div className="inline-flex items-center gap-2 bg-brand-100 dark:bg-brand-900 text-brand-700 dark:text-brand-300 px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest mb-4">
+          <Box size={14} /> {isRtl ? 'تجربة ثلاثية الأبعاد' : '3D Experience'}
+        </div>
+        <h1 className="text-4xl md:text-5xl font-heading font-bold text-slate-900 dark:text-white mb-6 leading-tight">
+          {isRtl ? 'تجوّل داخل العقار قبل ما تزوره' : 'Walk through the property before you visit'}
+        </h1>
+        <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
+          {isRtl
+            ? 'اختر أي وحدة وادخل صالة عرض تفاعلية 360° مبنية من صورها الحقيقية — لف، قرّب، واتنقل بين الغرف من مكانك.'
+            : 'Pick any unit and step into an interactive 360° showroom built from its real photos — orbit, zoom, and flip between rooms from wherever you are.'}
+        </p>
+      </div>
+
+      {/* Gallery */}
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+          {[1, 2, 3].map(i => <div key={i} className="h-80 bg-slate-200 dark:bg-slate-800 rounded-3xl animate-pulse"></div>)}
+        </div>
+      ) : ready.length === 0 ? (
+        <div className="relative w-full bg-slate-900 dark:bg-black rounded-3xl overflow-hidden shadow-2xl border border-slate-800 py-24 text-center">
+          <div className="absolute inset-0 opacity-20 dark:opacity-10 bg-[linear-gradient(rgba(255,255,255,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[size:40px_40px]"></div>
+          <div className="relative z-10 flex flex-col items-center text-white px-6">
+            <Box className="w-20 h-20 text-slate-700" strokeWidth={1} />
+            <h3 className="mt-6 text-xl font-bold">{isRtl ? 'لا توجد وحدات جاهزة للعرض ثلاثي الأبعاد بعد' : 'No 3D-ready units yet'}</h3>
+            <p className="mt-2 text-slate-400 max-w-md">
+              {isRtl ? 'أول ما تتضاف وحدات بصور حقيقية هتظهر هنا تلقائيًا.' : 'As soon as listings with real photos are added, they will appear here automatically.'}
+            </p>
+            <Button onClick={onBrowse} variant="accent" className="mt-8">{isRtl ? 'تصفح العقارات' : 'Browse Listings'}</Button>
           </div>
-          <h1 className="text-4xl md:text-5xl font-heading font-bold text-slate-900 dark:text-white mb-6 leading-tight">
-             {t.tour_3d_title}
-          </h1>
-          <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
-             {t.tour_3d_desc}
-          </p>
-       </div>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+            {shown.map(p => {
+              const cover = (p.images && p.images.find(Boolean)) || p.imageUrl;
+              const photoCount = Math.max(p.images?.filter(Boolean).length ?? 0, cover ? 1 : 0);
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => onView3D(p.id)}
+                  className="group relative rounded-3xl overflow-hidden bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg hover:shadow-2xl cursor-pointer transition-all duration-500 hover:-translate-y-1"
+                >
+                  <img src={cover} alt={p.title} className="w-full h-80 object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-900/20 to-transparent"></div>
 
-       {/* Viewer Placeholder */}
-       <div className="relative w-full aspect-video bg-slate-900 dark:bg-black rounded-3xl overflow-hidden shadow-2xl border border-slate-800 group cursor-not-allowed">
-           {/* Background Grid/Image Effect */}
-           <div className="absolute inset-0 opacity-20 dark:opacity-10 bg-[linear-gradient(rgba(255,255,255,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[size:40px_40px]"></div>
-           <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-slate-900/50"></div>
-           
-           {/* Central content */}
-           <div className="absolute inset-0 flex flex-col items-center justify-center text-white">
-              <div className="relative">
-                 <div className="absolute inset-0 bg-brand-500 blur-3xl opacity-20 animate-pulse"></div>
-                 <Box className="w-24 h-24 text-slate-700 dark:text-slate-800 relative z-10" strokeWidth={1} />
-                 {/* Rotating ring */}
-                 <div className="absolute inset-[-20px] border-2 border-slate-700/50 rounded-full animate-[spin_10s_linear_infinite]"></div>
-                 <div className="absolute inset-[-40px] border border-slate-800/50 rounded-full animate-[spin_15s_linear_infinite_reverse]"></div>
-              </div>
-              <p className="mt-8 font-mono text-brand-500 text-sm tracking-widest uppercase animate-pulse">
-                {t.tour_3d_loading}
-              </p>
-           </div>
-       </div>
+                  {/* Badges */}
+                  <div className={`absolute top-4 flex items-center gap-2 ${isRtl ? 'right-4' : 'left-4'}`}>
+                    <span className="bg-brand-600/90 backdrop-blur text-white text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest flex items-center gap-1.5">
+                      <Box size={12} /> 360°
+                    </span>
+                    <span className="bg-black/50 backdrop-blur text-white text-[10px] font-bold px-3 py-1.5 rounded-full">
+                      {photoCount} {isRtl ? 'صورة' : photoCount === 1 ? 'photo' : 'photos'}
+                    </span>
+                  </div>
 
-       {/* Features Grid Teaser */}
-       <div className="grid md:grid-cols-3 gap-8 mt-16">
-          {[
-            { icon: <Box />, title: t.tour_3d_feat_1, desc: t.tour_3d_feat_1_desc },
-            { icon: <Maximize />, title: t.tour_3d_feat_2, desc: t.tour_3d_feat_2_desc },
-            { icon: <LayoutTemplate />, title: t.tour_3d_feat_3, desc: t.tour_3d_feat_3_desc }
-          ].map((item, i) => (
-             <div key={i} className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 flex flex-col items-center text-center opacity-70">
-                <div className="w-12 h-12 bg-slate-100 dark:bg-slate-700 rounded-xl flex items-center justify-center text-slate-400 dark:text-slate-500 mb-4">{item.icon}</div>
-                <h3 className="font-bold text-slate-700 dark:text-slate-300">{item.title}</h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400">{item.desc}</p>
-             </div>
-          ))}
-       </div>
+                  {/* Info */}
+                  <div className="absolute bottom-0 inset-x-0 p-6 text-white">
+                    <h3 className="text-xl font-bold mb-1 line-clamp-1">{p.title}</h3>
+                    <p className="text-sm text-slate-300 flex items-center gap-1.5 mb-4">
+                      <MapPin size={14} className="shrink-0" /> <span className="line-clamp-1">{p.location}</span>
+                    </p>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-black text-accent-400">{p.price.toLocaleString(isRtl ? 'ar-EG' : 'en-US')} {isRtl ? 'ج.م' : 'EGP'}</span>
+                      <span className="inline-flex items-center gap-2 bg-white text-slate-900 text-xs font-black px-4 py-2.5 rounded-full uppercase tracking-wider group-hover:bg-brand-500 group-hover:text-white transition-colors">
+                        <PlayCircle size={14} /> {isRtl ? 'ادخل الجولة' : 'Enter Tour'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {limit && onViewAll && ready.length > limit && (
+            <div className="text-center mt-10">
+              <Button onClick={onViewAll} variant="outline">
+                {isRtl ? `عرض كل الجولات (${ready.length})` : `View all tours (${ready.length})`}
+              </Button>
+            </div>
+          )}
+        </>
+      )}
     </div>
-  )
-}
+  );
+};
 
 const Hero = ({ onCta, t }: { onCta: () => void, t: any }) => (
   <div className="relative min-h-[90vh] flex items-center justify-center overflow-hidden bg-slate-900">
@@ -2177,33 +2226,51 @@ const PaymentPage = ({ property, onConfirm, onCancel, t, isRtl }: { property: Pr
 
 
 
-// Manage Users Page for Super Admin
-// --- Super Admin Dashboard ---
-const SuperAdminDashboard = ({ isRtl }: { isRtl: boolean }) => {
+// --- Admin Dashboard ---
+// Operations center for admins: live stats, property management, the
+// verification queue and purchase requests. Role management is super-admin only.
+const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin: boolean }) => {
   const [users, setUsers] = useState<any[]>([]);
-  const [pendingProperties, setPendingProperties] = useState<Property[]>([]);
+  const [allProperties, setAllProperties] = useState<Property[]>([]);
+  const [purchases, setPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'users' | 'verifications' | 'stats'>('stats');
+  const [activeTab, setActiveTab] = useState<'stats' | 'properties' | 'verifications' | 'purchases' | 'users'>('stats');
   const [updating, setUpdating] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
-      try {
-        const usersSnapshot = await getDocs(collection(db, 'users'));
-        const usersList = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setUsers(usersList);
-
-        const propsSnapshot = await getDocs(collection(db, 'properties'));
-        const propsData = propsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Property));
-        setPendingProperties(propsData.filter(p => p.verificationStatus === 'Pending'));
-      } catch (error) {
-        console.error("Error fetching admin data:", error);
-      } finally {
-        setLoading(false);
-      }
+      // Each collection is fetched independently so one denied read
+      // doesn't blank the entire dashboard.
+      const safeGet = async (name: string) => {
+        try {
+          const snap = await getDocs(collection(db, name));
+          return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        } catch (error) {
+          console.error(`Error fetching ${name}:`, error);
+          return [] as any[];
+        }
+      };
+      const [usersList, propsList, purchasesList] = await Promise.all([
+        safeGet('users'),
+        safeGet('properties'),
+        safeGet('purchases'),
+      ]);
+      setUsers(usersList);
+      setAllProperties(propsList as Property[]);
+      setPurchases(purchasesList);
+      setLoading(false);
     };
     fetchData();
   }, []);
+
+  const pendingProperties = allProperties.filter(p => p.verificationStatus === 'Pending');
+  const verifiedCount = allProperties.filter(p => p.isVerified).length;
+  const forSaleCount = allProperties.filter(p => p.status === 'For Sale').length;
+  const forRentCount = allProperties.filter(p => p.status === 'For Rent').length;
+  const openPurchases = purchases.filter(p => p.status === 'processing');
+
+  const propertyTitle = (id: string) => allProperties.find(p => p.id === id)?.title || `#${id.slice(0, 8)}`;
+  const purchaserEmail = (uid: string) => users.find(u => u.id === uid)?.email || `#${uid.slice(0, 8)}`;
 
   const toggleRole = async (userId: string, currentRole: string) => {
     setUpdating(userId);
@@ -2218,19 +2285,45 @@ const SuperAdminDashboard = ({ isRtl }: { isRtl: boolean }) => {
     }
   };
 
-  const handleVerifyProperty = async (propId: string, status: 'Verified' | 'Rejected') => {
+  const handleVerifyProperty = async (propId: string, status: 'Verified' | 'Rejected' | 'Pending') => {
     setUpdating(propId);
     try {
-      await updateDoc(doc(db, 'properties', propId), { 
+      await updateDoc(doc(db, 'properties', propId), {
         verificationStatus: status,
         isVerified: status === 'Verified'
       });
-      setPendingProperties(pendingProperties.filter(p => p.id !== propId));
-      
+      setAllProperties(prev => prev.map(p => p.id === propId ? { ...p, verificationStatus: status, isVerified: status === 'Verified' } : p));
+
       // Notify the owner (Simulated for now, would be a Cloud Function)
       // In a real app, we'd trigger a push/email notification here.
     } catch (error) {
       console.error("Error verifying property:", error);
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  const handleDeleteProperty = async (propId: string) => {
+    if (!window.confirm(isRtl ? 'متأكد إنك عايز تحذف العقار ده نهائيًا؟' : 'Permanently delete this property?')) return;
+    setUpdating(propId);
+    try {
+      await deleteDoc(doc(db, 'properties', propId));
+      setAllProperties(prev => prev.filter(p => p.id !== propId));
+    } catch (error) {
+      console.error("Error deleting property:", error);
+      alert(isRtl ? 'فشل حذف العقار' : 'Failed to delete the property');
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  const handlePurchaseStatus = async (purchaseId: string, status: 'completed' | 'cancelled') => {
+    setUpdating(purchaseId);
+    try {
+      await updateDoc(doc(db, 'purchases', purchaseId), { status });
+      setPurchases(prev => prev.map(p => p.id === purchaseId ? { ...p, status } : p));
+    } catch (error) {
+      console.error("Error updating purchase:", error);
     } finally {
       setUpdating(null);
     }
@@ -2252,17 +2345,19 @@ const SuperAdminDashboard = ({ isRtl }: { isRtl: boolean }) => {
           </div>
           <div>
             <h1 className="text-4xl font-heading font-black text-slate-900 dark:text-white tracking-tight">
-              {isRtl ? 'لوحة تحكم السوبر أدمن' : 'Super Admin Dashboard'}
+              {isSuperAdmin ? (isRtl ? 'لوحة تحكم السوبر أدمن' : 'Super Admin Dashboard') : (isRtl ? 'لوحة تحكم الأدمن' : 'Admin Dashboard')}
             </h1>
             <p className="text-slate-500 dark:text-slate-400 font-medium">{isRtl ? 'مركز إدارة عمليات HETTETY' : 'HETTETY Operations Command Center'}</p>
           </div>
         </div>
-        
-        <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+
+        <div className="flex flex-wrap bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
           {[
             { id: 'stats', label: isRtl ? 'الإحصائيات' : 'Stats', icon: <Target size={16} /> },
+            { id: 'properties', label: isRtl ? 'العقارات' : 'Properties', icon: <Building2 size={16} /> },
             { id: 'verifications', label: isRtl ? 'التوثيقات' : 'Verifications', icon: <Shield size={16} />, badge: pendingProperties.length },
-            { id: 'users', label: isRtl ? 'المستخدمين' : 'Users', icon: <Users size={16} /> },
+            { id: 'purchases', label: isRtl ? 'طلبات الشراء' : 'Purchases', icon: <CreditCard size={16} />, badge: openPurchases.length },
+            ...(isSuperAdmin ? [{ id: 'users', label: isRtl ? 'المستخدمين' : 'Users', icon: <Users size={16} /> }] : []),
           ].map(tab => (
             <button
               key={tab.id}
@@ -2288,8 +2383,11 @@ const SuperAdminDashboard = ({ isRtl }: { isRtl: boolean }) => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {[
             { label: isRtl ? 'إجمالي المستخدمين' : 'Total Users', value: users.length, icon: <Users />, color: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' },
+            { label: isRtl ? 'إجمالي العقارات' : 'Total Properties', value: allProperties.length, icon: <Building2 />, color: 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400' },
+            { label: isRtl ? 'العقارات الموثقة' : 'Verified Units', value: verifiedCount, icon: <CheckCircle />, color: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400' },
             { label: isRtl ? 'طلبات التوثيق' : 'Pending Verifications', value: pendingProperties.length, icon: <Clock />, color: 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400' },
-            { label: isRtl ? 'العقارات الموثقة' : 'Verified Units', value: users.length * 2, icon: <CheckCircle />, color: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400' }, // Mock stat for UI
+            { label: isRtl ? 'بيع / إيجار' : 'For Sale / Rent', value: `${forSaleCount} / ${forRentCount}`, icon: <Key />, color: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300' },
+            { label: isRtl ? 'طلبات شراء جديدة' : 'Open Purchase Requests', value: openPurchases.length, icon: <CreditCard />, color: 'bg-accent-50 dark:bg-accent-900/20 text-accent-600 dark:text-accent-400' },
           ].map((stat, i) => (
             <div key={i} className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm transition-colors duration-500">
               <div className={`w-12 h-12 ${stat.color} rounded-2xl flex items-center justify-center mb-6`}>
@@ -2365,7 +2463,172 @@ const SuperAdminDashboard = ({ isRtl }: { isRtl: boolean }) => {
         </div>
       )}
 
-      {activeTab === 'users' && (
+      {activeTab === 'properties' && (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xl animate-scale-up">
+          <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+            <h2 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+              <Building2 className="text-brand-600 dark:text-brand-400" />
+              {isRtl ? `كل العقارات (${allProperties.length})` : `All Properties (${allProperties.length})`}
+            </h2>
+          </div>
+          {allProperties.length === 0 ? (
+            <div className="p-20 text-center text-slate-400 dark:text-slate-600">
+              <Building2 size={48} className="mx-auto mb-4 opacity-20" />
+              <p className="font-medium">{isRtl ? 'لا توجد عقارات بعد' : 'No properties yet.'}</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-black uppercase tracking-widest">
+                  <tr>
+                    <th className="px-8 py-4">{isRtl ? 'العقار' : 'Property'}</th>
+                    <th className="px-8 py-4">{isRtl ? 'الموقع' : 'Location'}</th>
+                    <th className="px-8 py-4">{isRtl ? 'السعر' : 'Price'}</th>
+                    <th className="px-8 py-4">{isRtl ? 'الحالة' : 'Status'}</th>
+                    <th className="px-8 py-4">{isRtl ? 'التوثيق' : 'Verification'}</th>
+                    <th className="px-8 py-4 text-right">{isRtl ? 'الإجراءات' : 'Actions'}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {allProperties.map((prop) => (
+                    <tr key={prop.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
+                      <td className="px-8 py-5">
+                        <div className="flex items-center gap-4">
+                          {prop.imageUrl
+                            ? <img src={prop.imageUrl} className="w-12 h-12 rounded-lg object-cover" />
+                            : <div className="w-12 h-12 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400"><Building2 size={20} /></div>}
+                          <div>
+                            <div className="font-bold text-slate-900 dark:text-white line-clamp-1 max-w-[16rem]">{prop.title}</div>
+                            <div className="text-xs text-brand-600 dark:text-brand-400 font-medium">{prop.unitCode}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-8 py-5 text-slate-600 dark:text-slate-400 text-sm">{prop.location}</td>
+                      <td className="px-8 py-5 text-slate-900 dark:text-white text-sm font-bold whitespace-nowrap">{prop.price?.toLocaleString(isRtl ? 'ar-EG' : 'en-US')} {isRtl ? 'ج.م' : 'EGP'}</td>
+                      <td className="px-8 py-5">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${prop.status === 'For Sale' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'}`}>
+                          {prop.status === 'For Sale' ? (isRtl ? 'للبيع' : 'For Sale') : (isRtl ? 'للإيجار' : 'For Rent')}
+                        </span>
+                      </td>
+                      <td className="px-8 py-5">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${
+                          prop.verificationStatus === 'Verified' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                          : prop.verificationStatus === 'Rejected' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                          : 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
+                        }`}>
+                          {prop.verificationStatus === 'Verified' ? (isRtl ? 'موثق' : 'Verified') : prop.verificationStatus === 'Rejected' ? (isRtl ? 'مرفوض' : 'Rejected') : (isRtl ? 'معلق' : 'Pending')}
+                        </span>
+                      </td>
+                      <td className="px-8 py-5 text-right">
+                        <div className="flex justify-end gap-2">
+                          {prop.verificationStatus === 'Verified' ? (
+                            <button
+                              onClick={() => handleVerifyProperty(prop.id, 'Pending')}
+                              disabled={updating === prop.id}
+                              className="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 hover:bg-orange-500 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
+                            >
+                              {isRtl ? 'إلغاء التوثيق' : 'Unverify'}
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleVerifyProperty(prop.id, 'Verified')}
+                              disabled={updating === prop.id}
+                              className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-600 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
+                            >
+                              {isRtl ? 'توثيق' : 'Verify'}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDeleteProperty(prop.id)}
+                            disabled={updating === prop.id}
+                            className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-600 hover:text-white px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                            title={isRtl ? 'حذف' : 'Delete'}
+                          >
+                            {updating === prop.id ? <Loader2 className="animate-spin" size={14} /> : <Trash2 size={14} />}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'purchases' && (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xl animate-scale-up">
+          <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+            <h2 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+              <CreditCard className="text-accent-600 dark:text-accent-400" />
+              {isRtl ? 'طلبات الشراء' : 'Purchase Requests'}
+            </h2>
+          </div>
+          {purchases.length === 0 ? (
+            <div className="p-20 text-center text-slate-400 dark:text-slate-600">
+              <CreditCard size={48} className="mx-auto mb-4 opacity-20" />
+              <p className="font-medium">{isRtl ? 'لا توجد طلبات شراء بعد' : 'No purchase requests yet.'}</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-black uppercase tracking-widest">
+                  <tr>
+                    <th className="px-8 py-4">{isRtl ? 'العقار' : 'Property'}</th>
+                    <th className="px-8 py-4">{isRtl ? 'المشتري' : 'Buyer'}</th>
+                    <th className="px-8 py-4">{isRtl ? 'التاريخ' : 'Date'}</th>
+                    <th className="px-8 py-4">{isRtl ? 'الحالة' : 'Status'}</th>
+                    <th className="px-8 py-4 text-right">{isRtl ? 'الإجراءات' : 'Actions'}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {purchases.map((purchase) => (
+                    <tr key={purchase.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
+                      <td className="px-8 py-5 font-bold text-slate-900 dark:text-white text-sm">{propertyTitle(purchase.propertyId)}</td>
+                      <td className="px-8 py-5 text-slate-600 dark:text-slate-400 text-sm">{purchaserEmail(purchase.userId)}</td>
+                      <td className="px-8 py-5 text-slate-400 dark:text-slate-500 text-xs whitespace-nowrap">{purchase.createdAt ? new Date(purchase.createdAt).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : '—'}</td>
+                      <td className="px-8 py-5">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${
+                          purchase.status === 'completed' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                          : purchase.status === 'cancelled' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                          : 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
+                        }`}>
+                          {purchase.status === 'completed' ? (isRtl ? 'مكتمل' : 'Completed') : purchase.status === 'cancelled' ? (isRtl ? 'ملغي' : 'Cancelled') : (isRtl ? 'قيد المعالجة' : 'Processing')}
+                        </span>
+                      </td>
+                      <td className="px-8 py-5 text-right">
+                        {purchase.status === 'processing' ? (
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => handlePurchaseStatus(purchase.id, 'completed')}
+                              disabled={updating === purchase.id}
+                              className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-600 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
+                            >
+                              {isRtl ? 'إتمام' : 'Complete'}
+                            </button>
+                            <button
+                              onClick={() => handlePurchaseStatus(purchase.id, 'cancelled')}
+                              disabled={updating === purchase.id}
+                              className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-600 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
+                            >
+                              {isRtl ? 'إلغاء' : 'Cancel'}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'users' && isSuperAdmin && (
         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xl animate-scale-up">
            <div className="overflow-x-auto">
              <table className="w-full text-left border-collapse">
@@ -2797,7 +3060,9 @@ export default function App() {
             <div className="hidden lg:flex items-center gap-8 xl:gap-12">
               <NavLink page="home" label={t.nav_home} />
               <NavLink page="listings" label={t.nav_listings} />
+              <NavLink page="3d-experience" label={isRtl ? 'جولات 3D' : '3D Tours'} />
               <NavLink page="legal" label={t.nav_trust} />
+              {isAdmin && <NavLink page="manage-users" label={isRtl ? 'لوحة التحكم' : 'Dashboard'} />}
               <button 
                 onClick={() => handleNav('ai-chat')} 
                 className={`font-black text-xs transition-all flex items-center gap-2 cursor-pointer px-5 py-2.5 rounded-full uppercase tracking-[0.1em] shadow-sm ${currentPage === 'ai-chat' ? 'bg-brand-600 text-white shadow-brand-200' : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-200 hover:bg-brand-50 dark:hover:bg-brand-900/30 hover:text-brand-600'}`}
@@ -2894,12 +3159,20 @@ export default function App() {
             <button onClick={() => handleNav('listings')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
               {t.nav_listings}
             </button>
+            <button onClick={() => handleNav('3d-experience')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
+              {isRtl ? 'جولات 3D' : '3D Tours'}
+            </button>
             <button onClick={() => handleNav('legal')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
               {t.nav_trust}
             </button>
             {userEmail && (
               <button onClick={() => handleNav('add-listing')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
                 {isRtl ? 'إضافة عقار' : 'Add Listing'}
+              </button>
+            )}
+            {isAdmin && (
+              <button onClick={() => handleNav('manage-users')} className="w-full py-4 text-2xl font-black text-brand-600 dark:text-brand-400 uppercase tracking-tighter hover:text-brand-700 transition-colors">
+                {isRtl ? 'لوحة التحكم' : 'Dashboard'}
               </button>
             )}
             <button onClick={() => handleNav('ai-chat')} className="w-full py-6 mt-6 bg-brand-600 text-white rounded-[2rem] font-black text-2xl uppercase tracking-widest flex items-center justify-center gap-4 shadow-2xl shadow-brand-500/40 active:scale-95 transition-transform">
@@ -2943,7 +3216,15 @@ export default function App() {
             />
             <Features t={t} />
             <div className="bg-slate-100 dark:bg-slate-900/50 py-10">
-               <ComingSoon3D t={t} isRtl={isRtl} />
+               <Experience3DPage
+                 properties={properties}
+                 loading={loadingProps}
+                 onView3D={open3D}
+                 onBrowse={() => handleNav('listings')}
+                 isRtl={isRtl}
+                 limit={3}
+                 onViewAll={() => handleNav('3d-experience')}
+               />
             </div>
             <div className="py-20 max-w-7xl mx-auto px-4">
               <div className="flex justify-between items-end mb-10">
@@ -3062,7 +3343,7 @@ export default function App() {
           </div>
         )}
 
-        {currentPage === 'manage-users' && isSuperAdmin && <SuperAdminDashboard isRtl={isRtl} />}
+        {currentPage === 'manage-users' && isAdmin && <AdminDashboard isRtl={isRtl} isSuperAdmin={isSuperAdmin} />}
         {currentPage === 'ai-chat' && <div className="bg-slate-100 h-full py-8"><AIChat t={t} isRtl={isRtl} properties={properties} userName={userName} onShow3D={open3D} /></div>}
         {currentPage === 'legal' && <LegalCenter t={t} isRtl={isRtl} userEmail={userEmail} />}
         {currentPage === 'about' && <AboutPage onCta={() => handleNav('register')} t={t} isRtl={isRtl} />}
@@ -3073,7 +3354,15 @@ export default function App() {
         {currentPage === 'verification' && <VerificationPage onCta={() => handleNav('legal')} t={t} isRtl={isRtl} />}
         {currentPage === 'tours' && <Tours3DPage onCta={() => handleNav('3d-experience')} t={t} isRtl={isRtl} />}
         {currentPage === '3d' && selectedPropertyId && <Viewer3D property={properties.find(p => p.id === selectedPropertyId)} onClose={() => { setSelectedPropertyId(null); handleNav('listings'); }} t={t} isRtl={isRtl} />}
-        {currentPage === '3d-experience' && <ComingSoon3D t={t} isRtl={isRtl} />}
+        {currentPage === '3d-experience' && (
+          <Experience3DPage
+            properties={properties}
+            loading={loadingProps}
+            onView3D={open3D}
+            onBrowse={() => handleNav('listings')}
+            isRtl={isRtl}
+          />
+        )}
         {currentPage === 'profile' && (
           <ProfilePage 
             t={t} 
