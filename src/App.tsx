@@ -2272,6 +2272,37 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
   const propertyTitle = (id: string) => allProperties.find(p => p.id === id)?.title || `#${id.slice(0, 8)}`;
   const purchaserEmail = (uid: string) => users.find(u => u.id === uid)?.email || `#${uid.slice(0, 8)}`;
 
+  // Firestore stores dates as ISO strings or Timestamps depending on writer
+  const toDate = (v: any): Date | null => {
+    if (!v) return null;
+    if (typeof v?.toDate === 'function') return v.toDate();
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  };
+  const lastSeen = (u: any) => toDate(u.lastLoginAt) ?? toDate(u.createdAt);
+
+  // One person can end up with several auth accounts on the same email
+  // (e.g. Google sign-in + email/password). Collapse them into a single row:
+  // the admin account wins as the primary doc, the freshest login date is kept.
+  const mergedUsers = (() => {
+    const byEmail = new Map<string, any>();
+    for (const u of users) {
+      const key = (u.email || u.id).toLowerCase();
+      const prev = byEmail.get(key);
+      if (!prev) {
+        byEmail.set(key, { ...u, accounts: 1 });
+        continue;
+      }
+      const primary = prev.role === 'admin' ? prev
+        : u.role === 'admin' ? u
+        : (lastSeen(u)?.getTime() ?? 0) > (lastSeen(prev)?.getTime() ?? 0) ? u : prev;
+      const latest = [prev, u].map(lastSeen).filter((d): d is Date => !!d).sort((a, b) => b.getTime() - a.getTime())[0];
+      byEmail.set(key, { ...primary, accounts: prev.accounts + 1, lastLoginAt: latest?.toISOString() ?? primary.lastLoginAt });
+    }
+    // Most recently active first
+    return Array.from(byEmail.values()).sort((a, b) => (lastSeen(b)?.getTime() ?? 0) - (lastSeen(a)?.getTime() ?? 0));
+  })();
+
   const toggleRole = async (userId: string, currentRole: string) => {
     setUpdating(userId);
     const newRole = currentRole === 'admin' ? 'user' : 'admin';
@@ -2382,7 +2413,7 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
       {activeTab === 'stats' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {[
-            { label: isRtl ? 'إجمالي المستخدمين' : 'Total Users', value: users.length, icon: <Users />, color: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' },
+            { label: isRtl ? 'إجمالي المستخدمين' : 'Total Users', value: mergedUsers.length, icon: <Users />, color: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' },
             { label: isRtl ? 'إجمالي العقارات' : 'Total Properties', value: allProperties.length, icon: <Building2 />, color: 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400' },
             { label: isRtl ? 'العقارات الموثقة' : 'Verified Units', value: verifiedCount, icon: <CheckCircle />, color: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400' },
             { label: isRtl ? 'طلبات التوثيق' : 'Pending Verifications', value: pendingProperties.length, icon: <Clock />, color: 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400' },
@@ -2636,12 +2667,13 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                  <tr>
                    <th className="px-8 py-4">{isRtl ? 'المستخدم' : 'User'}</th>
                    <th className="px-8 py-4">{isRtl ? 'البريد الإلكتروني' : 'Email'}</th>
+                   <th className="px-8 py-4">{isRtl ? 'آخر دخول' : 'Last Login'}</th>
                    <th className="px-8 py-4">{isRtl ? 'الدور' : 'Role'}</th>
                    <th className="px-8 py-4 text-right">{isRtl ? 'تغيير الامتيازات' : 'Permissions'}</th>
                  </tr>
                </thead>
                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                 {users.map((user) => (
+                 {mergedUsers.map((user) => (
                    <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                      <td className="px-8 py-6">
                        <div className="flex items-center gap-3">
@@ -2649,9 +2681,20 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                            {user.name?.charAt(0) || 'U'}
                          </div>
                          <div className="font-bold text-slate-900 dark:text-white">{user.name || 'Anonymous'}</div>
+                         {user.accounts > 1 && (
+                           <span
+                             className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-black px-2 py-0.5 rounded-full"
+                             title={isRtl ? `${user.accounts} حسابات بنفس البريد تم دمجها` : `${user.accounts} accounts with this email merged`}
+                           >
+                             ×{user.accounts}
+                           </span>
+                         )}
                        </div>
                      </td>
                      <td className="px-8 py-6 text-slate-600 dark:text-slate-400 text-sm">{user.email}</td>
+                     <td className="px-8 py-6 text-slate-500 dark:text-slate-400 text-xs whitespace-nowrap">
+                       {lastSeen(user)?.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' }) ?? (isRtl ? 'غير مسجل' : '—')}
+                     </td>
                      <td className="px-8 py-6">
                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
                          user.role === 'admin' ? 'bg-accent-100 dark:bg-accent-900/30 text-accent-700 dark:text-accent-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
@@ -2823,6 +2866,10 @@ export default function App() {
             setIsAdmin(userData.role === 'admin' || isSuper);
             setUserName(userData.name || user.displayName);
             setUserFavorites(userData.favorites || []);
+            // Record last seen (fire-and-forget — purely informational for the
+            // admin dashboard, so a failed write must never block sign-in).
+            updateDoc(doc(db, 'users', user.uid), { lastLoginAt: new Date().toISOString() })
+              .catch((err) => console.warn('Could not record lastLoginAt:', err));
           } else {
             setIsAdmin(isSuper);
             setUserName(user.displayName);

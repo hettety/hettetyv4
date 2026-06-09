@@ -63,7 +63,7 @@ service cloud.firestore {
     }
 
     function isValidUser(data) {
-      return data.keys().hasOnly(['uid', 'name', 'email', 'role', 'createdAt', 'phone', 'preferences', 'favorites']) &&
+      return data.keys().hasOnly(['uid', 'name', 'email', 'role', 'createdAt', 'phone', 'preferences', 'favorites', 'lastLoginAt']) &&
              data.keys().hasAll(['uid', 'email', 'role']) &&
              data.uid is string && data.uid.size() < 100 &&
              data.email is string && data.email.size() < 255 &&
@@ -72,7 +72,8 @@ service cloud.firestore {
              (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() < 100) || data.createdAt is timestamp) &&
              (!('phone' in data) || (data.phone is string && data.phone.size() < 50)) &&
              (!('preferences' in data) || (data.preferences is string && data.preferences.size() < 10000)) &&
-             (!('favorites' in data) || (data.favorites is list && data.favorites.size() <= 100));
+             (!('favorites' in data) || (data.favorites is list && data.favorites.size() <= 100)) &&
+             (!('lastLoginAt' in data) || (data.lastLoginAt is string && data.lastLoginAt.size() < 100) || data.lastLoginAt is timestamp);
     }
 
     function isValidProperty(data) {
