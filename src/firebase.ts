@@ -73,7 +73,8 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Test Connection
+// Test Connection (dev only — avoids a guaranteed permission-denied read on
+// every production page load, since /test/connection has no security rule)
 async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
@@ -83,7 +84,9 @@ async function testConnection() {
     }
   }
 }
-testConnection();
+if (import.meta.env.DEV) {
+  testConnection();
+}
 
 export {
   signInWithPopup,

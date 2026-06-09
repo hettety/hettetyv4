@@ -16,8 +16,9 @@ import {
   Plus, History, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, MessageSquare, Sun, Moon, Heart
 } from 'lucide-react';
 import { GoogleGenAI, Type } from '@google/genai';
+import { GEMINI_MODEL, getGeminiApiKey, extract3DMarker } from './ai';
 import { AddListingPage } from './components/add-listing-page';
-import { INITIAL_ENTITY_DATA, TRANSLATIONS } from './constants';
+import { INITIAL_ENTITY_DATA, TRANSLATIONS, SUPER_ADMIN_EMAILS } from './constants';
 import { Property, ChatMessage, UserDocument, Page, Notification, ChatSession } from './types';
 import imageCompression from 'browser-image-compression';
 import { api } from './mockApi';
@@ -36,6 +37,15 @@ import PrivacyPage from './components/PrivacyPage';
 import CookiePolicyPage from './components/CookiePolicyPage';
 import CookieConsent from './components/CookieConsent';
 import PremiumHero from './components/PremiumHero';
+
+// Lazy-loaded so the heavy three.js bundle is only fetched when a 3D tour is opened
+const Property3DViewer = React.lazy(() => import('./components/Property3DViewer'));
+
+const Loading3DFallback = () => (
+  <div className="fixed inset-0 z-[70] bg-black flex items-center justify-center">
+    <Loader2 className="w-10 h-10 text-brand-500 animate-spin" />
+  </div>
+);
 
 // --- Components ---
 
@@ -363,7 +373,7 @@ const AuthForm = ({ type, onSwitch, onSubmit, t, isRtl }: { type: 'login' | 'reg
             uid: user.uid,
             name: user.displayName || '',
             email: user.email || '',
-            role: (user.email === 'abdallahahmedpilot2426@gmail.com' || user.email === 'marwaneltaweel0@gmail.com' || user.email === 'pro.mahmoud.h@gmail.com') ? 'admin' : 'user',
+            role: SUPER_ADMIN_EMAILS.includes(user.email || '') ? 'admin' : 'user',
             createdAt: new Date().toISOString()
           });
         }
@@ -423,7 +433,7 @@ const AuthForm = ({ type, onSwitch, onSubmit, t, isRtl }: { type: 'login' | 'reg
           uid: result.user.uid,
           name: name,
           email: email,
-          role: (email === 'abdallahahmedpilot2426@gmail.com' || email === 'marwaneltaweel0@gmail.com' || email === 'pro.mahmoud.h@gmail.com') ? 'admin' : 'user',
+          role: SUPER_ADMIN_EMAILS.includes(email) ? 'admin' : 'user',
           createdAt: new Date().toISOString()
         });
         onSubmit(email);
@@ -659,7 +669,7 @@ const Features = ({ t }: { t: any }) => (
   </section>
 );
 
-const AIChat = ({ t, isRtl, properties, userName }: { t: any, isRtl: boolean, properties: Property[], userName?: string | null }) => {
+const AIChat = ({ t, isRtl, properties, userName, onShow3D }: { t: any, isRtl: boolean, properties: Property[], userName?: string | null, onShow3D?: (propertyId: string) => void }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -730,12 +740,11 @@ const AIChat = ({ t, isRtl, properties, userName }: { t: any, isRtl: boolean, pr
   // Initialize Chat
   useEffect(() => {
     try {
-      // Safely access process.env to avoid ReferenceError in Vercel browser build
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : undefined);
+      const apiKey = getGeminiApiKey();
       if (apiKey) {
         const ai = new GoogleGenAI({ apiKey });
         chatRef.current = ai.chats.create({
-          model: "gemini-3-flash-preview",
+          model: GEMINI_MODEL,
           config: {
             systemInstruction: `You are HETTETY AI, the official real estate assistant for HETTETY — Egypt's premier verified property platform. Your goal is to guide users through property data with the expertise of a seasoned broker and the precision of a financial analyst.
 
@@ -763,7 +772,12 @@ ${userName ? `The user's name is ${userName}. Address them by name if appropriat
 
 ## Property Data
 You have access to the following properties on our platform:
-${JSON.stringify(properties.map(p => ({ id: p.id, title: p.title, price: p.price, location: p.location, type: p.status, verificationStatus: p.verificationStatus })), null, 2)}
+${JSON.stringify(properties.map(p => ({ id: p.id, title: p.title, price: p.price, location: p.location, type: p.status, verificationStatus: p.verificationStatus, hasImages: !!(p.images?.length || p.imageUrl) })), null, 2)}
+
+## 3D Viewing (Special Capability)
+You can launch an immersive 3D gallery of a property's photos. When the user asks to SEE a property, view it in 3D, take a virtual tour, or says things like "عرضلي الشقة 3D" / "عايز اشوف العقار" / "warini el sha2a", you MUST:
+1. Reply with a short, enthusiastic confirmation in the user's language (e.g. "تمام! بفتحلك الجولة ثلاثية الأبعاد للعقار ده الآن 🏠").
+2. Append the exact token [SHOW_3D:<propertyId>] at the very end of your reply, using the matching property's id from the Property Data above. Only include this token for properties where hasImages is true. Never invent ids.
 
 ## Escalation
 If a user has a complex legal dispute, a payment issue, or needs urgent support, always direct them to:
@@ -778,7 +792,7 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
     } catch (e) {
       console.error("Failed to initialize AI chat", e);
     }
-  }, [properties, isRtl, userName]);
+  }, [properties, userName]);
 
   // Re-sync welcome message when language changes
   useEffect(() => {
@@ -821,15 +835,24 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
         aiText = response.success ? response.data : "Mock API failed";
       }
 
+      // If the model asked to open the 3D viewer, strip the marker and launch it
+      const { cleanText, show3D, propertyId } = extract3DMarker(aiText || '');
+      if (show3D && propertyId && onShow3D) {
+        aiText = cleanText || (isRtl ? 'جاري فتح الجولة ثلاثية الأبعاد...' : 'Opening the 3D tour...');
+        onShow3D(propertyId);
+      }
+
       const modelMsg: ChatMessage = { role: 'model', text: aiText, timestamp: new Date() };
       const finalMessages = [...newMessages, modelMsg];
       setMessages(finalMessages);
 
       // Persistence logic
       if (auth.currentUser) {
+        // newMessages already contains the user's message, so a fresh session has exactly 1
+        const isFirstMessage = newMessages.length === 1;
         const sessionData = {
           userId: auth.currentUser.uid,
-          title: messages.length === 0 ? (originalInput.length > 30 ? originalInput.substring(0, 30) + '...' : originalInput) : (sessions.find(s => s.id === currentSessionId)?.title || originalInput),
+          title: isFirstMessage ? (originalInput.length > 30 ? originalInput.substring(0, 30) + '...' : originalInput) : (sessions.find(s => s.id === currentSessionId)?.title || originalInput),
           messages: finalMessages.map(m => ({
             role: m.role,
             text: m.text,
@@ -846,11 +869,13 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
         }
       }
     } catch (error: any) {
+      // Log without re-throwing: handleFirestoreError throws, which used to skip
+      // setIsLoading(false) and leave the chat spinner stuck forever.
       console.error("Chat error:", error);
-      handleFirestoreError(error, OperationType.WRITE, 'chat_sessions');
+      setMessages(prev => [...prev, { role: 'model', text: isRtl ? 'حدث خطأ أثناء حفظ المحادثة. حاول مرة أخرى.' : 'An error occurred while saving the chat. Please try again.', timestamp: new Date() }]);
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   };
 
   const handleNewChat = () => {
@@ -1442,7 +1467,11 @@ const LegalCenter = ({ t, isRtl, userEmail }: { t: any, isRtl: boolean, userEmai
                     <p className="font-semibold mb-4 text-slate-900 dark:text-white">{isRtl ? 'محتوى المستند:' : 'Document Content:'}</p>
                     {viewingDoc.content && viewingDoc.content.startsWith('data:text') ? (
                       <div className="p-4 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-lg whitespace-pre-wrap font-mono text-xs overflow-auto max-h-64">
-                        {atob(viewingDoc.content.split(',')[1])}
+                        {(() => {
+                          // atob throws on malformed base64 — never let it crash the render
+                          try { return atob(viewingDoc.content.split(',')[1] || ''); }
+                          catch { return isRtl ? 'تعذر عرض محتوى المستند.' : 'Unable to display document content.'; }
+                        })()}
                       </div>
                     ) : (
                       <>
@@ -1486,39 +1515,28 @@ const LegalCenter = ({ t, isRtl, userEmail }: { t: any, isRtl: boolean, userEmai
   );
 };
 
-const Viewer3D = ({ propertyId, onClose, t, isRtl }: { propertyId: string, onClose: () => void, t: any, isRtl: boolean }) => {
+const Viewer3D = ({ property, onClose, isRtl }: { property: Property | undefined, onClose: () => void, t: any, isRtl: boolean }) => {
+  const images = property
+    ? (property.images && property.images.length > 0 ? property.images : [property.imageUrl]).filter(Boolean)
+    : [];
+
   return (
-    <div className="fixed inset-0 z-[60] bg-black flex flex-col animate-fade-in">
-       {/* Toolbar */}
-       <div className="absolute top-0 w-full p-4 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent z-10">
-          <div className="text-white">
-            <h3 className="font-bold text-lg">{t.nav_3d_exp || 'Virtual Tour'}</h3>
-            <p className="text-sm text-white/70">Property #{propertyId}</p>
-          </div>
-          <button onClick={onClose} className="bg-white/10 hover:bg-white/20 p-2 rounded-full text-white backdrop-blur cursor-pointer"><X /></button>
-       </div>
-       
-       {/* Main Viewport */}
-       <div className="flex-1 relative flex items-center justify-center bg-slate-900">
-          <div className="text-center animate-slide-up">
-             <Box className="w-16 h-16 text-brand-500 mx-auto mb-4 opacity-50" />
-             <h2 className="text-3xl font-bold text-white mb-2">{isRtl ? 'قريباً' : 'Coming Soon'}</h2>
-             <p className="text-slate-400 max-w-md mx-auto mb-8">
-               {isRtl ? 'ميزة العرض ثلاثي الأبعاد قيد التطوير حالياً وسيتم إطلاقها قريباً.' : 'The 3D virtual tour feature is currently under development and will be available soon.'}
-             </p>
-             <button onClick={onClose} className="bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-full backdrop-blur border border-white/20 transition-colors cursor-pointer">
-               {isRtl ? 'العودة للعقارات' : 'Back to Listings'}
-             </button>
-          </div>
-       </div>
-    </div>
+    <React.Suspense fallback={<Loading3DFallback />}>
+      <Property3DViewer
+        images={images}
+        title={property?.title}
+        onClose={onClose}
+        isRtl={isRtl}
+      />
+    </React.Suspense>
   );
 };
 
 const PropertyModal = ({ property, onClose, onPurchase, t, isRtl }: { property: Property, onClose: () => void, onPurchase: (id: string) => void, t: any, isRtl: boolean }) => {
   const [activeTab, setActiveTab] = useState<'details' | 'ai'>('details');
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const displayImages = property.images && property.images.length > 0 ? property.images : [property.imageUrl];
+  const [show3D, setShow3D] = useState(false);
+  const displayImages = (property.images && property.images.length > 0 ? property.images : [property.imageUrl]).filter(Boolean);
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'model', text: isRtl ? `أهلاً! أنا المساعد الذكي الخاص بهذا العقار (${property.title}). اسألني عن تفاصيل العقار، الأوراق القانونية، حالة إعادة البيع، أو رقم الشهر العقاري.` : `Hello! I'm the AI assistant for this property (${property.title}). Ask me about its details, legal documents, resale status, or registry number.`, timestamp: new Date() }
@@ -1544,7 +1562,7 @@ const PropertyModal = ({ property, onClose, onPurchase, t, isRtl }: { property: 
     setIsLoading(true);
 
     try {
-      const apiKey = process.env.GEMINI_API_KEY || import.meta.env.VITE_GEMINI_API_KEY;
+      const apiKey = getGeminiApiKey();
       if (apiKey) {
         const genAI = new GoogleGenAI({ apiKey });
         const systemPrompt = `You are an expert broker and financial analyst for a specific real estate property on HETTETY — Egypt's premier verified property platform. Your goal is to guide users through this property's data with professional insight.
@@ -1571,17 +1589,26 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
 ## Interaction Rules
 - When asked "Is this a good investment?": Analyze the price vs. area average, and explicitly highlight the Legal Safety based on the Registry Number and Court Signature Validity status.
 - Multi-Modal: Use data from images (like floor plans, if available) to explain spatial efficiency.
-- Language: Keep your answers helpful and in the exact language the user speaks (English, Egyptian Arabic, Franco). Do not invent information not in the data provided.`;
-        
+- Language: Keep your answers helpful and in the exact language the user speaks (English, Egyptian Arabic, Franco). Do not invent information not in the data provided.
+- 3D Viewing (Special Capability): You can launch an immersive 3D gallery of this property's photos. When the user asks to see the apartment in 3D, take a virtual tour, walk through it, or says things like "عرضلي الشقة 3D" / "عايز أشوفها مجسمة" / "warini el sha2a 3D", reply with a short enthusiastic confirmation in the user's language and append the exact token [SHOW_3D] at the very end of your reply.`;
+
         const response = await genAI.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: GEMINI_MODEL,
           contents: newMessages.map(m => ({ role: m.role === 'model' ? 'model' : 'user', parts: [{ text: m.text }] })),
           config: {
             systemInstruction: systemPrompt
           }
         });
 
-        const aiText = response.text || "Sorry, I couldn't process that request.";
+        let aiText = response.text || "Sorry, I couldn't process that request.";
+
+        // If the model asked to open the 3D viewer, strip the marker and launch it
+        const { cleanText, show3D: wants3D } = extract3DMarker(aiText);
+        if (wants3D) {
+          aiText = cleanText || (isRtl ? 'جاري فتح الجولة ثلاثية الأبعاد...' : 'Opening the 3D tour...');
+          setShow3D(true);
+        }
+
         setMessages([...newMessages, { role: 'model', text: aiText, timestamp: new Date() }]);
       } else {
         // Fallback mock
@@ -1618,6 +1645,14 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
                   <video src={property.videoUrl} className="w-full h-full object-cover" controls playsInline />
                 ) : (
                   <img src={displayImages[currentImageIndex]} alt={property.title} className="w-full h-full object-cover" />
+                )}
+                {displayImages.length > 0 && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShow3D(true); }}
+                    className="absolute top-4 left-4 bg-black/60 hover:bg-brand-600 text-white backdrop-blur px-4 py-2 rounded-full text-sm font-bold transition-colors flex items-center gap-2 cursor-pointer z-10"
+                  >
+                    <Box size={16} /> {isRtl ? 'جولة 3D' : 'View in 3D'}
+                  </button>
                 )}
                 {displayImages.length > 1 && !property.videoUrl && (
                   <>
@@ -1745,6 +1780,17 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
           )}
         </div>
       </div>
+
+      {show3D && (
+        <React.Suspense fallback={<Loading3DFallback />}>
+          <Property3DViewer
+            images={displayImages}
+            title={property.title}
+            onClose={() => setShow3D(false)}
+            isRtl={isRtl}
+          />
+        </React.Suspense>
+      )}
     </div>
   );
 };
@@ -1856,7 +1902,7 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
           <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="w-20 h-20 bg-brand-100 dark:bg-brand-900 text-brand-600 dark:text-brand-400 rounded-full flex items-center justify-center text-2xl font-bold mb-4 relative">
               {profile.name.charAt(0)}
-              {['abdallahahmedpilot2426@gmail.com', 'marwaneltaweel0@gmail.com', 'pro.mahmoud.h@gmail.com'].includes(userEmail || '') && (
+              {SUPER_ADMIN_EMAILS.includes(userEmail || '') && (
                 <div className="absolute -bottom-1 -right-1 bg-brand-600 text-white p-1 rounded-full border-2 border-white dark:border-slate-900" title="Admin">
                   <Shield size={14} />
                 </div>
@@ -2351,7 +2397,7 @@ const SuperAdminDashboard = ({ isRtl }: { isRtl: boolean }) => {
                        </span>
                      </td>
                      <td className="px-8 py-6 text-right">
-                       {user.email !== 'marwaneltaweel0@gmail.com' && user.email !== 'abdallahahmedpilot2426@gmail.com' && user.email !== 'pro.mahmoud.h@gmail.com' ? (
+                       {!SUPER_ADMIN_EMAILS.includes(user.email || '') ? (
                          <Button 
                            onClick={() => toggleRole(user.id, user.role)}
                            disabled={updating === user.id}
@@ -2491,11 +2537,19 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // Keep the active notifications listener in a closure-scoped variable so it
+    // is reliably cleaned up on user switch AND on unmount (previously it was
+    // stashed on `window`, leaking the listener when the component unmounted).
+    let unsubNotifications: (() => void) | null = null;
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      // Always drop the previous user's listener before doing anything else
+      unsubNotifications?.();
+      unsubNotifications = null;
+
       if (user) {
         setUserEmail(user.email);
-        const superAdminEmails = ["marwaneltaweel0@gmail.com", "abdallahahmedpilot2426@gmail.com", "pro.mahmoud.h@gmail.com"];
-        const isSuper = superAdminEmails.includes(user.email || "");
+        const isSuper = SUPER_ADMIN_EMAILS.includes(user.email || "");
         setIsSuperAdmin(isSuper);
 
         // Fetch user data from Firestore to get role and name
@@ -2519,29 +2573,25 @@ export default function App() {
 
         // Fetch notifications
         const q = query(collection(db, 'notifications'), where('userId', '==', user.uid));
-        const unsubNotifications = onSnapshot(q, (snapshot) => {
+        unsubNotifications = onSnapshot(q, (snapshot) => {
           const notifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Notification));
           setNotifications(notifs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
         }, (error) => {
           console.error('Error fetching notifications:', error);
         });
-        
-        // Store unsub function to cleanup later if needed
-        (window as any).unsubNotifications = unsubNotifications;
-
       } else {
         setUserEmail(null);
         setUserName(null);
         setIsAdmin(false);
         setIsSuperAdmin(false);
         setNotifications([]);
-        if ((window as any).unsubNotifications) {
-          (window as any).unsubNotifications();
-        }
       }
       setIsAuthReady(true);
     });
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      unsubNotifications?.();
+    };
   }, []);
 
   const handleLogout = async () => {
@@ -2583,8 +2633,7 @@ export default function App() {
     
     setIsAiSearching(true);
     try {
-      // Safely access process.env to avoid ReferenceError in Vercel browser build
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : undefined);
+      const apiKey = getGeminiApiKey();
       if (!apiKey) {
         console.warn("GEMINI_API_KEY is missing. AI search will not work.");
         setAiFilteredIds(null);
@@ -2600,7 +2649,7 @@ export default function App() {
       `;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: GEMINI_MODEL,
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
@@ -2614,11 +2663,11 @@ export default function App() {
 
       const text = response.text;
       const ids = JSON.parse(text || "[]");
-      setAiFilteredIds(ids);
+      // Guard against the model returning something that isn't a string array
+      setAiFilteredIds(Array.isArray(ids) ? ids.filter((id: unknown) => typeof id === 'string') : null);
     } catch (err: any) {
       console.error("AI Search Error:", err);
-      alert(`AI Search Error: ${err?.message || String(err)}. Please check your API key.`);
-      // Fallback to null if error
+      // Fall back to plain text search instead of interrupting the user with an alert
       setAiFilteredIds(null);
     } finally {
       setIsAiSearching(false);
@@ -3014,7 +3063,7 @@ export default function App() {
         )}
 
         {currentPage === 'manage-users' && isSuperAdmin && <SuperAdminDashboard isRtl={isRtl} />}
-        {currentPage === 'ai-chat' && <div className="bg-slate-100 h-full py-8"><AIChat t={t} isRtl={isRtl} properties={properties} userName={userName} /></div>}
+        {currentPage === 'ai-chat' && <div className="bg-slate-100 h-full py-8"><AIChat t={t} isRtl={isRtl} properties={properties} userName={userName} onShow3D={open3D} /></div>}
         {currentPage === 'legal' && <LegalCenter t={t} isRtl={isRtl} userEmail={userEmail} />}
         {currentPage === 'about' && <AboutPage onCta={() => handleNav('register')} t={t} isRtl={isRtl} />}
         {currentPage === 'terms' && <TermsPage t={t} isRtl={isRtl} />}
@@ -3023,7 +3072,7 @@ export default function App() {
         {currentPage === 'buy' && <BuyPropertyPage onCta={() => handleNav('listings')} t={t} isRtl={isRtl} />}
         {currentPage === 'verification' && <VerificationPage onCta={() => handleNav('legal')} t={t} isRtl={isRtl} />}
         {currentPage === 'tours' && <Tours3DPage onCta={() => handleNav('3d-experience')} t={t} isRtl={isRtl} />}
-        {currentPage === '3d' && selectedPropertyId && <Viewer3D propertyId={selectedPropertyId} onClose={() => { setSelectedPropertyId(null); handleNav('listings'); }} t={t} isRtl={isRtl} />}
+        {currentPage === '3d' && selectedPropertyId && <Viewer3D property={properties.find(p => p.id === selectedPropertyId)} onClose={() => { setSelectedPropertyId(null); handleNav('listings'); }} t={t} isRtl={isRtl} />}
         {currentPage === '3d-experience' && <ComingSoon3D t={t} isRtl={isRtl} />}
         {currentPage === 'profile' && (
           <ProfilePage 

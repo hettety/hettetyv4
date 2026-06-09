@@ -2,6 +2,15 @@ export const INITIAL_ENTITY_DATA = {
   shortDescription: "HETTETY is a premium real estate platform powered by AI, offering verified listings, 3D tours, and legal assistance."
 };
 
+// Single source of truth for privileged accounts.
+// IMPORTANT: must stay in sync with isSuperAdmin() in firestore.rules,
+// otherwise registration for these accounts is rejected by security rules.
+export const SUPER_ADMIN_EMAILS = [
+  'abdallahahmedpilot2426@gmail.com',
+  'marwaneltaweel0@gmail.com',
+  'pro.mahmoud.h@gmail.com',
+];
+
 export const TRANSLATIONS = {
   en: {
     prop_forsale: "For Sale",

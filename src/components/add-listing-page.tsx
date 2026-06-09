@@ -1,10 +1,33 @@
 import React, { useState } from 'react';
-import { 
-  CheckCircle, Loader2, PlusCircle, Upload, PlayCircle, Shield, ArrowRight, ArrowLeft, Wand2, FileText, Image as ImageIcon
+import {
+  CheckCircle, Loader2, PlusCircle, Upload, PlayCircle, Shield, ArrowRight, ArrowLeft, Wand2, FileText, Image as ImageIcon, X
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { GoogleGenAI } from '@google/genai';
+import { GEMINI_MODEL, getGeminiApiKey } from '../ai';
+import { storage, ref, uploadBytes, getDownloadURL } from '../firebase';
 import { Property } from '../types';
+
+/** Reads a File as a data URL, promisified so errors stay inside the caller's try/catch. */
+const fileToDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result as string);
+  reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'));
+  reader.readAsDataURL(file);
+});
+
+/**
+ * Uploads media to Firebase Storage and returns its public URL.
+ * Media used to be stored as base64 data-URLs directly inside the Firestore
+ * property document, which blows past Firestore's 1MB document limit as soon
+ * as a few photos are attached — the listing save would simply fail.
+ */
+const uploadToStorage = async (file: Blob, originalName: string) => {
+  const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80);
+  const storageRef = ref(storage, `properties/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`);
+  await uploadBytes(storageRef, file);
+  return getDownloadURL(storageRef);
+};
 
 export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onAdd: (prop: Omit<Property, 'id'>) => Promise<void>, t: any, isRtl: boolean, isAdmin: boolean, isSuperAdmin: boolean }) => {
   const [step, setStep] = useState(1);
@@ -24,16 +47,17 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
   const generateDescription = async () => {
     try {
       setGeneratingDesc(true);
-      const apiKey = process.env.GEMINI_API_KEY || import.meta.env.VITE_GEMINI_API_KEY;
+      const apiKey = getGeminiApiKey();
       if (!apiKey) throw new Error("No API Key");
       const ai = new GoogleGenAI({ apiKey });
       const prompt = `Write a succinct, professional real estate description for a property in ${formData.location} with ${formData.bedrooms} bedrooms, ${formData.bathrooms} bathrooms, an area of ${formData.area} sqm, priced at ${formData.price} EGP. Status: ${formData.status}. ${isRtl ? 'Write it in Arabic.' : 'Write it in English.'}`;
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: GEMINI_MODEL,
         contents: prompt
       });
       setFormData(prev => ({ ...prev, description: response.text || "" }));
     } catch (e) {
+      console.error("Description generation failed", e);
       alert(isRtl ? "فشل توليد الوصف" : "Failed to generate description");
     } finally {
       setGeneratingDesc(false);
@@ -42,115 +66,108 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
 
   const handleDocumentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if(!file) return;
+    e.target.value = ''; // allow re-selecting the same file
+    if (!file) return;
     setExtractingOCR(true);
     try {
-      const apiKey = process.env.GEMINI_API_KEY || import.meta.env.VITE_GEMINI_API_KEY;
-       if (!apiKey) throw new Error("No API Key");
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64 = (reader.result as string).split(',')[1];
-        const ai = new GoogleGenAI({ apiKey });
-        const response = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: [
-            { role: 'user', parts: [
-              { text: "Extract the official Registry Number (رقم المشهر او رقم الشهر العقاري) from this real estate deed/document. Return only the extracted number. If not found, return 'NOT_FOUND'." },
-              { inlineData: { data: base64, mimeType: file.type } }
-            ]}
-          ]
-        });
-        const extracted = response.text?.trim();
-        if(extracted && extracted !== 'NOT_FOUND' && !extracted.includes('NOT_FOUND')) {
-          setFormData(prev => ({ ...prev, registrationNumber: extracted }));
-          alert(isRtl ? 'تم استخراج رقم الشهر العقاري بنجاح' : 'Registry Number extracted successfully');
-        } else {
-          alert(isRtl ? 'لم يتم العثور على رقم الشهر العقاري' : 'Registry Number not found');
-        }
-        setExtractingOCR(false);
-      };
-      reader.readAsDataURL(file);
-    } catch (e) {
+      const apiKey = getGeminiApiKey();
+      if (!apiKey) throw new Error("No API Key");
+      // await the read so any failure below is caught and the spinner always stops
+      const base64 = (await fileToDataUrl(file)).split(',')[1];
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: [
+          { role: 'user', parts: [
+            { text: "Extract the official Registry Number (رقم المشهر او رقم الشهر العقاري) from this real estate deed/document. Return only the extracted number. If not found, return 'NOT_FOUND'." },
+            { inlineData: { data: base64, mimeType: file.type } }
+          ]}
+        ]
+      });
+      const extracted = response.text?.trim();
+      if(extracted && !extracted.includes('NOT_FOUND')) {
+        setFormData(prev => ({ ...prev, registrationNumber: extracted }));
+        alert(isRtl ? 'تم استخراج رقم الشهر العقاري بنجاح' : 'Registry Number extracted successfully');
+      } else {
+        alert(isRtl ? 'لم يتم العثور على رقم الشهر العقاري' : 'Registry Number not found');
+      }
+    } catch (err) {
+      console.error("OCR failed", err);
+      alert(isRtl ? 'فشل الاستخراج الذكي' : 'OCR Failed');
+    } finally {
       setExtractingOCR(false);
-      alert('OCR Failed');
     }
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
+  // Single pipeline for both the file picker and drag & drop:
+  // compress → upload to Firebase Storage → keep only the lightweight URL.
+  const processImageFiles = async (files: File[]) => {
+    const imageFiles = files.filter(f => f.type.startsWith('image/'));
+    if (!imageFiles.length) return;
 
     setUploading(true);
-    setUploadProgress(10);
-    const newImages = [...images];
+    setUploadProgress(5);
+    const uploadedUrls: string[] = [];
+    let failures = 0;
 
-    for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (!file.type.startsWith('image/')) continue;
-        
-        const options = { maxSizeMB: 0.1, maxWidthOrHeight: 800, useWebWorker: true };
-        try {
-            let uploadFile = await imageCompression(file, options);
-            const reader = new FileReader();
-            await new Promise<void>((resolve) => {
-                reader.onloadend = () => {
-                    newImages.push(reader.result as string);
-                    resolve();
-                };
-                reader.readAsDataURL(uploadFile);
-            });
-            setUploadProgress(10 + Math.round(((i + 1) / files.length) * 80));
-        } catch (err) {
-            console.error("Compression failed", err);
-        }
+    for (let i = 0; i < imageFiles.length; i++) {
+      const file = imageFiles[i];
+      // Storage hosts the file now, so we can afford much better quality than
+      // the old 0.1MB/800px settings used to squeeze base64 into Firestore.
+      const options = { maxSizeMB: 0.5, maxWidthOrHeight: 1920, useWebWorker: true };
+      try {
+        const compressed = await imageCompression(file, options);
+        uploadedUrls.push(await uploadToStorage(compressed, file.name));
+      } catch (err) {
+        failures++;
+        console.error("Image upload failed", err);
+      }
+      setUploadProgress(5 + Math.round(((i + 1) / imageFiles.length) * 90));
     }
-    
-    setImages(newImages);
-    if (!formData.imageUrl && newImages.length > 0) {
-        setFormData(prev => ({ ...prev, imageUrl: newImages[0] }));
+
+    if (uploadedUrls.length) {
+      setImages(prev => [...prev, ...uploadedUrls]);
+      setFormData(prev => (prev.imageUrl ? prev : { ...prev, imageUrl: uploadedUrls[0] }));
+    }
+    if (failures) {
+      alert(isRtl ? `تعذر رفع ${failures} من الصور` : `${failures} image(s) failed to upload`);
     }
     setUploadProgress(100);
-    setTimeout(() => setUploading(false), 500);
+    setTimeout(() => setUploading(false), 400);
   };
 
-  const handleDrop = async (e: React.DragEvent) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = ''; // allow re-selecting the same files
+    processImageFiles(files);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    const files = Array.from(e.dataTransfer.files);
-    handleFiles(files);
+    processImageFiles(Array.from(e.dataTransfer.files));
   };
 
-  const handleFiles = async (files: File[]) => {
-      setUploading(true);
-      setUploadProgress(10);
-      const newImages = [...images];
-  
-      for (let i = 0; i < files.length; i++) {
-          const file = files[i];
-          if (!file.type.startsWith('image/')) continue;
-          
-          const options = { maxSizeMB: 0.1, maxWidthOrHeight: 800, useWebWorker: true };
-          try {
-              let uploadFile = await imageCompression(file, options);
-              const reader = new FileReader();
-              await new Promise<void>((resolve) => {
-                  reader.onloadend = () => {
-                      newImages.push(reader.result as string);
-                      resolve();
-                  };
-                  reader.readAsDataURL(uploadFile);
-              });
-              setUploadProgress(10 + Math.round(((i + 1) / files.length) * 80));
-          } catch (err) {
-              console.error("Compression failed", err);
-          }
-      }
-      
-      setImages(newImages);
-      if (!formData.imageUrl && newImages.length > 0) {
-          setFormData(prev => ({ ...prev, imageUrl: newImages[0] }));
-      }
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    // Storage upload lifts the old 500KB ceiling that base64-in-Firestore imposed
+    if (file.size > 50 * 1024 * 1024) {
+      alert(isRtl ? 'حجم الفيديو يجب أن يكون أقل من 50 ميجابايت.' : 'Video must be under 50MB.');
+      return;
+    }
+    setUploading(true);
+    setUploadProgress(30);
+    try {
+      const url = await uploadToStorage(file, file.name);
+      setFormData(prev => ({ ...prev, videoUrl: url }));
       setUploadProgress(100);
-      setTimeout(() => setUploading(false), 500);
+    } catch (err) {
+      console.error("Video upload failed", err);
+      alert(isRtl ? 'فشل رفع الفيديو' : 'Video upload failed');
+    } finally {
+      setTimeout(() => setUploading(false), 400);
+    }
   };
 
   const handleSubmit = async () => {
@@ -188,18 +205,22 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
     if (formData.videoUrl) newProperty.videoUrl = formData.videoUrl;
     if (formData.digitalTwinUrl) newProperty.digitalTwinUrl = formData.digitalTwinUrl;
 
-    await onAdd(newProperty);
-    
-    setSubmitting(false);
-    setSuccessMessage(isRtl ? 'تم إضافة العقار بنجاح وتم نشره على المنصة.' : 'Property added successfully and published to the platform.');
-    
-    setFormData({
-      title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '',
-      imageUrl: '', videoUrl: '', digitalTwinUrl: '', status: 'For Sale',
-      registrationNumber: '', courtSignatureValidity: false, isResale: false
-    });
-    setImages([]);
-    setStep(1);
+    try {
+      await onAdd(newProperty);
+      setSuccessMessage(isRtl ? 'تم إضافة العقار بنجاح وتم نشره على المنصة.' : 'Property added successfully and published to the platform.');
+      setFormData({
+        title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '',
+        imageUrl: '', videoUrl: '', digitalTwinUrl: '', status: 'For Sale',
+        registrationNumber: '', courtSignatureValidity: false, isResale: false
+      });
+      setImages([]);
+      setStep(1);
+    } catch (err) {
+      console.error("Failed to publish property", err);
+      alert(isRtl ? 'فشل نشر العقار، حاول مرة أخرى.' : 'Failed to publish the property. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (successMessage) {
@@ -333,8 +354,16 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
                           {images.map((img, i) => (
                               <div key={i} className="relative aspect-square rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm group">
                                   <img src={img} className="w-full h-full object-cover transition-transform group-hover:scale-110" alt="Preview"/>
-                                  <button onClick={() => setImages(imgs => imgs.filter((_, idx) => idx !== i))} className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-600">
-                                      <Upload className="rotate-45" size={12} /> {/* Using Upload rotated as an X, but let's just use CSS */}
+                                  <button onClick={() => {
+                                      const removed = images[i];
+                                      const next = images.filter((_, idx) => idx !== i);
+                                      setImages(next);
+                                      // keep the main image in sync when it gets deleted
+                                      if (formData.imageUrl === removed) {
+                                        setFormData(prev => ({ ...prev, imageUrl: next[0] || '' }));
+                                      }
+                                  }} className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-600">
+                                      <X size={12} />
                                       <span className="sr-only">Delete</span>
                                   </button>
                                   {i === 0 && <span className="absolute bottom-2 left-2 bg-brand-600 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded shadow">Main</span>}
@@ -352,24 +381,11 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
                     </div>
                   </label>
                   <div className="relative group">
-                    <input 
-                      type="file" 
+                    <input
+                      type="file"
                       accept="video/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          if (file.size > 500 * 1024) {
-                            alert(isRtl ? 'حجم الفيديو يجب أن يكون أقل من 500 كيلوبايت لضمان سرعة التحميل.' : 'Video must be under 500KB to ensure fast loading.');
-                            return;
-                          }
-                          const reader = new FileReader();
-                          reader.onloadend = () => {
-                            setFormData(prev => ({ ...prev, videoUrl: reader.result as string }));
-                          };
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                      className="hidden" 
+                      onChange={handleVideoUpload}
+                      className="hidden"
                       id="video-upload"
                       disabled={uploading}
                     />
@@ -388,7 +404,7 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
                          <div className="text-center p-4">
                             <Upload className="text-slate-400 mx-auto mb-2 group-hover:text-brand-500 transition-colors" size={32} />
                             <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{isRtl ? 'انقر لرفع فيديو' : 'Click to Upload Video'}</p>
-                            <p className="text-xs text-slate-500 mt-1">{isRtl ? 'الحد الأقصى 500 كيلوبايت' : 'Max size 500KB'}</p>
+                            <p className="text-xs text-slate-500 mt-1">{isRtl ? 'الحد الأقصى 50 ميجابايت' : 'Max size 50MB'}</p>
                          </div>
                       )}
                     </label>

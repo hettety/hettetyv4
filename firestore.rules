@@ -54,9 +54,11 @@ service cloud.firestore {
     }
 
     function isSuperAdmin() {
-      return isAuthenticated() && 
+      // Must stay in sync with SUPER_ADMIN_EMAILS in src/constants.ts.
+      return isAuthenticated() &&
         (request.auth.token.email == "marwaneltaweel0@gmail.com" ||
-         request.auth.token.email == "abdallahahmedpilot2426@gmail.com");
+         request.auth.token.email == "abdallahahmedpilot2426@gmail.com" ||
+         request.auth.token.email == "pro.mahmoud.h@gmail.com");
     }
 
     function isValidUser(data) {
