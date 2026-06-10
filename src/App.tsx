@@ -2789,6 +2789,7 @@ export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isDarkMode, setIsDarkMode] = useState(false);
 
@@ -2811,6 +2812,18 @@ export default function App() {
 
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // Close the profile / notification dropdowns when clicking anywhere outside them
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('[data-menu]')) {
+        setShowProfileMenu(false);
+        setShowNotifications(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   // --- Theme Management ---
@@ -3171,10 +3184,10 @@ export default function App() {
               </div>
             
             {userEmail && (
-              <div className="relative">
-                <button 
-                  onClick={() => setShowNotifications(!showNotifications)}
-                  className="relative p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all cursor-pointer border border-transparent hover:border-slate-100 dark:hover:border-slate-700" 
+              <div className="relative" data-menu>
+                <button
+                  onClick={() => { setShowNotifications(!showNotifications); setShowProfileMenu(false); }}
+                  className="relative p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all cursor-pointer border border-transparent hover:border-slate-100 dark:hover:border-slate-700"
                   aria-label="Notifications"
                 >
                   <Bell size={22} className="text-slate-500 dark:text-slate-400" />
@@ -3211,8 +3224,62 @@ export default function App() {
               </div>
             )}
             
-            <div className="h-10 w-px bg-slate-100 dark:bg-slate-800 mx-2 hidden sm:block"></div>
-            
+            {/* Profile dropdown (desktop) */}
+            <div className="hidden lg:block relative" data-menu>
+              {userEmail ? (
+                <>
+                  <button
+                    onClick={() => { setShowProfileMenu(!showProfileMenu); setShowNotifications(false); }}
+                    className="flex items-center gap-2.5 pl-1.5 pr-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
+                  >
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-white flex items-center justify-center font-black text-sm uppercase shrink-0">
+                      {(userName || userEmail || 'U').charAt(0)}
+                    </div>
+                    <span className="text-sm font-bold text-slate-900 dark:text-white max-w-[8rem] truncate">{userName || userEmail.split('@')[0]}</span>
+                    <ChevronRight size={16} className={`text-slate-400 transition-transform ${showProfileMenu ? '-rotate-90' : 'rotate-90'}`} />
+                  </button>
+                  {showProfileMenu && (
+                    <div className={`absolute top-full mt-4 w-72 bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden z-50 ${isRtl ? 'left-0' : 'right-0'} animate-fade-in`}>
+                      {/* Header */}
+                      <div className="p-5 border-b border-slate-50 dark:border-slate-800">
+                        <div className="font-black text-slate-900 dark:text-white truncate">{userName || (isRtl ? 'مستخدم' : 'User')}</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">{userEmail}</div>
+                        {isAdmin && (
+                          <span className={`inline-flex items-center gap-1.5 mt-3 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${isSuperAdmin ? 'bg-accent-100 dark:bg-accent-900/30 text-accent-700 dark:text-accent-400' : 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400'}`}>
+                            <Shield size={11} /> {isSuperAdmin ? (isRtl ? 'سوبر أدمن' : 'Super Admin') : (isRtl ? 'أدمن' : 'Admin')}
+                          </span>
+                        )}
+                      </div>
+                      {/* Items */}
+                      <div className="py-2">
+                        <button onClick={() => { setShowProfileMenu(false); handleNav('profile'); }} className="w-full flex items-center gap-3 px-5 py-3 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer">
+                          <User size={16} className="text-slate-400" /> {isRtl ? 'الملف الشخصي' : 'Personal Profile'}
+                        </button>
+                        {isAdmin && (
+                          <button onClick={() => { setShowProfileMenu(false); handleNav('manage-users'); }} className="w-full flex items-center gap-3 px-5 py-3 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer">
+                            <Shield size={16} className="text-slate-400" /> {isRtl ? 'لوحة التحكم' : 'Operations Command Center'}
+                          </button>
+                        )}
+                        <button onClick={() => { setShowProfileMenu(false); handleNav('add-listing'); }} className="w-full flex items-center gap-3 px-5 py-3 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer">
+                          <PlusCircle size={16} className="text-slate-400" /> {isRtl ? 'إضافة عقار' : 'Add New Listing'}
+                        </button>
+                        <div className="my-2 border-t border-slate-50 dark:border-slate-800"></div>
+                        <button onClick={() => { setShowProfileMenu(false); handleLogout(); }} className="w-full flex items-center gap-3 px-5 py-3 text-sm font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors cursor-pointer">
+                          <LogOut size={16} /> {isRtl ? 'تسجيل الخروج' : 'Sign Out'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <button onClick={() => handleNav('login')} className="bg-slate-900 dark:bg-brand-600 text-white px-6 py-2.5 rounded-full font-bold text-sm hover:bg-slate-800 dark:hover:bg-brand-700 transition-colors cursor-pointer">
+                  {isRtl ? 'تسجيل الدخول' : 'Sign In'}
+                </button>
+              )}
+            </div>
+
+            <div className="h-10 w-px bg-slate-100 dark:bg-slate-800 mx-2 hidden sm:block lg:hidden"></div>
+
             <button className="lg:hidden cursor-pointer text-slate-900 dark:text-white p-3 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
               {mobileMenuOpen ? <X size={26} /> : <Menu size={26} />}
             </button>
