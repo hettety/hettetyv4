@@ -8,6 +8,14 @@ import { getGeminiApiKey, generateContentResilient, aiErrorMessage } from '../ai
 import { storage, ref, uploadBytes, getDownloadURL } from '../firebase';
 import { Property } from '../types';
 
+// Canonical payment-method values (stored in English) with bilingual labels.
+export const PAYMENT_OPTIONS = [
+  { value: 'Cash', ar: 'كاش', en: 'Cash' },
+  { value: 'Installments', ar: 'تقسيط', en: 'Installments' },
+  { value: 'Bank Transfer', ar: 'تحويل بنكي', en: 'Bank Transfer' },
+  { value: 'Mortgage', ar: 'تمويل عقاري', en: 'Mortgage' },
+];
+
 /** Reads a File as a data URL, promisified so errors stay inside the caller's try/catch. */
 const fileToDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
   const reader = new FileReader();
@@ -78,8 +86,13 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
   const [formData, setFormData] = useState({
     title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '',
     imageUrl: '', videoUrl: '', digitalTwinUrl: '', status: 'For Sale',
+    availability: 'Available' as 'Available' | 'Sold' | 'Reserved',
     registrationNumber: '', courtSignatureValidity: false, isResale: false
   });
+  // Payment methods the buyer can use; at least one is required before publishing.
+  const [paymentMethods, setPaymentMethods] = useState<string[]>(['Cash']);
+  const togglePayment = (m: string) =>
+    setPaymentMethods(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
   const [images, setImages] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -293,6 +306,10 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
       setErrorMsg(isRtl ? 'انتظر لحد ما يخلص رفع الصور/الفيديو.' : 'Please wait until media finishes uploading.');
       return;
     }
+    if (paymentMethods.length === 0) {
+      setErrorMsg(isRtl ? 'اختر طريقة دفع واحدة على الأقل.' : 'Select at least one payment method.');
+      return;
+    }
     setErrorMsg('');
     setSubmitting(true);
     
@@ -310,9 +327,10 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
       imageUrl: formData.imageUrl || images[0] || '',
       images: images,
       status: formData.status as 'For Sale' | 'For Rent',
+      availability: formData.availability,
       isVerified: (isAdmin || isSuperAdmin),
       verificationStatus: (isAdmin || isSuperAdmin) ? 'Verified' : 'Pending',
-      paymentMethods: ['Cash'],
+      paymentMethods: paymentMethods,
       unitCode,
       publishDate,
       legalDocs: [],
@@ -330,8 +348,10 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
       setFormData({
         title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '',
         imageUrl: '', videoUrl: '', digitalTwinUrl: '', status: 'For Sale',
+        availability: 'Available',
         registrationNumber: '', courtSignatureValidity: false, isResale: false
       });
+      setPaymentMethods(['Cash']);
       setImages([]);
       setStep(1);
     } catch (err) {
@@ -435,6 +455,34 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
                          <option value="For Sale">{isRtl ? 'للبيع' : 'For Sale'}</option>
                          <option value="For Rent">{isRtl ? 'للإيجار' : 'For Rent'}</option>
                        </select>
+                    </div>
+                    <div>
+                       <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'حالة التوفر' : 'Availability'}</label>
+                       <select value={formData.availability} onChange={e => setFormData({...formData, availability: e.target.value as 'Available' | 'Sold' | 'Reserved'})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-[right_0.75rem_center] bg-no-repeat text-slate-900 dark:text-white">
+                         <option value="Available">{isRtl ? 'متاح' : 'Available'}</option>
+                         <option value="Reserved">{isRtl ? 'محجوز' : 'Reserved'}</option>
+                         <option value="Sold">{formData.status === 'For Rent' ? (isRtl ? 'مؤجَّر' : 'Rented') : (isRtl ? 'مباع' : 'Sold')}</option>
+                       </select>
+                    </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">{isRtl ? 'طرق الدفع المتاحة' : 'Accepted Payment Methods'} <span className="text-red-500">*</span></label>
+                    <div className="flex flex-wrap gap-3">
+                      {PAYMENT_OPTIONS.map(opt => {
+                        const active = paymentMethods.includes(opt.value);
+                        return (
+                          <button
+                            type="button"
+                            key={opt.value}
+                            onClick={() => togglePayment(opt.value)}
+                            className={`px-5 py-2.5 rounded-xl text-sm font-bold border transition-all flex items-center gap-2 ${active ? 'bg-brand-600 text-white border-brand-600 shadow-md' : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-brand-400'}`}
+                          >
+                            {active && <CheckCircle size={15} />}
+                            {isRtl ? opt.ar : opt.en}
+                          </button>
+                        );
+                      })}
                     </div>
                 </div>
 
