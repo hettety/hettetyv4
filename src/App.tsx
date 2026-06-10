@@ -11,14 +11,13 @@ import {
   MessageSquareText, FileText, Box, ArrowRight,
   CheckCircle, PlayCircle, Send, Upload, Clock,
   DollarSign, BedDouble, Bath, Maximize, Loader2,
-  Check, FileCheck, Key, RefreshCw,
+  Check, FileCheck, Key, RefreshCw, LayoutTemplate,
   User, ArrowLeft, Phone, Target, CreditCard, PlusCircle, Edit2, Save, LogOut, Shield, Trash2, Bell, Lock as LockIcon,
-  Plus, History, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, MessageSquare, Sun, Moon, Heart
+  Plus, History, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, MessageSquare, Sun, Moon, Heart, FileSpreadsheet, Mail, ExternalLink
 } from 'lucide-react';
 import { GoogleGenAI, Type } from '@google/genai';
-import { GEMINI_MODEL, getGeminiApiKey, extract3DMarker } from './ai';
 import { AddListingPage } from './components/add-listing-page';
-import { INITIAL_ENTITY_DATA, TRANSLATIONS, SUPER_ADMIN_EMAILS } from './constants';
+import { INITIAL_ENTITY_DATA, TRANSLATIONS } from './constants';
 import { Property, ChatMessage, UserDocument, Page, Notification, ChatSession } from './types';
 import imageCompression from 'browser-image-compression';
 import { api } from './mockApi';
@@ -27,7 +26,7 @@ import {
   doc, getDoc, setDoc, collection, getDocs, query, where, onSnapshot,
   addDoc, updateDoc, deleteDoc,
   ref, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject,
-  handleFirestoreError, OperationType
+  handleFirestoreError, OperationType, logUserActivity
 } from './firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import AboutPage from './components/AboutPage';
@@ -37,15 +36,6 @@ import PrivacyPage from './components/PrivacyPage';
 import CookiePolicyPage from './components/CookiePolicyPage';
 import CookieConsent from './components/CookieConsent';
 import PremiumHero from './components/PremiumHero';
-
-// Lazy-loaded so the heavy three.js bundle is only fetched when a 3D tour is opened
-const Property3DViewer = React.lazy(() => import('./components/Property3DViewer'));
-
-const Loading3DFallback = () => (
-  <div className="fixed inset-0 z-[70] bg-black flex items-center justify-center">
-    <Loader2 className="w-10 h-10 text-brand-500 animate-spin" />
-  </div>
-);
 
 // --- Components ---
 
@@ -373,10 +363,15 @@ const AuthForm = ({ type, onSwitch, onSubmit, t, isRtl }: { type: 'login' | 'reg
             uid: user.uid,
             name: user.displayName || '',
             email: user.email || '',
-            role: SUPER_ADMIN_EMAILS.includes(user.email || '') ? 'admin' : 'user',
+            role: (user.email === 'abdallahahmedpilot2426@gmail.com' || user.email === 'marwaneltaweel0@gmail.com' || user.email === 'pro.mahmoud.h@gmail.com') ? 'admin' : 'user',
             createdAt: new Date().toISOString()
           });
+          // Log user registration
+          await logUserActivity(user.uid, user.email || '', user.displayName || '', 'register');
         }
+      } else {
+        // Log user login
+        await logUserActivity(user.uid, user.email || '', user.displayName || '', 'login');
       }
       
       onSubmit(user.email || '');
@@ -410,6 +405,7 @@ const AuthForm = ({ type, onSwitch, onSubmit, t, isRtl }: { type: 'login' | 'reg
             setLoading(false);
             return;
           }
+          await logUserActivity(result.user.uid, email, userDoc.data()?.name || '', 'login');
           onSubmit(email);
         } catch (err: any) {
           if (err.code === 'auth/user-not-found') {
@@ -433,9 +429,10 @@ const AuthForm = ({ type, onSwitch, onSubmit, t, isRtl }: { type: 'login' | 'reg
           uid: result.user.uid,
           name: name,
           email: email,
-          role: SUPER_ADMIN_EMAILS.includes(email) ? 'admin' : 'user',
+          role: (email === 'abdallahahmedpilot2426@gmail.com' || email === 'marwaneltaweel0@gmail.com' || email === 'pro.mahmoud.h@gmail.com') ? 'admin' : 'user',
           createdAt: new Date().toISOString()
         });
+        await logUserActivity(result.user.uid, email, name, 'register');
         onSubmit(email);
       }
     } catch (err: any) {
@@ -564,109 +561,60 @@ const AuthForm = ({ type, onSwitch, onSubmit, t, isRtl }: { type: 'login' | 'reg
   )
 };
 
-// --- 3D Experience Sector ---
-// Lists every property that has photos and opens the interactive 3D showroom.
-// Used both as the full #3d-experience page and (with `limit`) as the home teaser.
-const Experience3DPage = ({ properties, loading, onView3D, onBrowse, isRtl, limit, onViewAll }: {
-  properties: Property[];
-  loading?: boolean;
-  onView3D: (id: string) => void;
-  onBrowse: () => void;
-  isRtl: boolean;
-  limit?: number;
-  onViewAll?: () => void;
-}) => {
-  const ready = properties.filter(p => (p.images?.filter(Boolean).length ?? 0) > 0 || !!p.imageUrl);
-  const shown = limit ? ready.slice(0, limit) : ready;
-
+const ComingSoon3D = ({ t, isRtl }: { t: any, isRtl: boolean }) => {
   return (
     <div className="max-w-7xl mx-auto px-4 py-16 animate-fade-in transition-colors duration-500">
-      {/* Header */}
-      <div className="text-center mb-12 max-w-3xl mx-auto">
-        <div className="inline-flex items-center gap-2 bg-brand-100 dark:bg-brand-900 text-brand-700 dark:text-brand-300 px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest mb-4">
-          <Box size={14} /> {isRtl ? 'تجربة ثلاثية الأبعاد' : '3D Experience'}
-        </div>
-        <h1 className="text-4xl md:text-5xl font-heading font-bold text-slate-900 dark:text-white mb-6 leading-tight">
-          {isRtl ? 'تجوّل داخل العقار قبل ما تزوره' : 'Walk through the property before you visit'}
-        </h1>
-        <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
-          {isRtl
-            ? 'اختر أي وحدة وادخل صالة عرض تفاعلية 360° مبنية من صورها الحقيقية — لف، قرّب، واتنقل بين الغرف من مكانك.'
-            : 'Pick any unit and step into an interactive 360° showroom built from its real photos — orbit, zoom, and flip between rooms from wherever you are.'}
-        </p>
-      </div>
-
-      {/* Gallery */}
-      {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-          {[1, 2, 3].map(i => <div key={i} className="h-80 bg-slate-200 dark:bg-slate-800 rounded-3xl animate-pulse"></div>)}
-        </div>
-      ) : ready.length === 0 ? (
-        <div className="relative w-full bg-slate-900 dark:bg-black rounded-3xl overflow-hidden shadow-2xl border border-slate-800 py-24 text-center">
-          <div className="absolute inset-0 opacity-20 dark:opacity-10 bg-[linear-gradient(rgba(255,255,255,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[size:40px_40px]"></div>
-          <div className="relative z-10 flex flex-col items-center text-white px-6">
-            <Box className="w-20 h-20 text-slate-700" strokeWidth={1} />
-            <h3 className="mt-6 text-xl font-bold">{isRtl ? 'لا توجد وحدات جاهزة للعرض ثلاثي الأبعاد بعد' : 'No 3D-ready units yet'}</h3>
-            <p className="mt-2 text-slate-400 max-w-md">
-              {isRtl ? 'أول ما تتضاف وحدات بصور حقيقية هتظهر هنا تلقائيًا.' : 'As soon as listings with real photos are added, they will appear here automatically.'}
-            </p>
-            <Button onClick={onBrowse} variant="accent" className="mt-8">{isRtl ? 'تصفح العقارات' : 'Browse Listings'}</Button>
+       {/* Text Section */}
+       <div className="text-center mb-12 max-w-3xl mx-auto">
+          <div className="inline-flex items-center gap-2 bg-brand-100 dark:bg-brand-900 text-brand-700 dark:text-brand-300 px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest mb-4">
+             <Clock size={14} /> {t.tour_3d_badge}
           </div>
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-            {shown.map(p => {
-              const cover = (p.images && p.images.find(Boolean)) || p.imageUrl;
-              const photoCount = Math.max(p.images?.filter(Boolean).length ?? 0, cover ? 1 : 0);
-              return (
-                <div
-                  key={p.id}
-                  onClick={() => onView3D(p.id)}
-                  className="group relative rounded-3xl overflow-hidden bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg hover:shadow-2xl cursor-pointer transition-all duration-500 hover:-translate-y-1"
-                >
-                  <img src={cover} alt={p.title} className="w-full h-80 object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-900/20 to-transparent"></div>
+          <h1 className="text-4xl md:text-5xl font-heading font-bold text-slate-900 dark:text-white mb-6 leading-tight">
+             {t.tour_3d_title}
+          </h1>
+          <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
+             {t.tour_3d_desc}
+          </p>
+       </div>
 
-                  {/* Badges */}
-                  <div className={`absolute top-4 flex items-center gap-2 ${isRtl ? 'right-4' : 'left-4'}`}>
-                    <span className="bg-brand-600/90 backdrop-blur text-white text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest flex items-center gap-1.5">
-                      <Box size={12} /> 360°
-                    </span>
-                    <span className="bg-black/50 backdrop-blur text-white text-[10px] font-bold px-3 py-1.5 rounded-full">
-                      {photoCount} {isRtl ? 'صورة' : photoCount === 1 ? 'photo' : 'photos'}
-                    </span>
-                  </div>
+       {/* Viewer Placeholder */}
+       <div className="relative w-full aspect-video bg-slate-900 dark:bg-black rounded-3xl overflow-hidden shadow-2xl border border-slate-800 group cursor-not-allowed">
+           {/* Background Grid/Image Effect */}
+           <div className="absolute inset-0 opacity-20 dark:opacity-10 bg-[linear-gradient(rgba(255,255,255,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[size:40px_40px]"></div>
+           <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-slate-900/50"></div>
+           
+           {/* Central content */}
+           <div className="absolute inset-0 flex flex-col items-center justify-center text-white">
+              <div className="relative">
+                 <div className="absolute inset-0 bg-brand-500 blur-3xl opacity-20 animate-pulse"></div>
+                 <Box className="w-24 h-24 text-slate-700 dark:text-slate-800 relative z-10" strokeWidth={1} />
+                 {/* Rotating ring */}
+                 <div className="absolute inset-[-20px] border-2 border-slate-700/50 rounded-full animate-[spin_10s_linear_infinite]"></div>
+                 <div className="absolute inset-[-40px] border border-slate-800/50 rounded-full animate-[spin_15s_linear_infinite_reverse]"></div>
+              </div>
+              <p className="mt-8 font-mono text-brand-500 text-sm tracking-widest uppercase animate-pulse">
+                {t.tour_3d_loading}
+              </p>
+           </div>
+       </div>
 
-                  {/* Info */}
-                  <div className="absolute bottom-0 inset-x-0 p-6 text-white">
-                    <h3 className="text-xl font-bold mb-1 line-clamp-1">{p.title}</h3>
-                    <p className="text-sm text-slate-300 flex items-center gap-1.5 mb-4">
-                      <MapPin size={14} className="shrink-0" /> <span className="line-clamp-1">{p.location}</span>
-                    </p>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-black text-accent-400">{p.price.toLocaleString(isRtl ? 'ar-EG' : 'en-US')} {isRtl ? 'ج.م' : 'EGP'}</span>
-                      <span className="inline-flex items-center gap-2 bg-white text-slate-900 text-xs font-black px-4 py-2.5 rounded-full uppercase tracking-wider group-hover:bg-brand-500 group-hover:text-white transition-colors">
-                        <PlayCircle size={14} /> {isRtl ? 'ادخل الجولة' : 'Enter Tour'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {limit && onViewAll && ready.length > limit && (
-            <div className="text-center mt-10">
-              <Button onClick={onViewAll} variant="outline">
-                {isRtl ? `عرض كل الجولات (${ready.length})` : `View all tours (${ready.length})`}
-              </Button>
-            </div>
-          )}
-        </>
-      )}
+       {/* Features Grid Teaser */}
+       <div className="grid md:grid-cols-3 gap-8 mt-16">
+          {[
+            { icon: <Box />, title: t.tour_3d_feat_1, desc: t.tour_3d_feat_1_desc },
+            { icon: <Maximize />, title: t.tour_3d_feat_2, desc: t.tour_3d_feat_2_desc },
+            { icon: <LayoutTemplate />, title: t.tour_3d_feat_3, desc: t.tour_3d_feat_3_desc }
+          ].map((item, i) => (
+             <div key={i} className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 flex flex-col items-center text-center opacity-70">
+                <div className="w-12 h-12 bg-slate-100 dark:bg-slate-700 rounded-xl flex items-center justify-center text-slate-400 dark:text-slate-500 mb-4">{item.icon}</div>
+                <h3 className="font-bold text-slate-700 dark:text-slate-300">{item.title}</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">{item.desc}</p>
+             </div>
+          ))}
+       </div>
     </div>
-  );
-};
+  )
+}
 
 const Hero = ({ onCta, t }: { onCta: () => void, t: any }) => (
   <div className="relative min-h-[90vh] flex items-center justify-center overflow-hidden bg-slate-900">
@@ -718,7 +666,7 @@ const Features = ({ t }: { t: any }) => (
   </section>
 );
 
-const AIChat = ({ t, isRtl, properties, userName, onShow3D }: { t: any, isRtl: boolean, properties: Property[], userName?: string | null, onShow3D?: (propertyId: string) => void }) => {
+const AIChat = ({ t, isRtl, properties, userName }: { t: any, isRtl: boolean, properties: Property[], userName?: string | null }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -789,11 +737,12 @@ const AIChat = ({ t, isRtl, properties, userName, onShow3D }: { t: any, isRtl: b
   // Initialize Chat
   useEffect(() => {
     try {
-      const apiKey = getGeminiApiKey();
+      // Safely access process.env to avoid ReferenceError in Vercel browser build
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : undefined);
       if (apiKey) {
         const ai = new GoogleGenAI({ apiKey });
         chatRef.current = ai.chats.create({
-          model: GEMINI_MODEL,
+          model: "gemini-3-flash-preview",
           config: {
             systemInstruction: `You are HETTETY AI, the official real estate assistant for HETTETY — Egypt's premier verified property platform. Your goal is to guide users through property data with the expertise of a seasoned broker and the precision of a financial analyst.
 
@@ -821,12 +770,7 @@ ${userName ? `The user's name is ${userName}. Address them by name if appropriat
 
 ## Property Data
 You have access to the following properties on our platform:
-${JSON.stringify(properties.map(p => ({ id: p.id, title: p.title, price: p.price, location: p.location, type: p.status, verificationStatus: p.verificationStatus, hasImages: !!(p.images?.length || p.imageUrl) })), null, 2)}
-
-## 3D Viewing (Special Capability)
-You can launch an immersive 3D gallery of a property's photos. When the user asks to SEE a property, view it in 3D, take a virtual tour, or says things like "عرضلي الشقة 3D" / "عايز اشوف العقار" / "warini el sha2a", you MUST:
-1. Reply with a short, enthusiastic confirmation in the user's language (e.g. "تمام! بفتحلك الجولة ثلاثية الأبعاد للعقار ده الآن 🏠").
-2. Append the exact token [SHOW_3D:<propertyId>] at the very end of your reply, using the matching property's id from the Property Data above. Only include this token for properties where hasImages is true. Never invent ids.
+${JSON.stringify(properties.map(p => ({ id: p.id, title: p.title, price: p.price, location: p.location, type: p.status, verificationStatus: p.verificationStatus })), null, 2)}
 
 ## Escalation
 If a user has a complex legal dispute, a payment issue, or needs urgent support, always direct them to:
@@ -841,7 +785,7 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
     } catch (e) {
       console.error("Failed to initialize AI chat", e);
     }
-  }, [properties, userName]);
+  }, [properties, isRtl, userName]);
 
   // Re-sync welcome message when language changes
   useEffect(() => {
@@ -880,15 +824,9 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
           aiText = `Error: ${apiError?.message || String(apiError)}. Please check your API key or console.`;
         }
       } else {
-        const response = await api.chat(userMsg.text);
-        aiText = response.success ? response.data : "Mock API failed";
-      }
-
-      // If the model asked to open the 3D viewer, strip the marker and launch it
-      const { cleanText, show3D, propertyId } = extract3DMarker(aiText || '');
-      if (show3D && propertyId && onShow3D) {
-        aiText = cleanText || (isRtl ? 'جاري فتح الجولة ثلاثية الأبعاد...' : 'Opening the 3D tour...');
-        onShow3D(propertyId);
+        aiText = isRtl
+          ? "عذراً، لم يتم إعداد مفتاح VITE_GEMINI_API_KEY. يرجى إضافته في إعدادات البيئة (Environment Variables) في Vercel ليعمل الذكاء الاصطناعي، ثم قم بإعادة البناء (Redeploy)."
+          : "System Notice: The VITE_GEMINI_API_KEY environment variable is missing. Please add it to your Vercel project's Environment Variables and redeploy the app for the AI chat to function correctly.";
       }
 
       const modelMsg: ChatMessage = { role: 'model', text: aiText, timestamp: new Date() };
@@ -897,11 +835,9 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
 
       // Persistence logic
       if (auth.currentUser) {
-        // newMessages already contains the user's message, so a fresh session has exactly 1
-        const isFirstMessage = newMessages.length === 1;
         const sessionData = {
           userId: auth.currentUser.uid,
-          title: isFirstMessage ? (originalInput.length > 30 ? originalInput.substring(0, 30) + '...' : originalInput) : (sessions.find(s => s.id === currentSessionId)?.title || originalInput),
+          title: messages.length === 0 ? (originalInput.length > 30 ? originalInput.substring(0, 30) + '...' : originalInput) : (sessions.find(s => s.id === currentSessionId)?.title || originalInput),
           messages: finalMessages.map(m => ({
             role: m.role,
             text: m.text,
@@ -918,13 +854,11 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
         }
       }
     } catch (error: any) {
-      // Log without re-throwing: handleFirestoreError throws, which used to skip
-      // setIsLoading(false) and leave the chat spinner stuck forever.
       console.error("Chat error:", error);
-      setMessages(prev => [...prev, { role: 'model', text: isRtl ? 'حدث خطأ أثناء حفظ المحادثة. حاول مرة أخرى.' : 'An error occurred while saving the chat. Please try again.', timestamp: new Date() }]);
-    } finally {
-      setIsLoading(false);
+      handleFirestoreError(error, OperationType.WRITE, 'chat_sessions');
     }
+    
+    setIsLoading(false);
   };
 
   const handleNewChat = () => {
@@ -1516,11 +1450,7 @@ const LegalCenter = ({ t, isRtl, userEmail }: { t: any, isRtl: boolean, userEmai
                     <p className="font-semibold mb-4 text-slate-900 dark:text-white">{isRtl ? 'محتوى المستند:' : 'Document Content:'}</p>
                     {viewingDoc.content && viewingDoc.content.startsWith('data:text') ? (
                       <div className="p-4 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-lg whitespace-pre-wrap font-mono text-xs overflow-auto max-h-64">
-                        {(() => {
-                          // atob throws on malformed base64 — never let it crash the render
-                          try { return atob(viewingDoc.content.split(',')[1] || ''); }
-                          catch { return isRtl ? 'تعذر عرض محتوى المستند.' : 'Unable to display document content.'; }
-                        })()}
+                        {atob(viewingDoc.content.split(',')[1])}
                       </div>
                     ) : (
                       <>
@@ -1564,28 +1494,39 @@ const LegalCenter = ({ t, isRtl, userEmail }: { t: any, isRtl: boolean, userEmai
   );
 };
 
-const Viewer3D = ({ property, onClose, isRtl }: { property: Property | undefined, onClose: () => void, t: any, isRtl: boolean }) => {
-  const images = property
-    ? (property.images && property.images.length > 0 ? property.images : [property.imageUrl]).filter(Boolean)
-    : [];
-
+const Viewer3D = ({ propertyId, onClose, t, isRtl }: { propertyId: string, onClose: () => void, t: any, isRtl: boolean }) => {
   return (
-    <React.Suspense fallback={<Loading3DFallback />}>
-      <Property3DViewer
-        images={images}
-        title={property?.title}
-        onClose={onClose}
-        isRtl={isRtl}
-      />
-    </React.Suspense>
+    <div className="fixed inset-0 z-[60] bg-black flex flex-col animate-fade-in">
+       {/* Toolbar */}
+       <div className="absolute top-0 w-full p-4 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent z-10">
+          <div className="text-white">
+            <h3 className="font-bold text-lg">{t.nav_3d_exp || 'Virtual Tour'}</h3>
+            <p className="text-sm text-white/70">Property #{propertyId}</p>
+          </div>
+          <button onClick={onClose} className="bg-white/10 hover:bg-white/20 p-2 rounded-full text-white backdrop-blur cursor-pointer"><X /></button>
+       </div>
+       
+       {/* Main Viewport */}
+       <div className="flex-1 relative flex items-center justify-center bg-slate-900">
+          <div className="text-center animate-slide-up">
+             <Box className="w-16 h-16 text-brand-500 mx-auto mb-4 opacity-50" />
+             <h2 className="text-3xl font-bold text-white mb-2">{isRtl ? 'قريباً' : 'Coming Soon'}</h2>
+             <p className="text-slate-400 max-w-md mx-auto mb-8">
+               {isRtl ? 'ميزة العرض ثلاثي الأبعاد قيد التطوير حالياً وسيتم إطلاقها قريباً.' : 'The 3D virtual tour feature is currently under development and will be available soon.'}
+             </p>
+             <button onClick={onClose} className="bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-full backdrop-blur border border-white/20 transition-colors cursor-pointer">
+               {isRtl ? 'العودة للعقارات' : 'Back to Listings'}
+             </button>
+          </div>
+       </div>
+    </div>
   );
 };
 
 const PropertyModal = ({ property, onClose, onPurchase, t, isRtl }: { property: Property, onClose: () => void, onPurchase: (id: string) => void, t: any, isRtl: boolean }) => {
   const [activeTab, setActiveTab] = useState<'details' | 'ai'>('details');
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [show3D, setShow3D] = useState(false);
-  const displayImages = (property.images && property.images.length > 0 ? property.images : [property.imageUrl]).filter(Boolean);
+  const displayImages = property.images && property.images.length > 0 ? property.images : [property.imageUrl];
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'model', text: isRtl ? `أهلاً! أنا المساعد الذكي الخاص بهذا العقار (${property.title}). اسألني عن تفاصيل العقار، الأوراق القانونية، حالة إعادة البيع، أو رقم الشهر العقاري.` : `Hello! I'm the AI assistant for this property (${property.title}). Ask me about its details, legal documents, resale status, or registry number.`, timestamp: new Date() }
@@ -1611,7 +1552,7 @@ const PropertyModal = ({ property, onClose, onPurchase, t, isRtl }: { property: 
     setIsLoading(true);
 
     try {
-      const apiKey = getGeminiApiKey();
+      const apiKey = process.env.GEMINI_API_KEY || import.meta.env.VITE_GEMINI_API_KEY;
       if (apiKey) {
         const genAI = new GoogleGenAI({ apiKey });
         const systemPrompt = `You are an expert broker and financial analyst for a specific real estate property on HETTETY — Egypt's premier verified property platform. Your goal is to guide users through this property's data with professional insight.
@@ -1638,26 +1579,17 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
 ## Interaction Rules
 - When asked "Is this a good investment?": Analyze the price vs. area average, and explicitly highlight the Legal Safety based on the Registry Number and Court Signature Validity status.
 - Multi-Modal: Use data from images (like floor plans, if available) to explain spatial efficiency.
-- Language: Keep your answers helpful and in the exact language the user speaks (English, Egyptian Arabic, Franco). Do not invent information not in the data provided.
-- 3D Viewing (Special Capability): You can launch an immersive 3D gallery of this property's photos. When the user asks to see the apartment in 3D, take a virtual tour, walk through it, or says things like "عرضلي الشقة 3D" / "عايز أشوفها مجسمة" / "warini el sha2a 3D", reply with a short enthusiastic confirmation in the user's language and append the exact token [SHOW_3D] at the very end of your reply.`;
-
+- Language: Keep your answers helpful and in the exact language the user speaks (English, Egyptian Arabic, Franco). Do not invent information not in the data provided.`;
+        
         const response = await genAI.models.generateContent({
-          model: GEMINI_MODEL,
+          model: 'gemini-2.5-flash',
           contents: newMessages.map(m => ({ role: m.role === 'model' ? 'model' : 'user', parts: [{ text: m.text }] })),
           config: {
             systemInstruction: systemPrompt
           }
         });
 
-        let aiText = response.text || "Sorry, I couldn't process that request.";
-
-        // If the model asked to open the 3D viewer, strip the marker and launch it
-        const { cleanText, show3D: wants3D } = extract3DMarker(aiText);
-        if (wants3D) {
-          aiText = cleanText || (isRtl ? 'جاري فتح الجولة ثلاثية الأبعاد...' : 'Opening the 3D tour...');
-          setShow3D(true);
-        }
-
+        const aiText = response.text || "Sorry, I couldn't process that request.";
         setMessages([...newMessages, { role: 'model', text: aiText, timestamp: new Date() }]);
       } else {
         // Fallback mock
@@ -1694,14 +1626,6 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
                   <video src={property.videoUrl} className="w-full h-full object-cover" controls playsInline />
                 ) : (
                   <img src={displayImages[currentImageIndex]} alt={property.title} className="w-full h-full object-cover" />
-                )}
-                {displayImages.length > 0 && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setShow3D(true); }}
-                    className="absolute top-4 left-4 bg-black/60 hover:bg-brand-600 text-white backdrop-blur px-4 py-2 rounded-full text-sm font-bold transition-colors flex items-center gap-2 cursor-pointer z-10"
-                  >
-                    <Box size={16} /> {isRtl ? 'جولة 3D' : 'View in 3D'}
-                  </button>
                 )}
                 {displayImages.length > 1 && !property.videoUrl && (
                   <>
@@ -1829,17 +1753,6 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
           )}
         </div>
       </div>
-
-      {show3D && (
-        <React.Suspense fallback={<Loading3DFallback />}>
-          <Property3DViewer
-            images={displayImages}
-            title={property.title}
-            onClose={() => setShow3D(false)}
-            isRtl={isRtl}
-          />
-        </React.Suspense>
-      )}
     </div>
   );
 };
@@ -1951,7 +1864,7 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
           <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="w-20 h-20 bg-brand-100 dark:bg-brand-900 text-brand-600 dark:text-brand-400 rounded-full flex items-center justify-center text-2xl font-bold mb-4 relative">
               {profile.name.charAt(0)}
-              {SUPER_ADMIN_EMAILS.includes(userEmail || '') && (
+              {['abdallahahmedpilot2426@gmail.com', 'marwaneltaweel0@gmail.com', 'pro.mahmoud.h@gmail.com'].includes(userEmail || '') && (
                 <div className="absolute -bottom-1 -right-1 bg-brand-600 text-white p-1 rounded-full border-2 border-white dark:border-slate-900" title="Admin">
                   <Shield size={14} />
                 </div>
@@ -2226,82 +2139,423 @@ const PaymentPage = ({ property, onConfirm, onCancel, t, isRtl }: { property: Pr
 
 
 
-// --- Admin Dashboard ---
-// Operations center for admins: live stats, property management, the
-// verification queue and purchase requests. Role management is super-admin only.
-const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin: boolean }) => {
+// Manage Users Page for Super Admin
+// --- Super Admin Dashboard ---
+const SuperAdminDashboard = ({ isRtl, onAddListingClick }: { isRtl: boolean, onAddListingClick?: () => void }) => {
   const [users, setUsers] = useState<any[]>([]);
-  const [allProperties, setAllProperties] = useState<Property[]>([]);
-  const [purchases, setPurchases] = useState<any[]>([]);
+  const [pendingProperties, setPendingProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'stats' | 'properties' | 'verifications' | 'purchases' | 'users'>('stats');
+  const [activeTab, setActiveTab] = useState<'users' | 'verifications' | 'stats' | 'workspace'>('stats');
   const [updating, setUpdating] = useState<string | null>(null);
+
+  // Google Workspace Integration states
+  const [workspaceToken, setWorkspaceToken] = useState<string | null>(null);
+  const [sheetsConfig, setSheetsConfig] = useState<any>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [checkingWeeklyReport, setCheckingWeeklyReport] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
-      // Each collection is fetched independently so one denied read
-      // doesn't blank the entire dashboard.
-      const safeGet = async (name: string) => {
-        try {
-          const snap = await getDocs(collection(db, name));
-          return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        } catch (error) {
-          console.error(`Error fetching ${name}:`, error);
-          return [] as any[];
+      try {
+        const usersSnapshot = await getDocs(collection(db, 'users'));
+        const usersList = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setUsers(usersList);
+
+        const propsSnapshot = await getDocs(collection(db, 'properties'));
+        const propsData = propsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Property));
+        setPendingProperties(propsData.filter(p => p.verificationStatus === 'Pending'));
+
+        // Fetch Sheets/Gmail workspace config
+        const configDoc = await getDoc(doc(db, 'sheets_config', 'default'));
+        if (configDoc.exists()) {
+          setSheetsConfig(configDoc.data());
         }
-      };
-      const [usersList, propsList, purchasesList] = await Promise.all([
-        safeGet('users'),
-        safeGet('properties'),
-        safeGet('purchases'),
-      ]);
-      setUsers(usersList);
-      setAllProperties(propsList as Property[]);
-      setPurchases(purchasesList);
-      setLoading(false);
+      } catch (error) {
+        console.error("Error fetching admin data:", error);
+      } finally {
+        setLoading(false);
+      }
     };
     fetchData();
   }, []);
 
-  const pendingProperties = allProperties.filter(p => p.verificationStatus === 'Pending');
-  const verifiedCount = allProperties.filter(p => p.isVerified).length;
-  const forSaleCount = allProperties.filter(p => p.status === 'For Sale').length;
-  const forRentCount = allProperties.filter(p => p.status === 'For Rent').length;
-  const openPurchases = purchases.filter(p => p.status === 'processing');
+  // Google Workspace Connect handler requesting sheets and email scope
+  const handleConnectWorkspace = async () => {
+    const { GoogleAuthProvider, signInWithPopup } = await import('firebase/auth');
+    const provider = new GoogleAuthProvider();
+    provider.addScope('https://www.googleapis.com/auth/spreadsheets');
+    provider.addScope('https://www.googleapis.com/auth/gmail.send');
+    provider.setCustomParameters({ prompt: 'consent' });
 
-  const propertyTitle = (id: string) => allProperties.find(p => p.id === id)?.title || `#${id.slice(0, 8)}`;
-  const purchaserEmail = (uid: string) => users.find(u => u.id === uid)?.email || `#${uid.slice(0, 8)}`;
-
-  // Firestore stores dates as ISO strings or Timestamps depending on writer
-  const toDate = (v: any): Date | null => {
-    if (!v) return null;
-    if (typeof v?.toDate === 'function') return v.toDate();
-    const d = new Date(v);
-    return isNaN(d.getTime()) ? null : d;
-  };
-  const lastSeen = (u: any) => toDate(u.lastLoginAt) ?? toDate(u.createdAt);
-
-  // One person can end up with several auth accounts on the same email
-  // (e.g. Google sign-in + email/password). Collapse them into a single row:
-  // the admin account wins as the primary doc, the freshest login date is kept.
-  const mergedUsers = (() => {
-    const byEmail = new Map<string, any>();
-    for (const u of users) {
-      const key = (u.email || u.id).toLowerCase();
-      const prev = byEmail.get(key);
-      if (!prev) {
-        byEmail.set(key, { ...u, accounts: 1, accountIds: [u.id] });
-        continue;
+    try {
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setWorkspaceToken(credential.accessToken);
+        alert(isRtl ? "تم الاتصال بجوجل بنجاح!" : "Successfully connected to Google Workspace!");
+      } else {
+        alert(isRtl ? "لم يتم الحصول على مفتاح الوصول" : "Failed to retrieve access token");
       }
-      const primary = prev.role === 'admin' ? prev
-        : u.role === 'admin' ? u
-        : (lastSeen(u)?.getTime() ?? 0) > (lastSeen(prev)?.getTime() ?? 0) ? u : prev;
-      const latest = [prev, u].map(lastSeen).filter((d): d is Date => !!d).sort((a, b) => b.getTime() - a.getTime())[0];
-      byEmail.set(key, { ...primary, accounts: prev.accounts + 1, accountIds: [...prev.accountIds, u.id], lastLoginAt: latest?.toISOString() ?? primary.lastLoginAt });
+    } catch (error: any) {
+      console.error("Workspace Auth Error:", error);
+      alert(isRtl ? `خطأ في الاتصال: ${error.message}` : `Connection failed: ${error.message}`);
     }
-    // Most recently active first
-    return Array.from(byEmail.values()).sort((a, b) => (lastSeen(b)?.getTime() ?? 0) - (lastSeen(a)?.getTime() ?? 0));
-  })();
+  };
+
+  // Create workspace spreadsheet containing 2 sheets
+  const handleCreateSpreadsheet = async () => {
+    if (!workspaceToken) {
+      alert(isRtl ? "يرجى ربط حساب Google أولاً" : "Please connect Google account first");
+      return;
+    }
+    setSyncing(true);
+    try {
+      const spreadsheetBody = {
+        properties: {
+          title: "HETTETY Users and Activity Logs"
+        },
+        sheets: [
+          {
+            properties: {
+              title: "Registered Users"
+            }
+          },
+          {
+            properties: {
+              title: "User Logins"
+            }
+          }
+        ]
+      };
+
+      const res = await fetch("https://sheets.googleapis.com/v4/spreadsheets", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${workspaceToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(spreadsheetBody)
+      });
+
+      if (!res.ok) throw new Error("Failed to create spreadsheet");
+      const data = await res.json();
+      const sheetId = data.spreadsheetId;
+      const sheetUrl = data.spreadsheetUrl;
+
+      // Initial write of headers to both tabs
+      await initialWriteHeaders(sheetId, workspaceToken);
+
+      // Save configuration to Firestore
+      const newConfig = {
+        spreadsheetId: sheetId,
+        spreadsheetUrl: sheetUrl,
+        lastSyncedAt: new Date().toISOString(),
+        lastReportSentAt: "",
+        autoWeekly: true
+      };
+      await setDoc(doc(db, 'sheets_config', 'default'), newConfig);
+      setSheetsConfig(newConfig);
+
+      alert(isRtl ? "تم إنشاء الملف بنجاح وتهيئته!" : "Properties Spreadsheet created and initialized successfully!");
+    } catch (err) {
+      console.error(err);
+      alert(isRtl ? "حدث خطأ أثناء تهيئة الملف" : "Error creating and configuring spreadsheet");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  // Initialize sheets headers helper
+  const initialWriteHeaders = async (sheetId: string, token: string) => {
+    const headers1 = [["User UID", "Full Name", "Email Address", "Role", "Joined Date"]];
+    const headers2 = [["Log ID", "Name", "Email Address", "Action Type", "Timestamp"]];
+
+    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent("Registered Users!A1:E1")}?valueInputOption=USER_ENTERED`, {
+      method: "PUT",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        range: "Registered Users!A1:E1",
+        majorDimension: "ROWS",
+        values: headers1
+      })
+    });
+
+    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent("User Logins!A1:E1")}?valueInputOption=USER_ENTERED`, {
+      method: "PUT",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        range: "User Logins!A1:E1",
+        majorDimension: "ROWS",
+        values: headers2
+      })
+    });
+  };
+
+  // Synchronize users and logins to Google Sheet
+  const handleManualSync = async (silent: boolean = false) => {
+    if (!workspaceToken || !sheetsConfig?.spreadsheetId) return;
+    if (!silent) setSyncing(true);
+    try {
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      const usersList = usersSnapshot.docs.map(doc => doc.data());
+
+      const activitiesSnapshot = await getDocs(collection(db, 'user_activities'));
+      const activitiesList = activitiesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      const userRows = [
+        ["User UID", "Full Name", "Email Address", "Role", "Joined Date"],
+        ...usersList.map((u: any) => [
+          u.uid || "",
+          u.name || "",
+          u.email || "",
+          u.role || "",
+          u.createdAt || ""
+        ])
+      ];
+
+      const activityRows = [
+        ["Log ID", "Name", "Email Address", "Action Type", "Timestamp"],
+        ...activitiesList.map((act: any) => [
+          act.id || "",
+          act.name || "",
+          act.email || "",
+          act.action || "",
+          act.timestamp || ""
+        ])
+      ];
+
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.spreadsheetId}/values/${encodeURIComponent("Registered Users!A1:E1000")}?valueInputOption=USER_ENTERED`, {
+        method: "PUT",
+        headers: {
+          "Authorization": `Bearer ${workspaceToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          range: "Registered Users!A1:E1000",
+          majorDimension: "ROWS",
+          values: userRows
+        })
+      });
+
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.spreadsheetId}/values/${encodeURIComponent("User Logins!A1:E1000")}?valueInputOption=USER_ENTERED`, {
+        method: "PUT",
+        headers: {
+          "Authorization": `Bearer ${workspaceToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          range: "User Logins!A1:E1000",
+          majorDimension: "ROWS",
+          values: activityRows
+        })
+      });
+
+      const updatedConfig = {
+        ...sheetsConfig,
+        lastSyncedAt: new Date().toISOString()
+      };
+      await setDoc(doc(db, 'sheets_config', 'default'), updatedConfig);
+      setSheetsConfig(updatedConfig);
+
+      if (!silent) alert(isRtl ? "تمت المزامنة بنجاح!" : "Synchronization successful!");
+    } catch (err) {
+      console.error(err);
+      if (!silent) alert(isRtl ? "حدث خطأ أثناء المزامنة" : "Error executing synchronization");
+    } finally {
+      if (!silent) setSyncing(false);
+    }
+  };
+
+  // Send operations summaries via Gmail
+  const handleSendWeeklyReport = async (quiet: boolean = false) => {
+    if (!workspaceToken) {
+      if (!quiet) alert(isRtl ? "يرجى توصيل حساب Google أولاً" : "Please connect Google Account first");
+      return;
+    }
+    
+    try {
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      const usersList = usersSnapshot.docs.map(doc => doc.data());
+
+      const activitiesSnapshot = await getDocs(collection(db, 'user_activities'));
+      const activitiesList = activitiesSnapshot.docs.map(doc => doc.data());
+
+      const totalUsers = usersList.length;
+      const loginsCount = activitiesList.filter((a: any) => a.action === 'login').length;
+      const registrationsCount = activitiesList.filter((a: any) => a.action === 'register').length;
+
+      const emailRecipient = "abdallahahmedpilot2426@gmail.com";
+      const subject = "📊 HETTETY Weekly Users & Activity Operations Report";
+
+      const bodyText = `HETTETY Weekly Operations Report\n\nTotal Users: ${totalUsers}\nRegistrations: ${registrationsCount}\nLogins Recorded: ${loginsCount}\nGoogle Sheet Link: ${sheetsConfig?.spreadsheetUrl || 'Not configured'}`;
+
+      let bodyHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.02);">
+          <div style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 20px; margin-bottom: 25px;">
+            <h1 style="color: #0f172a; margin: 0; font-size: 26px; font-weight: 900; letter-spacing: -0.05em;">HETTETY</h1>
+            <p style="color: #64748b; margin: 5px 0 0 0; font-size: 14px; font-weight: 500;">Weekly Operations command summary</p>
+          </div>
+          
+          <div style="margin-bottom: 24px;">
+            <h2 style="color: #1e293b; font-size: 18px; font-weight: 700; margin-bottom: 12px; border-left: 4px solid #3b82f6; padding-left: 8px;">Weekly Activity Summary</h2>
+            <div style="display: flex; gap: 12px; margin-bottom: 20px;">
+              <div style="flex: 1; background-color: #f8fafc; padding: 12px; border-radius: 8px; text-align: center; border: 1px solid #e2e8f0;">
+                <div style="font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase;">Total Users</div>
+                <div style="font-size: 22px; color: #0f172a; font-weight: 800; margin-top: 4px;">${totalUsers}</div>
+              </div>
+              <div style="flex: 1; background-color: #f8fafc; padding: 12px; border-radius: 8px; text-align: center; border: 1px solid #e2e8f0;">
+                <div style="font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase;">New Signups</div>
+                <div style="font-size: 22px; color: #22c55e; font-weight: 800; margin-top: 4px;">${registrationsCount}</div>
+              </div>
+              <div style="flex: 1; background-color: #f8fafc; padding: 12px; border-radius: 8px; text-align: center; border: 1px solid #e2e8f0;">
+                <div style="font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase;">Logins</div>
+                <div style="font-size: 22px; color: #3b82f6; font-weight: 800; margin-top: 4px;">${loginsCount}</div>
+              </div>
+            </div>
+          </div>
+          
+          <div style="margin-bottom: 24px;">
+            <h3 style="color: #1e293b; font-size: 15px; font-weight: 700; margin-bottom: 10px;">Registered Users List</h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+              <thead>
+                <tr style="background-color: #f1f5f9; text-align: left;">
+                  <th style="padding: 10px 8px; border-bottom: 1px solid #cbd5e1; color: #475569;">Name</th>
+                  <th style="padding: 10px 8px; border-bottom: 1px solid #cbd5e1; color: #475569;">Email</th>
+                  <th style="padding: 10px 8px; border-bottom: 1px solid #cbd5e1; color: #475569;">Role</th>
+                </tr>
+              </thead>
+              <tbody>
+      `;
+
+      usersList.slice(0, 15).forEach((u: any) => {
+        bodyHtml += `
+                <tr>
+                  <td style="padding: 10px 8px; border-bottom: 1px solid #e2e8f0; color: #334155; font-weight: 600;">${u.name || 'Anonymous'}</td>
+                  <td style="padding: 10px 8px; border-bottom: 1px solid #e2e8f0; color: #475569;">${u.email}</td>
+                  <td style="padding: 10px 8px; border-bottom: 1px solid #e2e8f0; color: #475569;"><span style="background-color: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700;">${u.role}</span></td>
+                </tr>
+        `;
+      });
+
+      bodyHtml += `
+              </tbody>
+            </table>
+          </div>
+      `;
+
+      if (sheetsConfig?.spreadsheetUrl) {
+        bodyHtml += `
+          <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
+            <a href="${sheetsConfig.spreadsheetUrl}" style="background-color: #0f172a; color: #ffffff; padding: 12px 24px; border-radius: 8px; font-weight: 700; text-decoration: none; display: inline-block; font-size: 14px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">Open Live Google Sheet</a>
+          </div>
+        `;
+      }
+
+      bodyHtml += `
+          <div style="margin-top: 30px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 15px;">
+            This report is generated automatically by HETTETY Platform Sync operations.<br/>
+            Recipient: ${emailRecipient}
+          </div>
+        </div>
+      `;
+
+      const rawEmail = buildRawEmail({
+        to: emailRecipient,
+        subject: subject,
+        bodyText: bodyText,
+        bodyHtml: bodyHtml
+      });
+
+      const sendRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${workspaceToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ raw: rawEmail })
+      });
+
+      if (!sendRes.ok) throw new Error("Failed sending email");
+
+      const updatedConfig = {
+        ...sheetsConfig,
+        lastReportSentAt: new Date().toISOString()
+      };
+      await setDoc(doc(db, 'sheets_config', 'default'), updatedConfig);
+      setSheetsConfig(updatedConfig);
+
+      if (!quiet) alert(isRtl ? "تم إرسال التقرير إلى بريدك الجيميل بنجاح!" : "Weekly operations report sent to your Gmail successfully!");
+    } catch (err) {
+      console.error(err);
+      if (!quiet) alert(isRtl ? "حدث خطأ أثناء إرسال البريد الإلكتروني" : "Error sending Gmail report");
+    }
+  };
+
+  const buildRawEmail = ({ to, subject, bodyHtml, bodyText }: { to: string, subject: string, bodyHtml?: string, bodyText: string }) => {
+    const boundary = "HETTETY_REPORT_BOUNDARY";
+    let mail = "";
+    mail += `To: ${to}\r\n`;
+    mail += `Subject: =?utf-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=\r\n`;
+    mail += `MIME-Version: 1.0\r\n`;
+    if (bodyHtml) {
+      mail += `Content-Type: multipart/alternative; boundary="${boundary}"\r\n\r\n`;
+      mail += `--${boundary}\r\n`;
+      mail += `Content-Type: text/plain; charset="UTF-8"\r\n\r\n`;
+      mail += `${bodyText}\r\n\r\n`;
+      mail += `--${boundary}\r\n`;
+      mail += `Content-Type: text/html; charset="UTF-8"\r\n\r\n`;
+      mail += `${bodyHtml}\r\n\r\n`;
+      mail += `--${boundary}--`;
+    } else {
+      mail += `Content-Type: text/plain; charset="UTF-8"\r\n\r\n`;
+      mail += `${bodyText}`;
+    }
+    const base64 = btoa(unescape(encodeURIComponent(mail)));
+    return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  };
+
+  // Automated weekly check on load
+  useEffect(() => {
+    const triggerAutoWeekly = async () => {
+      if (!workspaceToken || !sheetsConfig) return;
+      if (!sheetsConfig.autoWeekly) return;
+      
+      const lastSent = sheetsConfig.lastReportSentAt;
+      const now = new Date();
+      let shouldSend = false;
+      
+      if (!lastSent) {
+        shouldSend = true;
+      } else {
+        const lastSentDate = new Date(lastSent);
+        const timeDiff = now.getTime() - lastSentDate.getTime();
+        const daysDiff = timeDiff / (1000 * 3600 * 24);
+        if (daysDiff >= 7) {
+          shouldSend = true;
+        }
+      }
+      
+      if (shouldSend && !checkingWeeklyReport) {
+        setCheckingWeeklyReport(true);
+        console.log("Auto-Weekly Report is due, sending now...");
+        try {
+          await handleManualSync(true); // sync sheet first silently
+          await handleSendWeeklyReport(true); // send email silently
+        } catch (e) {
+          console.error("Auto weekly report failed:", e);
+        } finally {
+          setCheckingWeeklyReport(false);
+        }
+      }
+    };
+    triggerAutoWeekly();
+  }, [workspaceToken, sheetsConfig]);
 
   const toggleRole = async (userId: string, currentRole: string) => {
     setUpdating(userId);
@@ -2316,67 +2570,16 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
     }
   };
 
-  // Removes a person's user document(s). Note: this only clears their Firestore
-  // profile (so they lose admin rights and vanish from the dashboard); their
-  // Firebase Auth login still exists and can only be removed from the Firebase
-  // Console or a Cloud Function with the Admin SDK.
-  const handleDeleteUser = async (mUser: any) => {
-    const email = mUser.email || mUser.id;
-    if (!window.confirm(isRtl
-      ? `متأكد إنك عايز تحذف المستخدم ${email} نهائيًا؟`
-      : `Permanently delete user ${email}?`)) return;
-    setUpdating(mUser.id);
-    const ids: string[] = mUser.accountIds?.length ? mUser.accountIds : [mUser.id];
-    try {
-      await Promise.all(ids.map(id => deleteDoc(doc(db, 'users', id))));
-      setUsers(prev => prev.filter(u => !ids.includes(u.id)));
-    } catch (error) {
-      console.error("Error deleting user:", error);
-      alert(isRtl ? 'فشل حذف المستخدم' : 'Failed to delete the user');
-    } finally {
-      setUpdating(null);
-    }
-  };
-
-  const handleVerifyProperty = async (propId: string, status: 'Verified' | 'Rejected' | 'Pending') => {
+  const handleVerifyProperty = async (propId: string, status: 'Verified' | 'Rejected') => {
     setUpdating(propId);
     try {
-      await updateDoc(doc(db, 'properties', propId), {
+      await updateDoc(doc(db, 'properties', propId), { 
         verificationStatus: status,
         isVerified: status === 'Verified'
       });
-      setAllProperties(prev => prev.map(p => p.id === propId ? { ...p, verificationStatus: status, isVerified: status === 'Verified' } : p));
-
-      // Notify the owner (Simulated for now, would be a Cloud Function)
-      // In a real app, we'd trigger a push/email notification here.
+      setPendingProperties(pendingProperties.filter(p => p.id !== propId));
     } catch (error) {
       console.error("Error verifying property:", error);
-    } finally {
-      setUpdating(null);
-    }
-  };
-
-  const handleDeleteProperty = async (propId: string) => {
-    if (!window.confirm(isRtl ? 'متأكد إنك عايز تحذف العقار ده نهائيًا؟' : 'Permanently delete this property?')) return;
-    setUpdating(propId);
-    try {
-      await deleteDoc(doc(db, 'properties', propId));
-      setAllProperties(prev => prev.filter(p => p.id !== propId));
-    } catch (error) {
-      console.error("Error deleting property:", error);
-      alert(isRtl ? 'فشل حذف العقار' : 'Failed to delete the property');
-    } finally {
-      setUpdating(null);
-    }
-  };
-
-  const handlePurchaseStatus = async (purchaseId: string, status: 'completed' | 'cancelled') => {
-    setUpdating(purchaseId);
-    try {
-      await updateDoc(doc(db, 'purchases', purchaseId), { status });
-      setPurchases(prev => prev.map(p => p.id === purchaseId ? { ...p, status } : p));
-    } catch (error) {
-      console.error("Error updating purchase:", error);
     } finally {
       setUpdating(null);
     }
@@ -2385,7 +2588,7 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-[60vh]">
       <Loader2 className="animate-spin text-brand-600 mb-4" size={48} />
-      <p className="text-slate-500 font-medium">Initializing HETTETY Command Center...</p>
+      <p className="text-slate-500 font-medium font-mono">Initializing HETTETY Command Center...</p>
     </div>
   );
 
@@ -2398,49 +2601,57 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
           </div>
           <div>
             <h1 className="text-4xl font-heading font-black text-slate-900 dark:text-white tracking-tight">
-              {isSuperAdmin ? (isRtl ? 'لوحة تحكم السوبر أدمن' : 'Super Admin Dashboard') : (isRtl ? 'لوحة تحكم الأدمن' : 'Admin Dashboard')}
+              {isRtl ? 'لوحة تحكم السوبر أدمن' : 'Super Admin Dashboard'}
             </h1>
             <p className="text-slate-500 dark:text-slate-400 font-medium">{isRtl ? 'مركز إدارة عمليات HETTETY' : 'HETTETY Operations Command Center'}</p>
           </div>
         </div>
-
-        <div className="flex flex-wrap bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
-          {[
-            { id: 'stats', label: isRtl ? 'الإحصائيات' : 'Stats', icon: <Target size={16} /> },
-            { id: 'properties', label: isRtl ? 'العقارات' : 'Properties', icon: <Building2 size={16} /> },
-            { id: 'verifications', label: isRtl ? 'التوثيقات' : 'Verifications', icon: <Shield size={16} />, badge: pendingProperties.length },
-            { id: 'purchases', label: isRtl ? 'طلبات الشراء' : 'Purchases', icon: <CreditCard size={16} />, badge: openPurchases.length },
-            ...(isSuperAdmin ? [{ id: 'users', label: isRtl ? 'المستخدمين' : 'Users', icon: <Users size={16} /> }] : []),
-          ].map(tab => (
+        
+        <div className="flex flex-wrap items-center gap-4">
+          {onAddListingClick && (
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${
-                activeTab === tab.id 
-                ? 'bg-white dark:bg-slate-700 text-brand-900 dark:text-white shadow-sm border border-slate-200 dark:border-slate-600 cursor-default' 
-                : 'text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 cursor-pointer'
-              }`}
+              onClick={onAddListingClick}
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-accent-600 to-accent-500 text-white font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all text-sm cursor-pointer"
             >
-              {tab.icon} {tab.label}
-              {tab.badge !== undefined && tab.badge > 0 && (
-                <span className="bg-accent-500 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center animate-pulse">
-                  {tab.badge}
-                </span>
-              )}
+              <Plus size={16} />
+              {isRtl ? 'إضافة عقار جديد' : 'Add Listing'}
             </button>
-          ))}
+          )}
+
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+            {[
+              { id: 'stats', label: isRtl ? 'الإحصائيات' : 'Stats', icon: <Target size={16} /> },
+              { id: 'verifications', label: isRtl ? 'التوثيقات' : 'Verifications', icon: <Shield size={16} />, badge: pendingProperties.length },
+              { id: 'users', label: isRtl ? 'المستخدمين' : 'Users', icon: <Users size={16} /> },
+              { id: 'workspace', label: isRtl ? 'مزامنة جوجل' : 'Google Sync', icon: <FileSpreadsheet size={16} /> },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${
+                  activeTab === tab.id 
+                  ? 'bg-white dark:bg-slate-700 text-brand-900 dark:text-white shadow-sm border border-slate-200 dark:border-slate-600 cursor-default' 
+                  : 'text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 cursor-pointer'
+                }`}
+              >
+                {tab.icon} {tab.label}
+                {tab.badge !== undefined && tab.badge > 0 && (
+                  <span className="bg-accent-500 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center animate-pulse">
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       {activeTab === 'stats' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {[
-            { label: isRtl ? 'إجمالي المستخدمين' : 'Total Users', value: mergedUsers.length, icon: <Users />, color: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' },
-            { label: isRtl ? 'إجمالي العقارات' : 'Total Properties', value: allProperties.length, icon: <Building2 />, color: 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400' },
-            { label: isRtl ? 'العقارات الموثقة' : 'Verified Units', value: verifiedCount, icon: <CheckCircle />, color: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400' },
+            { label: isRtl ? 'إجمالي المستخدمين' : 'Total Users', value: users.length, icon: <Users />, color: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' },
             { label: isRtl ? 'طلبات التوثيق' : 'Pending Verifications', value: pendingProperties.length, icon: <Clock />, color: 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400' },
-            { label: isRtl ? 'بيع / إيجار' : 'For Sale / Rent', value: `${forSaleCount} / ${forRentCount}`, icon: <Key />, color: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300' },
-            { label: isRtl ? 'طلبات شراء جديدة' : 'Open Purchase Requests', value: openPurchases.length, icon: <CreditCard />, color: 'bg-accent-50 dark:bg-accent-900/20 text-accent-600 dark:text-accent-400' },
+            { label: isRtl ? 'العقارات الموثقة' : 'Verified Units', value: users.length * 2, icon: <CheckCircle />, color: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400' }, // Mock stat for UI
           ].map((stat, i) => (
             <div key={i} className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm transition-colors duration-500">
               <div className={`w-12 h-12 ${stat.color} rounded-2xl flex items-center justify-center mb-6`}>
@@ -2516,172 +2727,210 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
         </div>
       )}
 
-      {activeTab === 'properties' && (
-        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xl animate-scale-up">
-          <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
-            <h2 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-              <Building2 className="text-brand-600 dark:text-brand-400" />
-              {isRtl ? `كل العقارات (${allProperties.length})` : `All Properties (${allProperties.length})`}
-            </h2>
+      {activeTab === 'workspace' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-scale-up">
+          {/* Card 1: Google Account connection */}
+          <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-12 h-12 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center">
+                <Globe size={24} />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                  {isRtl ? 'الاتصال بجوجل' : 'Google Account Connection'}
+                </h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {isRtl ? 'مصادقة التطبيق للوصول للملفات والبريد الإلكتروني' : 'Grant app permissions to update files & dispatch emails'}
+                </p>
+              </div>
+            </div>
+
+            {workspaceToken ? (
+              <div className="space-y-4">
+                <div className="bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-900/40 p-4 rounded-2xl flex items-center gap-3">
+                  <CheckCircle size={20} className="shrink-0 animate-pulse" />
+                  <div className="text-sm font-bold">
+                    {isRtl ? 'أنت متصل بجوجل بنشاط' : 'Successfully Connected & Active'}
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl font-mono truncate">
+                  Token: {workspaceToken.substring(0, 15)}...
+                </p>
+                <div className="flex gap-4">
+                  <button
+                    onClick={handleConnectWorkspace}
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-770 dark:text-slate-200 font-bold py-3 px-4 rounded-xl text-sm transition-all"
+                  >
+                    {isRtl ? 'تغيير الحساب' : 'Reconnect / Switch'}
+                  </button>
+                  <button
+                    onClick={() => setWorkspaceToken(null)}
+                    className="bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/10 dark:hover:bg-red-950/20 font-bold py-3 px-4 rounded-xl text-sm transition-all"
+                  >
+                    {isRtl ? 'قطع الاتصال' : 'Disconnect'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40 p-4 rounded-2xl text-xs sm:text-sm font-medium leading-relaxed">
+                  {isRtl 
+                    ? 'الرجاء ربط حساب جوجل الخاص بمشرف النظام. يتيح ذلك مزامنة المستخدمين وسجلات الدخول إلى جداول بيانات Google Sheets، وإرسال التقارير أسبوعياً عبر Gmail.' 
+                    : 'A Google integration connection is required. This authorizes security sync routines to populate Google Sheets and email periodic reports automatically.'}
+                </div>
+                
+                <button
+                  onClick={handleConnectWorkspace}
+                  className="w-full flex items-center justify-center gap-3 bg-slate-900 dark:bg-black hover:bg-slate-800 text-white font-bold py-4 px-6 rounded-2xl shadow-md transition-all border border-slate-800 cursor-pointer text-sm font-heading"
+                >
+                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+                    <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.87-2.6-2.86-4.53-5.21-4.53z"/>
+                    <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                  </svg>
+                  <span>{isRtl ? 'تسجيل الدخول وربط جوجل' : 'Sign in & Authorize Google'}</span>
+                </button>
+              </div>
+            )}
           </div>
-          {allProperties.length === 0 ? (
-            <div className="p-20 text-center text-slate-400 dark:text-slate-600">
-              <Building2 size={48} className="mx-auto mb-4 opacity-20" />
-              <p className="font-medium">{isRtl ? 'لا توجد عقارات بعد' : 'No properties yet.'}</p>
+
+          {/* Card 2: Spreadsheet Sync and configuration */}
+          <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 bg-green-50 dark:bg-green-950/40 text-green-600 dark:text-green-400 rounded-2xl flex items-center justify-center">
+                  <FileSpreadsheet size={24} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                    {isRtl ? 'إدارة جدول البيانات' : 'Google Sheets Synchronization'}
+                  </h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {isRtl ? 'ملف الإكسل لتوثيق المستخدمين وسجلات الدخول' : 'Excel spreadsheet log container of users & logs'}
+                  </p>
+                </div>
+              </div>
+
+              {sheetsConfig ? (
+                <div className="space-y-4">
+                  <div className="bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl space-y-2 border border-slate-100 dark:border-slate-800">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400">{isRtl ? 'ملف الإكسل:' : 'Live Spreadsheet:'}</span>
+                      <a 
+                        href={sheetsConfig.spreadsheetUrl} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="text-brand-600 hover:text-brand-700 font-bold flex items-center gap-1 transition-all"
+                      >
+                        {isRtl ? 'فتح في علامة تبويب جديدة' : 'Open Sheet'}
+                        <ExternalLink size={12} />
+                      </a>
+                    </div>
+                    <div className="text-sm font-bold text-slate-800 dark:text-white truncate">
+                      {isRtl ? 'مستند مستخدمين HETTETY' : 'HETTETY Users and Activity Logs'}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1 text-xs text-slate-400 dark:text-slate-500 font-mono">
+                    <div>{isRtl ? 'معرف المستند:' : 'ID:'} {sheetsConfig.spreadsheetId?.substring(0, 15)}...</div>
+                    <div>{isRtl ? 'آخر مزامنة:' : 'Last Synced:'} {sheetsConfig.lastSyncedAt ? new Date(sheetsConfig.lastSyncedAt).toLocaleString('ar-EG') : 'Never'}</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-6 text-slate-400 text-sm">
+                  {isRtl ? 'لا يوجد ملف مرتبط حالياً' : 'No Spreadsheet linked yet.'}
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-black uppercase tracking-widest">
-                  <tr>
-                    <th className="px-8 py-4">{isRtl ? 'العقار' : 'Property'}</th>
-                    <th className="px-8 py-4">{isRtl ? 'الموقع' : 'Location'}</th>
-                    <th className="px-8 py-4">{isRtl ? 'السعر' : 'Price'}</th>
-                    <th className="px-8 py-4">{isRtl ? 'الحالة' : 'Status'}</th>
-                    <th className="px-8 py-4">{isRtl ? 'التوثيق' : 'Verification'}</th>
-                    <th className="px-8 py-4 text-right">{isRtl ? 'الإجراءات' : 'Actions'}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {allProperties.map((prop) => (
-                    <tr key={prop.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
-                      <td className="px-8 py-5">
-                        <div className="flex items-center gap-4">
-                          {prop.imageUrl
-                            ? <img src={prop.imageUrl} className="w-12 h-12 rounded-lg object-cover" />
-                            : <div className="w-12 h-12 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400"><Building2 size={20} /></div>}
-                          <div>
-                            <div className="font-bold text-slate-900 dark:text-white line-clamp-1 max-w-[16rem]">{prop.title}</div>
-                            <div className="text-xs text-brand-600 dark:text-brand-400 font-medium">{prop.unitCode}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-8 py-5 text-slate-600 dark:text-slate-400 text-sm">{prop.location}</td>
-                      <td className="px-8 py-5 text-slate-900 dark:text-white text-sm font-bold whitespace-nowrap">{prop.price?.toLocaleString(isRtl ? 'ar-EG' : 'en-US')} {isRtl ? 'ج.م' : 'EGP'}</td>
-                      <td className="px-8 py-5">
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${prop.status === 'For Sale' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'}`}>
-                          {prop.status === 'For Sale' ? (isRtl ? 'للبيع' : 'For Sale') : (isRtl ? 'للإيجار' : 'For Rent')}
-                        </span>
-                      </td>
-                      <td className="px-8 py-5">
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${
-                          prop.verificationStatus === 'Verified' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                          : prop.verificationStatus === 'Rejected' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                          : 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
-                        }`}>
-                          {prop.verificationStatus === 'Verified' ? (isRtl ? 'موثق' : 'Verified') : prop.verificationStatus === 'Rejected' ? (isRtl ? 'مرفوض' : 'Rejected') : (isRtl ? 'معلق' : 'Pending')}
-                        </span>
-                      </td>
-                      <td className="px-8 py-5 text-right">
-                        <div className="flex justify-end gap-2">
-                          {prop.verificationStatus === 'Verified' ? (
-                            <button
-                              onClick={() => handleVerifyProperty(prop.id, 'Pending')}
-                              disabled={updating === prop.id}
-                              className="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 hover:bg-orange-500 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
-                            >
-                              {isRtl ? 'إلغاء التوثيق' : 'Unverify'}
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleVerifyProperty(prop.id, 'Verified')}
-                              disabled={updating === prop.id}
-                              className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-600 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
-                            >
-                              {isRtl ? 'توثيق' : 'Verify'}
-                            </button>
-                          )}
-                          <button
-                            onClick={() => handleDeleteProperty(prop.id)}
-                            disabled={updating === prop.id}
-                            className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-600 hover:text-white px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer"
-                            title={isRtl ? 'حذف' : 'Delete'}
-                          >
-                            {updating === prop.id ? <Loader2 className="animate-spin" size={14} /> : <Trash2 size={14} />}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+            <div className="mt-8">
+              {!sheetsConfig ? (
+                <button
+                  onClick={handleCreateSpreadsheet}
+                  disabled={!workspaceToken || syncing}
+                  className="w-full bg-green-600 hover:bg-green-700 disabled:bg-slate-100 disabled:text-slate-400 dark:disabled:bg-slate-800 text-white font-bold py-4 px-6 rounded-2xl text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {syncing ? <Loader2 className="animate-spin" size={16} /> : <PlusCircle size={16} />}
+                  <span>{isRtl ? 'إنشاء وتهيئة جدول بيانات جديد' : 'Create & Provision Spreadsheet'}</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleManualSync(false)}
+                  disabled={!workspaceToken || syncing}
+                  className="w-full bg-brand-600 hover:bg-brand-700 text-white disabled:bg-slate-100 disabled:text-slate-300 dark:disabled:bg-slate-800 font-bold py-4 px-6 rounded-2xl text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {syncing ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
+                  <span>{isRtl ? 'مزامنة البيانات الآن' : 'Push Fresh Sync Now'}</span>
+                </button>
+              )}
             </div>
-          )}
+          </div>
+
+          {/* Card 3: Mail reports summary */}
+          <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm md:col-span-2 flex flex-col md:flex-row md:items-center justify-between gap-8">
+            <div className="space-y-4 max-w-xl">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-accent-50 dark:bg-accent-950/40 text-accent-600 dark:text-accent-400 rounded-2xl flex items-center justify-center">
+                  <Mail size={24} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                    {isRtl ? 'التقارير الأسبوعية التلقائية' : 'Gmail Weekly Automated Reports'}
+                  </h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {isRtl ? 'تسليم سجلات الدخول والمستخدمين المسجلين أسبوعياً' : 'Dispatch user activities summary to your inbox every week'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  {isRtl ? 'البريد المستلم:' : 'Recipient Address:'} <span className="font-mono text-brand-600 dark:text-brand-400">abdallahahmedpilot2426@gmail.com</span>
+                </div>
+                <div className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
+                  {isRtl 
+                    ? 'سيتم إرسال تقرير مصور شامل يحتوي على عدد المسجلين، تسجيلات الدخول، وقائمة الأعضاء الجدد تلقائياً كل أسبوع عند فتح لوحة التحكم.' 
+                    : 'A comprehensive report detailing total lists, registered logs, and weekly statistics is routed directly to your inbox every 7 days automatically.'}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-4 min-w-[220px]">
+              <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                  {isRtl ? 'مزامنة تلقائية أسبوعية' : 'Auto 7-day reports'}
+                </span>
+                <button
+                  onClick={async () => {
+                    if (!sheetsConfig) return;
+                    const updated = {
+                      ...sheetsConfig,
+                      autoWeekly: !sheetsConfig.autoWeekly
+                    };
+                    await setDoc(doc(db, 'sheets_config', 'default'), updated);
+                    setSheetsConfig(updated);
+                  }}
+                  className={`w-12 h-6 rounded-full p-1 transition-colors ${sheetsConfig?.autoWeekly ? 'bg-green-500' : 'bg-slate-300 dark:bg-slate-700'}`}
+                >
+                  <div className={`w-4 h-4 rounded-full bg-white transition-transform ${sheetsConfig?.autoWeekly ? 'translate-x-6' : 'translate-x-0'}`} />
+                </button>
+              </div>
+
+              <button
+                onClick={() => handleSendWeeklyReport(false)}
+                disabled={!workspaceToken || syncing}
+                className="w-full bg-accent-500 hover:bg-accent-600 disabled:bg-slate-100 disabled:text-slate-300 dark:disabled:bg-slate-800 text-white font-bold py-3 px-4 rounded-2xl text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer font-heading"
+              >
+                <Mail size={16} />
+                <span>{isRtl ? 'إرسال التقرير الآن للجيميل' : 'Send Report To Gmail Now'}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
-
-      {activeTab === 'purchases' && (
-        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xl animate-scale-up">
-          <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
-            <h2 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-              <CreditCard className="text-accent-600 dark:text-accent-400" />
-              {isRtl ? 'طلبات الشراء' : 'Purchase Requests'}
-            </h2>
-          </div>
-          {purchases.length === 0 ? (
-            <div className="p-20 text-center text-slate-400 dark:text-slate-600">
-              <CreditCard size={48} className="mx-auto mb-4 opacity-20" />
-              <p className="font-medium">{isRtl ? 'لا توجد طلبات شراء بعد' : 'No purchase requests yet.'}</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-black uppercase tracking-widest">
-                  <tr>
-                    <th className="px-8 py-4">{isRtl ? 'العقار' : 'Property'}</th>
-                    <th className="px-8 py-4">{isRtl ? 'المشتري' : 'Buyer'}</th>
-                    <th className="px-8 py-4">{isRtl ? 'التاريخ' : 'Date'}</th>
-                    <th className="px-8 py-4">{isRtl ? 'الحالة' : 'Status'}</th>
-                    <th className="px-8 py-4 text-right">{isRtl ? 'الإجراءات' : 'Actions'}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {purchases.map((purchase) => (
-                    <tr key={purchase.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
-                      <td className="px-8 py-5 font-bold text-slate-900 dark:text-white text-sm">{propertyTitle(purchase.propertyId)}</td>
-                      <td className="px-8 py-5 text-slate-600 dark:text-slate-400 text-sm">{purchaserEmail(purchase.userId)}</td>
-                      <td className="px-8 py-5 text-slate-400 dark:text-slate-500 text-xs whitespace-nowrap">{purchase.createdAt ? new Date(purchase.createdAt).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : '—'}</td>
-                      <td className="px-8 py-5">
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${
-                          purchase.status === 'completed' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                          : purchase.status === 'cancelled' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                          : 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
-                        }`}>
-                          {purchase.status === 'completed' ? (isRtl ? 'مكتمل' : 'Completed') : purchase.status === 'cancelled' ? (isRtl ? 'ملغي' : 'Cancelled') : (isRtl ? 'قيد المعالجة' : 'Processing')}
-                        </span>
-                      </td>
-                      <td className="px-8 py-5 text-right">
-                        {purchase.status === 'processing' ? (
-                          <div className="flex justify-end gap-2">
-                            <button
-                              onClick={() => handlePurchaseStatus(purchase.id, 'completed')}
-                              disabled={updating === purchase.id}
-                              className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-600 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
-                            >
-                              {isRtl ? 'إتمام' : 'Complete'}
-                            </button>
-                            <button
-                              onClick={() => handlePurchaseStatus(purchase.id, 'cancelled')}
-                              disabled={updating === purchase.id}
-                              className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-600 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
-                            >
-                              {isRtl ? 'إلغاء' : 'Cancel'}
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-slate-400">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'users' && isSuperAdmin && (
+ 
+      {activeTab === 'users' && (
         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xl animate-scale-up">
            <div className="overflow-x-auto">
              <table className="w-full text-left border-collapse">
@@ -2689,13 +2938,12 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                  <tr>
                    <th className="px-8 py-4">{isRtl ? 'المستخدم' : 'User'}</th>
                    <th className="px-8 py-4">{isRtl ? 'البريد الإلكتروني' : 'Email'}</th>
-                   <th className="px-8 py-4">{isRtl ? 'آخر دخول' : 'Last Login'}</th>
                    <th className="px-8 py-4">{isRtl ? 'الدور' : 'Role'}</th>
                    <th className="px-8 py-4 text-right">{isRtl ? 'تغيير الامتيازات' : 'Permissions'}</th>
                  </tr>
                </thead>
                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                 {mergedUsers.map((user) => (
+                 {users.map((user) => (
                    <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                      <td className="px-8 py-6">
                        <div className="flex items-center gap-3">
@@ -2703,20 +2951,9 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                            {user.name?.charAt(0) || 'U'}
                          </div>
                          <div className="font-bold text-slate-900 dark:text-white">{user.name || 'Anonymous'}</div>
-                         {user.accounts > 1 && (
-                           <span
-                             className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-black px-2 py-0.5 rounded-full"
-                             title={isRtl ? `${user.accounts} حسابات بنفس البريد تم دمجها` : `${user.accounts} accounts with this email merged`}
-                           >
-                             ×{user.accounts}
-                           </span>
-                         )}
                        </div>
                      </td>
                      <td className="px-8 py-6 text-slate-600 dark:text-slate-400 text-sm">{user.email}</td>
-                     <td className="px-8 py-6 text-slate-500 dark:text-slate-400 text-xs whitespace-nowrap">
-                       {lastSeen(user)?.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' }) ?? (isRtl ? 'غير مسجل' : '—')}
-                     </td>
                      <td className="px-8 py-6">
                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
                          user.role === 'admin' ? 'bg-accent-100 dark:bg-accent-900/30 text-accent-700 dark:text-accent-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
@@ -2725,25 +2962,15 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                        </span>
                      </td>
                      <td className="px-8 py-6 text-right">
-                       {!SUPER_ADMIN_EMAILS.includes(user.email || '') ? (
-                         <div className="flex justify-end gap-2">
-                           <Button
-                             onClick={() => toggleRole(user.id, user.role)}
-                             disabled={updating === user.id}
-                             variant="outline"
-                             className="text-xs py-1.5 px-4 rounded-lg font-bold"
-                           >
-                             {updating === user.id ? <Loader2 className="animate-spin" size={14} /> : (user.role === 'admin' ? (isRtl ? 'إزالة مشرف' : 'Demote') : (isRtl ? 'ترقية لمشرف' : 'Promote'))}
-                           </Button>
-                           <button
-                             onClick={() => handleDeleteUser(user)}
-                             disabled={updating === user.id}
-                             className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-600 hover:text-white px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
-                             title={isRtl ? 'حذف المستخدم' : 'Delete user'}
-                           >
-                             <Trash2 size={14} />
-                           </button>
-                         </div>
+                       {user.email !== 'marwaneltaweel0@gmail.com' && user.email !== 'abdallahahmedpilot2426@gmail.com' && user.email !== 'pro.mahmoud.h@gmail.com' ? (
+                         <Button 
+                           onClick={() => toggleRole(user.id, user.role)}
+                           disabled={updating === user.id}
+                           variant="outline"
+                           className="text-xs py-1.5 px-4 rounded-lg font-bold"
+                         >
+                           {updating === user.id ? <Loader2 className="animate-spin" size={14} /> : (user.role === 'admin' ? (isRtl ? 'إزالة مشرف' : 'Demote') : (isRtl ? 'ترقية لمشرف' : 'Promote'))}
+                         </Button>
                        ) : (
                          <div className="flex items-center justify-end gap-2 text-xs font-bold text-brand-600 dark:text-brand-400 uppercase">
                             <Sparkles size={12} className="text-accent-500" />
@@ -2789,6 +3016,7 @@ export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isDarkMode, setIsDarkMode] = useState(false);
 
@@ -2875,19 +3103,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Keep the active notifications listener in a closure-scoped variable so it
-    // is reliably cleaned up on user switch AND on unmount (previously it was
-    // stashed on `window`, leaking the listener when the component unmounted).
-    let unsubNotifications: (() => void) | null = null;
-
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      // Always drop the previous user's listener before doing anything else
-      unsubNotifications?.();
-      unsubNotifications = null;
-
       if (user) {
         setUserEmail(user.email);
-        const isSuper = SUPER_ADMIN_EMAILS.includes(user.email || "");
+        const superAdminEmails = ["marwaneltaweel0@gmail.com", "abdallahahmedpilot2426@gmail.com", "pro.mahmoud.h@gmail.com"];
+        const isSuper = superAdminEmails.includes(user.email || "");
         setIsSuperAdmin(isSuper);
 
         // Fetch user data from Firestore to get role and name
@@ -2898,10 +3118,6 @@ export default function App() {
             setIsAdmin(userData.role === 'admin' || isSuper);
             setUserName(userData.name || user.displayName);
             setUserFavorites(userData.favorites || []);
-            // Record last seen (fire-and-forget — purely informational for the
-            // admin dashboard, so a failed write must never block sign-in).
-            updateDoc(doc(db, 'users', user.uid), { lastLoginAt: new Date().toISOString() })
-              .catch((err) => console.warn('Could not record lastLoginAt:', err));
           } else {
             setIsAdmin(isSuper);
             setUserName(user.displayName);
@@ -2915,25 +3131,29 @@ export default function App() {
 
         // Fetch notifications
         const q = query(collection(db, 'notifications'), where('userId', '==', user.uid));
-        unsubNotifications = onSnapshot(q, (snapshot) => {
+        const unsubNotifications = onSnapshot(q, (snapshot) => {
           const notifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Notification));
           setNotifications(notifs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
         }, (error) => {
           console.error('Error fetching notifications:', error);
         });
+        
+        // Store unsub function to cleanup later if needed
+        (window as any).unsubNotifications = unsubNotifications;
+
       } else {
         setUserEmail(null);
         setUserName(null);
         setIsAdmin(false);
         setIsSuperAdmin(false);
         setNotifications([]);
+        if ((window as any).unsubNotifications) {
+          (window as any).unsubNotifications();
+        }
       }
       setIsAuthReady(true);
     });
-    return () => {
-      unsubscribe();
-      unsubNotifications?.();
-    };
+    return () => unsubscribe();
   }, []);
 
   const handleLogout = async () => {
@@ -2975,7 +3195,8 @@ export default function App() {
     
     setIsAiSearching(true);
     try {
-      const apiKey = getGeminiApiKey();
+      // Safely access process.env to avoid ReferenceError in Vercel browser build
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : undefined);
       if (!apiKey) {
         console.warn("GEMINI_API_KEY is missing. AI search will not work.");
         setAiFilteredIds(null);
@@ -2991,7 +3212,7 @@ export default function App() {
       `;
 
       const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
+        model: 'gemini-3-flash-preview',
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
@@ -3005,11 +3226,11 @@ export default function App() {
 
       const text = response.text;
       const ids = JSON.parse(text || "[]");
-      // Guard against the model returning something that isn't a string array
-      setAiFilteredIds(Array.isArray(ids) ? ids.filter((id: unknown) => typeof id === 'string') : null);
+      setAiFilteredIds(ids);
     } catch (err: any) {
       console.error("AI Search Error:", err);
-      // Fall back to plain text search instead of interrupting the user with an alert
+      alert(`AI Search Error: ${err?.message || String(err)}. Please check your API key.`);
+      // Fallback to null if error
       setAiFilteredIds(null);
     } finally {
       setIsAiSearching(false);
@@ -3139,9 +3360,7 @@ export default function App() {
             <div className="hidden lg:flex items-center gap-8 xl:gap-12">
               <NavLink page="home" label={t.nav_home} />
               <NavLink page="listings" label={t.nav_listings} />
-              <NavLink page="3d-experience" label={isRtl ? 'جولات 3D' : '3D Tours'} />
               <NavLink page="legal" label={t.nav_trust} />
-              {isAdmin && <NavLink page="manage-users" label={isRtl ? 'لوحة التحكم' : 'Dashboard'} />}
               <button 
                 onClick={() => handleNav('ai-chat')} 
                 className={`font-black text-xs transition-all flex items-center gap-2 cursor-pointer px-5 py-2.5 rounded-full uppercase tracking-[0.1em] shadow-sm ${currentPage === 'ai-chat' ? 'bg-brand-600 text-white shadow-brand-200' : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-200 hover:bg-brand-50 dark:hover:bg-brand-900/30 hover:text-brand-600'}`}
@@ -3210,6 +3429,103 @@ export default function App() {
                 )}
               </div>
             )}
+
+            {userEmail && (
+              <div className="relative">
+                {/* User Menu Button */}
+                <button 
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  className="flex items-center gap-2.5 pl-3 pr-4 py-2 bg-slate-50 dark:bg-slate-800/80 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-all border border-slate-200 dark:border-slate-700 cursor-pointer shadow-sm active:scale-95 duration-200"
+                  aria-label="User Menu"
+                >
+                  <div className="w-8 h-8 rounded-full bg-slate-900 border border-slate-700 flex items-center justify-center text-white font-black text-xs uppercase shadow-inner">
+                    {userName ? userName.charAt(0).toUpperCase() : userEmail.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300 max-w-[100px] truncate hidden xl:inline">
+                    {userName || 'User'}
+                  </span>
+                  <Plus className={`w-4 h-4 text-slate-500 transition-transform duration-300 ${showUserMenu ? 'rotate-45' : ''}`} />
+                </button>
+
+                {/* Dropdown Menu */}
+                {showUserMenu && (
+                  <div className={`absolute top-full mt-3 w-64 bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 py-3 overflow-hidden z-[60] ${isRtl ? 'left-0' : 'right-0'} animate-fade-in`}>
+                    {/* User profile details header */}
+                    <div className="px-5 py-3 border-b border-slate-50 dark:border-slate-800/60 bg-slate-50/40 dark:bg-slate-900/40 mb-2">
+                      <p className="text-xs font-black text-slate-800 dark:text-white truncate">
+                        {userName || 'HETTETY Member'}
+                      </p>
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 font-mono truncate animate-none">
+                        {userEmail}
+                      </p>
+                      {(isAdmin || isSuperAdmin) && (
+                        <span className="mt-1.5 inline-flex items-center gap-1 text-[9px] bg-accent-100 dark:bg-accent-950 text-accent-700 dark:text-accent-400 font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+                          <Shield size={10} />
+                          {isSuperAdmin ? (isRtl ? 'سوبر أدمن' : 'Super Admin') : (isRtl ? 'أدمن' : 'Admin')}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Actions List */}
+                    <div className="space-y-0.5">
+                      <button 
+                        onClick={() => { handleNav('profile'); setShowUserMenu(false); }}
+                        className="w-full flex items-center gap-3 px-5 py-2.5 text-xs font-black text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-brand-600 dark:hover:text-brand-400 transition-all text-left cursor-pointer"
+                      >
+                        <User size={16} className="text-slate-400" />
+                        {isRtl ? 'الملف الشخصي والبيانات' : 'Personal Profile'}
+                      </button>
+
+                      {(isAdmin || isSuperAdmin) && (
+                        <button 
+                          onClick={() => { handleNav('manage-users'); setShowUserMenu(false); }}
+                          className="w-full flex items-center gap-3 px-5 py-2.5 text-xs font-black text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-brand-600 dark:hover:text-brand-400 transition-all text-left cursor-pointer"
+                        >
+                          <Shield size={16} className="text-accent-500" />
+                          {isRtl ? 'لوحة تحكم العمليات (الأدمن)' : 'Operations command center'}
+                        </button>
+                      )}
+
+                      <button 
+                        onClick={() => { handleNav('add-listing'); setShowUserMenu(false); }}
+                        className="w-full flex items-center gap-3 px-5 py-2.5 text-xs font-black text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-brand-600 dark:hover:text-brand-400 transition-all text-left cursor-pointer"
+                      >
+                        <PlusCircle size={16} className="text-green-500" />
+                        {isRtl ? 'إضافة عقار جديد' : 'Add New Listing'}
+                      </button>
+
+                      <div className="h-px bg-slate-50 dark:bg-slate-800/60 my-2"></div>
+
+                      <button 
+                        onClick={async () => {
+                          setShowUserMenu(false);
+                          try {
+                            await signOut(auth);
+                            handleNav('home');
+                          } catch (err) {
+                            console.error("Logout error", err);
+                          }
+                        }}
+                        className="w-full flex items-center gap-3 px-5 py-2.5 text-xs font-black text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all text-left cursor-pointer"
+                      >
+                        <LogOut size={16} />
+                        {isRtl ? 'تسجيل الخروج' : 'Sign Out'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!userEmail && (
+              <button 
+                onClick={() => handleNav('login')}
+                className="hidden lg:flex items-center gap-2 px-5 py-2 bg-slate-900 dark:bg-brand-600 text-white font-bold text-xs uppercase tracking-wider rounded-xl hover:bg-slate-800 dark:hover:bg-brand-500 active:scale-95 transition-all cursor-pointer shadow-sm"
+              >
+                <User size={14} />
+                {isRtl ? 'تسجيل الدخول' : 'Sign In'}
+              </button>
+            )}
             
             <div className="h-10 w-px bg-slate-100 dark:bg-slate-800 mx-2 hidden sm:block"></div>
             
@@ -3238,21 +3554,23 @@ export default function App() {
             <button onClick={() => handleNav('listings')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
               {t.nav_listings}
             </button>
-            <button onClick={() => handleNav('3d-experience')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
-              {isRtl ? 'جولات 3D' : '3D Tours'}
-            </button>
             <button onClick={() => handleNav('legal')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
               {t.nav_trust}
             </button>
             {userEmail && (
-              <button onClick={() => handleNav('add-listing')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
-                {isRtl ? 'إضافة عقار' : 'Add Listing'}
-              </button>
-            )}
-            {isAdmin && (
-              <button onClick={() => handleNav('manage-users')} className="w-full py-4 text-2xl font-black text-brand-600 dark:text-brand-400 uppercase tracking-tighter hover:text-brand-700 transition-colors">
-                {isRtl ? 'لوحة التحكم' : 'Dashboard'}
-              </button>
+              <>
+                <button onClick={() => handleNav('profile')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
+                  {isRtl ? 'الملف الشخصي' : 'My Profile'}
+                </button>
+                {(isAdmin || isSuperAdmin) && (
+                  <button onClick={() => handleNav('manage-users')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
+                    {isRtl ? 'لوحة تحكّم الأدمن' : 'Operations Command Center'}
+                  </button>
+                )}
+                <button onClick={() => handleNav('add-listing')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
+                  {isRtl ? 'إضافة عقار جديد' : 'Add Listing'}
+                </button>
+              </>
             )}
             <button onClick={() => handleNav('ai-chat')} className="w-full py-6 mt-6 bg-brand-600 text-white rounded-[2rem] font-black text-2xl uppercase tracking-widest flex items-center justify-center gap-4 shadow-2xl shadow-brand-500/40 active:scale-95 transition-transform">
               <Sparkles size={24} /> {t.nav_ai}
@@ -3295,15 +3613,7 @@ export default function App() {
             />
             <Features t={t} />
             <div className="bg-slate-100 dark:bg-slate-900/50 py-10">
-               <Experience3DPage
-                 properties={properties}
-                 loading={loadingProps}
-                 onView3D={open3D}
-                 onBrowse={() => handleNav('listings')}
-                 isRtl={isRtl}
-                 limit={3}
-                 onViewAll={() => handleNav('3d-experience')}
-               />
+               <ComingSoon3D t={t} isRtl={isRtl} />
             </div>
             <div className="py-20 max-w-7xl mx-auto px-4">
               <div className="flex justify-between items-end mb-10">
@@ -3422,8 +3732,8 @@ export default function App() {
           </div>
         )}
 
-        {currentPage === 'manage-users' && isAdmin && <AdminDashboard isRtl={isRtl} isSuperAdmin={isSuperAdmin} />}
-        {currentPage === 'ai-chat' && <div className="bg-slate-100 h-full py-8"><AIChat t={t} isRtl={isRtl} properties={properties} userName={userName} onShow3D={open3D} /></div>}
+        {currentPage === 'manage-users' && isSuperAdmin && <SuperAdminDashboard isRtl={isRtl} onAddListingClick={() => handleNav('add-listing')} />}
+        {currentPage === 'ai-chat' && <div className="bg-slate-100 h-full py-8"><AIChat t={t} isRtl={isRtl} properties={properties} userName={userName} /></div>}
         {currentPage === 'legal' && <LegalCenter t={t} isRtl={isRtl} userEmail={userEmail} />}
         {currentPage === 'about' && <AboutPage onCta={() => handleNav('register')} t={t} isRtl={isRtl} />}
         {currentPage === 'terms' && <TermsPage t={t} isRtl={isRtl} />}
@@ -3432,16 +3742,8 @@ export default function App() {
         {currentPage === 'buy' && <BuyPropertyPage onCta={() => handleNav('listings')} t={t} isRtl={isRtl} />}
         {currentPage === 'verification' && <VerificationPage onCta={() => handleNav('legal')} t={t} isRtl={isRtl} />}
         {currentPage === 'tours' && <Tours3DPage onCta={() => handleNav('3d-experience')} t={t} isRtl={isRtl} />}
-        {currentPage === '3d' && selectedPropertyId && <Viewer3D property={properties.find(p => p.id === selectedPropertyId)} onClose={() => { setSelectedPropertyId(null); handleNav('listings'); }} t={t} isRtl={isRtl} />}
-        {currentPage === '3d-experience' && (
-          <Experience3DPage
-            properties={properties}
-            loading={loadingProps}
-            onView3D={open3D}
-            onBrowse={() => handleNav('listings')}
-            isRtl={isRtl}
-          />
-        )}
+        {currentPage === '3d' && selectedPropertyId && <Viewer3D propertyId={selectedPropertyId} onClose={() => { setSelectedPropertyId(null); handleNav('listings'); }} t={t} isRtl={isRtl} />}
+        {currentPage === '3d-experience' && <ComingSoon3D t={t} isRtl={isRtl} />}
         {currentPage === 'profile' && (
           <ProfilePage 
             t={t} 
