@@ -9,6 +9,66 @@
 // and 'gemini-2.5-flash' which made behavior inconsistent between features.
 export const GEMINI_MODEL = 'gemini-3-flash-preview';
 
+// Preview models frequently return 503 "high demand". When the primary model
+// is overloaded we transparently fall back to this stable GA model.
+export const GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash';
+
+/** True for transient "try again later" errors (overload / rate limit). */
+export function isOverloadedError(err: any): boolean {
+  const code = err?.status ?? err?.error?.code ?? err?.code;
+  const status = err?.error?.status ?? err?.status;
+  const msg = String(err?.message ?? err?.error?.message ?? '');
+  return code === 503 || code === 429 ||
+    status === 'UNAVAILABLE' || status === 'RESOURCE_EXHAUSTED' ||
+    /\b(503|429|overloaded|unavailable|high demand)\b/i.test(msg);
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Retries a call with exponential backoff while it keeps failing with a transient error. */
+export async function withRetry<T>(fn: () => Promise<T>, retries = 3, baseDelayMs = 600): Promise<T> {
+  let lastErr: any;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (!isOverloadedError(err) || attempt === retries) throw err;
+      await sleep(baseDelayMs * Math.pow(2, attempt));
+    }
+  }
+  throw lastErr;
+}
+
+/**
+ * Runs `ai.models.generateContent` with retry, then one retry on the stable
+ * fallback model if the primary is still overloaded. `ai` is the GoogleGenAI
+ * instance (loosely typed here to avoid a hard import in this config module).
+ */
+export async function generateContentResilient(ai: any, params: any): Promise<any> {
+  const model = params.model ?? GEMINI_MODEL;
+  try {
+    return await withRetry(() => ai.models.generateContent({ ...params, model }));
+  } catch (err) {
+    if (isOverloadedError(err) && model !== GEMINI_FALLBACK_MODEL) {
+      return await withRetry(() => ai.models.generateContent({ ...params, model: GEMINI_FALLBACK_MODEL }), 2);
+    }
+    throw err;
+  }
+}
+
+/** User-facing message for AI failures, localized. */
+export function aiErrorMessage(err: any, isRtl: boolean): string {
+  if (isOverloadedError(err)) {
+    return isRtl
+      ? 'مساعد الذكاء الاصطناعي مزحوم دلوقتي 🙏 جرّب تبعت تاني بعد ثواني.'
+      : 'The AI assistant is busy right now 🙏 please try again in a few seconds.';
+  }
+  return isRtl
+    ? 'حصلت مشكلة في الاتصال بمساعد الذكاء الاصطناعي. حاول تاني.'
+    : 'Something went wrong reaching the AI assistant. Please try again.';
+}
+
 /**
  * Resolves the Gemini API key in every supported runtime:
  * - Vite/Vercel builds: VITE_GEMINI_API_KEY (statically replaced by Vite)
