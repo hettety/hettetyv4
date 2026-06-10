@@ -76,6 +76,35 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
   const [successMessage, setSuccessMessage] = useState('');
   const [generatingDesc, setGeneratingDesc] = useState(false);
   const [extractingOCR, setExtractingOCR] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // The four fields the property can't be saved without (Firestore rules also
+  // enforce title/price/location). Returns the list of missing labels.
+  const missingBasics = () => {
+    const missing: string[] = [];
+    if (!formData.title.trim()) missing.push(isRtl ? 'عنوان العقار' : 'Title');
+    if (!formData.price || Number(formData.price) <= 0) missing.push(isRtl ? 'السعر' : 'Price');
+    if (!formData.location.trim()) missing.push(isRtl ? 'الموقع' : 'Location');
+    if (!formData.area || Number(formData.area) <= 0) missing.push(isRtl ? 'المساحة' : 'Area');
+    return missing;
+  };
+  const basicsComplete = missingBasics().length === 0;
+
+  // Advance steps, but block leaving step 1 while required basics are missing.
+  const goToStep = (target: number) => {
+    if (target > 1 && step === 1) {
+      const missing = missingBasics();
+      if (missing.length) {
+        setErrorMsg((isRtl ? 'من فضلك املأ: ' : 'Please fill in: ') + missing.join('، '));
+        return;
+      }
+    }
+    setErrorMsg('');
+    setStep(target);
+  };
+
+  // Pretty-print the price with thousand separators so a long number is easy to verify.
+  const formattedPrice = formData.price ? Number(formData.price).toLocaleString(isRtl ? 'ar-EG' : 'en-US') : '';
 
   const generateDescription = async () => {
     try {
@@ -239,10 +268,17 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
   };
 
   const handleSubmit = async () => {
-    if (!formData.title || !formData.price || !formData.location) {
-        alert(isRtl ? "يرجى تعبئة الحقول الأساسية" : "Please fill in required fields first.");
-        return;
+    const missing = missingBasics();
+    if (missing.length) {
+      setStep(1);
+      setErrorMsg((isRtl ? 'من فضلك املأ الحقول الأساسية: ' : 'Please fill in the required basics: ') + missing.join('، '));
+      return;
     }
+    if (uploading) {
+      setErrorMsg(isRtl ? 'انتظر لحد ما يخلص رفع الصور/الفيديو.' : 'Please wait until media finishes uploading.');
+      return;
+    }
+    setErrorMsg('');
     setSubmitting(true);
     
     const unitCode = `HET-${Math.floor(10000 + Math.random() * 90000)}`;
@@ -328,7 +364,7 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
          <div className="absolute top-1/2 left-0 w-full h-1 bg-slate-200 dark:bg-slate-800 -z-10 hidden md:block rounded-full"></div>
          <div className="absolute top-1/2 left-0 h-1 bg-brand-500 transition-all duration-500 -z-10 hidden md:block rounded-full" style={{ width: `${(step - 1) * 50}%`}}></div>
          {steps.map(s => (
-             <div key={s.id} onClick={() => setStep(s.id)} className={`flex items-center gap-3 px-6 py-3 rounded-full cursor-pointer transition-all ${step === s.id ? 'bg-brand-600 text-white shadow-lg scale-105' : step > s.id ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
+             <div key={s.id} onClick={() => goToStep(s.id)} className={`flex items-center gap-3 px-6 py-3 rounded-full cursor-pointer transition-all ${step === s.id ? 'bg-brand-600 text-white shadow-lg scale-105' : step > s.id ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
                  <s.icon size={18} />
                  <span className="font-bold text-sm">{s.title}</span>
                  {step > s.id && <CheckCircle size={16} className="ml-2" />}
@@ -336,21 +372,29 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
          ))}
       </div>
 
+      {errorMsg && (
+        <div className="mb-6 flex items-start gap-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 px-5 py-4 rounded-2xl animate-fade-in">
+          <X size={18} className="mt-0.5 shrink-0" />
+          <p className="text-sm font-bold">{errorMsg}</p>
+        </div>
+      )}
+
       <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl min-h-[400px]">
         {step === 1 && (
             <div className="space-y-6 animate-fade-in">
                 <div className="grid md:grid-cols-2 gap-6">
                     <div className="col-span-1 md:col-span-2">
-                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'عنوان العقار' : 'Property Title'}</label>
-                        <input required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white" placeholder={isRtl ? 'مثال: فيلا فاخرة للتجمع' : 'e.g. Luxury Villa in New Cairo'} />
+                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'عنوان العقار' : 'Property Title'} <span className="text-red-500">*</span></label>
+                        <input required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white" placeholder={isRtl ? 'مثال: شقة 150م بالتجمع الخامس' : 'e.g. Luxury Villa in New Cairo'} />
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'السعر (ج.م)' : 'Price (EGP)'}</label>
+                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'السعر (ج.م)' : 'Price (EGP)'} <span className="text-red-500">*</span></label>
                         <input required type="text" inputMode="numeric" value={formData.price} onChange={e => { const val = e.target.value.replace(/[^0-9]/g, ''); setFormData({...formData, price: val}); }} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white" placeholder="0" />
+                        {formattedPrice && <p className="text-xs font-bold text-brand-600 dark:text-brand-400 mt-1.5">{formattedPrice} {isRtl ? 'جنيه' : 'EGP'}</p>}
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'الموقع' : 'Location'}</label>
-                        <input required value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white" />
+                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'الموقع' : 'Location'} <span className="text-red-500">*</span></label>
+                        <input required value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white" placeholder={isRtl ? 'مثال: التجمع الخامس، القاهرة' : 'e.g. New Cairo, Cairo'} />
                     </div>
                 </div>
 
@@ -364,8 +408,8 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
                         <input required type="number" value={formData.bathrooms} onChange={e => setFormData({...formData, bathrooms: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'المساحة' : 'm²'}</label>
-                        <input required type="number" value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
+                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'المساحة (م²)' : 'm²'} <span className="text-red-500">*</span></label>
+                        <input required type="number" min="1" value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
                     </div>
                 </div>
 
@@ -395,7 +439,8 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
         {step === 2 && (
             <div className="space-y-6 animate-fade-in">
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'صور العقار' : 'Property Images'}</label>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">{isRtl ? 'صور العقار' : 'Property Images'}</label>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">{isRtl ? 'الصور بتظهر في الجولة ثلاثية الأبعاد 360° — كل ما ترفع صور أكتر للغرف، الجولة تبقى أحلى. أول صورة هي الرئيسية.' : 'Photos power the 360° 3D tour — the more rooms you add, the better the tour. The first photo is the cover.'}</p>
                   <div 
                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
                      onDrop={handleDrop}
@@ -521,19 +566,19 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
 
       <div className="mt-8 flex justify-between items-center">
          {step > 1 ? (
-             <button onClick={() => setStep(s => s - 1)} className="px-6 py-3 rounded-xl font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 transition-all">
+             <button onClick={() => goToStep(step - 1)} className="px-6 py-3 rounded-xl font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 transition-all">
                  <ArrowLeft size={18} /> {isRtl ? 'السابق' : 'Back'}
              </button>
          ) : <div></div>}
-         
+
          {step < 3 ? (
-             <button onClick={() => setStep(s => s + 1)} className="px-8 py-3 rounded-xl font-bold bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-md hover:bg-black dark:hover:bg-white flex items-center gap-2 transition-all">
+             <button onClick={() => goToStep(step + 1)} className="px-8 py-3 rounded-xl font-bold bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-md hover:bg-black dark:hover:bg-white flex items-center gap-2 transition-all">
                  {isRtl ? 'التالي' : 'Next'} <ArrowRight size={18} />
              </button>
          ) : (
-             <button onClick={handleSubmit} disabled={submitting || uploading || !formData.title} className="px-8 py-3 rounded-xl font-bold bg-gradient-to-r from-accent-600 to-accent-500 text-white shadow-xl hover:shadow-2xl hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 flex items-center gap-2 transition-all">
-                 {submitting ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle size={18} />} 
-                 {isRtl ? 'نشر العقار' : 'Deploy Listing'}
+             <button onClick={handleSubmit} disabled={submitting || uploading || !basicsComplete} className="px-8 py-3 rounded-xl font-bold bg-gradient-to-r from-accent-600 to-accent-500 text-white shadow-xl hover:shadow-2xl hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 flex items-center gap-2 transition-all">
+                 {submitting ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle size={18} />}
+                 {submitting ? (isRtl ? 'جاري النشر...' : 'Publishing...') : (isRtl ? 'نشر العقار' : 'Deploy Listing')}
              </button>
          )}
       </div>
