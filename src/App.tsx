@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { GoogleGenAI, Type } from '@google/genai';
 import { GEMINI_MODEL, GEMINI_FALLBACK_MODEL, getGeminiApiKey, extract3DMarker, withRetry, isOverloadedError, generateContentResilient, aiErrorMessage } from './ai';
-import { AddListingPage } from './components/add-listing-page';
+import { AddListingPage, PAYMENT_OPTIONS } from './components/add-listing-page';
 import { INITIAL_ENTITY_DATA, TRANSLATIONS, SUPER_ADMIN_EMAILS } from './constants';
 import { Property, ChatMessage, UserDocument, Page, Notification, ChatSession } from './types';
 import imageCompression from 'browser-image-compression';
@@ -46,6 +46,24 @@ const Loading3DFallback = () => (
     <Loader2 className="w-10 h-10 text-brand-500 animate-spin" />
   </div>
 );
+
+/** Localized label for a stored (English) payment-method value. */
+const paymentLabel = (value: string, isRtl: boolean) => {
+  const opt = PAYMENT_OPTIONS.find(o => o.value === value);
+  return opt ? (isRtl ? opt.ar : opt.en) : value;
+};
+
+/** Localized label + styling for a property's availability. `status` switches Sold↔Rented wording. */
+const availabilityInfo = (availability: Property['availability'], status: Property['status'], isRtl: boolean) => {
+  switch (availability) {
+    case 'Sold':
+      return { label: status === 'For Rent' ? (isRtl ? 'مؤجَّر' : 'Rented') : (isRtl ? 'مباع' : 'Sold'), color: 'bg-red-500', taken: true };
+    case 'Reserved':
+      return { label: isRtl ? 'محجوز' : 'Reserved', color: 'bg-amber-500', taken: true };
+    default:
+      return { label: isRtl ? 'متاح' : 'Available', color: 'bg-green-500', taken: false };
+  }
+};
 
 // --- Components ---
 
@@ -263,6 +281,11 @@ const PropertyCard: React.FC<{
   <div onClick={onClick} className={`group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl dark:shadow-none transition-all duration-300 overflow-hidden flex flex-col h-full animate-fade-in ${onClick ? 'cursor-pointer' : ''}`}>
     <div className="relative h-64 overflow-hidden">
       <img src={property.imageUrl} alt={property.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+      {(() => { const av = availabilityInfo(property.availability, property.status, isRtl); return av.taken ? (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
+          <span className={`${av.color} text-white text-lg font-black uppercase tracking-widest px-6 py-2 rounded-lg -rotate-12 shadow-xl`}>{av.label}</span>
+        </div>
+      ) : null; })()}
       <div className={`absolute top-4 ${isRtl ? 'right-4' : 'left-4'} bg-accent-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-sm`}>
         {property.status === 'For Sale' ? t.prop_forsale : t.prop_forrent}
       </div>
@@ -304,7 +327,7 @@ const PropertyCard: React.FC<{
         <div className="flex flex-wrap gap-1 mb-4">
           {property.paymentMethods.map(method => (
             <span key={method} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] uppercase tracking-wider font-bold rounded">
-              {method}
+              {paymentLabel(method, isRtl)}
             </span>
           ))}
         </div>
@@ -1789,7 +1812,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
             <h3 className="font-bold text-slate-900 dark:text-white mb-3">{isRtl ? 'طرق الدفع المتاحة' : 'Available Payment Methods'}</h3>
             <div className="flex flex-wrap gap-2">
               {property.paymentMethods?.map(m => (
-                <span key={m} className="px-3 py-1.5 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 rounded-lg text-sm font-medium border border-brand-100 dark:border-brand-800">{m}</span>
+                <span key={m} className="px-3 py-1.5 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 rounded-lg text-sm font-medium border border-brand-100 dark:border-brand-800">{paymentLabel(m, isRtl)}</span>
               ))}
               {(!property.paymentMethods || property.paymentMethods.length === 0) && (
                 <span className="text-slate-500 dark:text-slate-400 text-sm">{isRtl ? 'غير محدد' : 'Not specified'}</span>
@@ -1797,9 +1820,18 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
             </div>
           </div>
 
-          <Button onClick={() => onPurchase(property.id)} className="w-full py-4 text-lg">
-            {isRtl ? 'المتابعة للدفع' : 'Proceed to Payment'}
-          </Button>
+          {(() => {
+            const av = availabilityInfo(property.availability, property.status, isRtl);
+            return av.taken ? (
+              <div className="w-full py-4 text-lg text-center font-bold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                {isRtl ? `هذا العقار ${av.label} حاليًا` : `This property is ${av.label}`}
+              </div>
+            ) : (
+              <Button onClick={() => onPurchase(property.id)} className="w-full py-4 text-lg">
+                {isRtl ? 'المتابعة للدفع' : 'Proceed to Payment'}
+              </Button>
+            );
+          })()}
         </div>
             </>
           ) : (
@@ -2356,6 +2388,19 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
     }
   };
 
+  const handleSetAvailability = async (propId: string, availability: 'Available' | 'Sold' | 'Reserved') => {
+    setUpdating(propId);
+    try {
+      await updateDoc(doc(db, 'properties', propId), { availability });
+      setAllProperties(prev => prev.map(p => p.id === propId ? { ...p, availability } : p));
+    } catch (error) {
+      console.error("Error updating availability:", error);
+      alert(isRtl ? 'فشل تحديث حالة التوفر' : 'Failed to update availability');
+    } finally {
+      setUpdating(null);
+    }
+  };
+
   const handleVerifyProperty = async (propId: string, status: 'Verified' | 'Rejected' | 'Pending') => {
     setUpdating(propId);
     try {
@@ -2556,6 +2601,7 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                     <th className="px-8 py-4">{isRtl ? 'الموقع' : 'Location'}</th>
                     <th className="px-8 py-4">{isRtl ? 'السعر' : 'Price'}</th>
                     <th className="px-8 py-4">{isRtl ? 'الحالة' : 'Status'}</th>
+                    <th className="px-8 py-4">{isRtl ? 'التوفر' : 'Availability'}</th>
                     <th className="px-8 py-4">{isRtl ? 'التوثيق' : 'Verification'}</th>
                     <th className="px-8 py-4 text-right">{isRtl ? 'الإجراءات' : 'Actions'}</th>
                   </tr>
@@ -2580,6 +2626,18 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                         <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${prop.status === 'For Sale' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'}`}>
                           {prop.status === 'For Sale' ? (isRtl ? 'للبيع' : 'For Sale') : (isRtl ? 'للإيجار' : 'For Rent')}
                         </span>
+                      </td>
+                      <td className="px-8 py-5">
+                        <select
+                          value={prop.availability || 'Available'}
+                          disabled={updating === prop.id}
+                          onChange={(e) => handleSetAvailability(prop.id, e.target.value as 'Available' | 'Sold' | 'Reserved')}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 outline-none cursor-pointer"
+                        >
+                          <option value="Available">{isRtl ? 'متاح' : 'Available'}</option>
+                          <option value="Reserved">{isRtl ? 'محجوز' : 'Reserved'}</option>
+                          <option value="Sold">{prop.status === 'For Rent' ? (isRtl ? 'مؤجَّر' : 'Rented') : (isRtl ? 'مباع' : 'Sold')}</option>
+                        </select>
                       </td>
                       <td className="px-8 py-5">
                         <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${

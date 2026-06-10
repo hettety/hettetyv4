@@ -77,12 +77,13 @@ service cloud.firestore {
     }
 
     function isValidProperty(data) {
-      return data.keys().hasOnly(['title', 'price', 'location', 'bedrooms', 'bathrooms', 'area', 'imageUrl', 'images', 'videoUrl', 'digitalTwinUrl', 'status', 'isVerified', 'verificationStatus', 'paymentMethods', 'publishDate', 'unitCode', 'legalDocs', 'authorUid', 'description', 'registrationNumber', 'courtSignatureValidity', 'isResale']) &&
+      return data.keys().hasOnly(['title', 'price', 'location', 'bedrooms', 'bathrooms', 'area', 'imageUrl', 'images', 'videoUrl', 'digitalTwinUrl', 'status', 'availability', 'isVerified', 'verificationStatus', 'paymentMethods', 'publishDate', 'unitCode', 'legalDocs', 'authorUid', 'description', 'registrationNumber', 'courtSignatureValidity', 'isResale']) &&
              data.keys().hasAll(['title', 'price', 'location', 'status']) &&
              data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
              data.price is number && data.price >= 0 &&
              data.location is string && data.location.size() > 0 &&
              data.status in ['For Sale', 'For Rent'] &&
+             (!('availability' in data) || data.availability in ['Available', 'Sold', 'Reserved']) &&
              (!('bedrooms' in data) || data.bedrooms is number) &&
              (!('bathrooms' in data) || data.bathrooms is number) &&
              (!('area' in data) || data.area is number) &&

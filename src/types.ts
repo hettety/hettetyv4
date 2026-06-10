@@ -14,6 +14,8 @@ export interface Property {
   videoUrl?: string;
   digitalTwinUrl?: string; // For 3D Digital Twin or Polycam link
   status: 'For Sale' | 'For Rent';
+  // Listing lifecycle: still on the market, taken, or reserved.
+  availability?: 'Available' | 'Sold' | 'Reserved';
   isVerified: boolean;
   verificationStatus?: 'Pending' | 'Verified' | 'Rejected';
   paymentMethods?: string[];
