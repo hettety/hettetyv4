@@ -2290,14 +2290,14 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
       const key = (u.email || u.id).toLowerCase();
       const prev = byEmail.get(key);
       if (!prev) {
-        byEmail.set(key, { ...u, accounts: 1 });
+        byEmail.set(key, { ...u, accounts: 1, accountIds: [u.id] });
         continue;
       }
       const primary = prev.role === 'admin' ? prev
         : u.role === 'admin' ? u
         : (lastSeen(u)?.getTime() ?? 0) > (lastSeen(prev)?.getTime() ?? 0) ? u : prev;
       const latest = [prev, u].map(lastSeen).filter((d): d is Date => !!d).sort((a, b) => b.getTime() - a.getTime())[0];
-      byEmail.set(key, { ...primary, accounts: prev.accounts + 1, lastLoginAt: latest?.toISOString() ?? primary.lastLoginAt });
+      byEmail.set(key, { ...primary, accounts: prev.accounts + 1, accountIds: [...prev.accountIds, u.id], lastLoginAt: latest?.toISOString() ?? primary.lastLoginAt });
     }
     // Most recently active first
     return Array.from(byEmail.values()).sort((a, b) => (lastSeen(b)?.getTime() ?? 0) - (lastSeen(a)?.getTime() ?? 0));
@@ -2311,6 +2311,28 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
       setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
     } catch (error) {
       console.error("Error updating role:", error);
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  // Removes a person's user document(s). Note: this only clears their Firestore
+  // profile (so they lose admin rights and vanish from the dashboard); their
+  // Firebase Auth login still exists and can only be removed from the Firebase
+  // Console or a Cloud Function with the Admin SDK.
+  const handleDeleteUser = async (mUser: any) => {
+    const email = mUser.email || mUser.id;
+    if (!window.confirm(isRtl
+      ? `متأكد إنك عايز تحذف المستخدم ${email} نهائيًا؟`
+      : `Permanently delete user ${email}?`)) return;
+    setUpdating(mUser.id);
+    const ids: string[] = mUser.accountIds?.length ? mUser.accountIds : [mUser.id];
+    try {
+      await Promise.all(ids.map(id => deleteDoc(doc(db, 'users', id))));
+      setUsers(prev => prev.filter(u => !ids.includes(u.id)));
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      alert(isRtl ? 'فشل حذف المستخدم' : 'Failed to delete the user');
     } finally {
       setUpdating(null);
     }
@@ -2704,14 +2726,24 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                      </td>
                      <td className="px-8 py-6 text-right">
                        {!SUPER_ADMIN_EMAILS.includes(user.email || '') ? (
-                         <Button 
-                           onClick={() => toggleRole(user.id, user.role)}
-                           disabled={updating === user.id}
-                           variant="outline"
-                           className="text-xs py-1.5 px-4 rounded-lg font-bold"
-                         >
-                           {updating === user.id ? <Loader2 className="animate-spin" size={14} /> : (user.role === 'admin' ? (isRtl ? 'إزالة مشرف' : 'Demote') : (isRtl ? 'ترقية لمشرف' : 'Promote'))}
-                         </Button>
+                         <div className="flex justify-end gap-2">
+                           <Button
+                             onClick={() => toggleRole(user.id, user.role)}
+                             disabled={updating === user.id}
+                             variant="outline"
+                             className="text-xs py-1.5 px-4 rounded-lg font-bold"
+                           >
+                             {updating === user.id ? <Loader2 className="animate-spin" size={14} /> : (user.role === 'admin' ? (isRtl ? 'إزالة مشرف' : 'Demote') : (isRtl ? 'ترقية لمشرف' : 'Promote'))}
+                           </Button>
+                           <button
+                             onClick={() => handleDeleteUser(user)}
+                             disabled={updating === user.id}
+                             className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-600 hover:text-white px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                             title={isRtl ? 'حذف المستخدم' : 'Delete user'}
+                           >
+                             <Trash2 size={14} />
+                           </button>
+                         </div>
                        ) : (
                          <div className="flex items-center justify-end gap-2 text-xs font-bold text-brand-600 dark:text-brand-400 uppercase">
                             <Sparkles size={12} className="text-accent-500" />
