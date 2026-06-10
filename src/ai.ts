@@ -5,13 +5,13 @@
  * generation and OCR extraction.
  */
 
-// One model everywhere — previously the codebase mixed 'gemini-3-flash-preview'
-// and 'gemini-2.5-flash' which made behavior inconsistent between features.
-export const GEMINI_MODEL = 'gemini-3-flash-preview';
+// One model everywhere. We default to the stable GA model — the preview model
+// (gemini-3-flash-preview) constantly returned 503 "high demand", breaking the
+// assistant. Stability matters more than being on the bleeding edge here.
+export const GEMINI_MODEL = 'gemini-2.5-flash';
 
-// Preview models frequently return 503 "high demand". When the primary model
-// is overloaded we transparently fall back to this stable GA model.
-export const GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash';
+// If the primary model is ever overloaded we transparently fall back to this one.
+export const GEMINI_FALLBACK_MODEL = 'gemini-2.0-flash';
 
 /** True for transient "try again later" errors (overload / rate limit). */
 export function isOverloadedError(err: any): boolean {

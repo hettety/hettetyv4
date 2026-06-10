@@ -22,10 +22,21 @@ const fileToDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
  * property document, which blows past Firestore's 1MB document limit as soon
  * as a few photos are attached — the listing save would simply fail.
  */
+// On the free Spark plan Storage isn't enabled, and uploadBytes can hang for a
+// long time before failing — which made uploads feel frozen. We race it against
+// a short timeout so we bail to the base64 fallback fast.
+const STORAGE_TIMEOUT_MS = 8000;
+
+const withTimeout = <T,>(promise: Promise<T>, ms: number) =>
+  Promise.race([
+    promise,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('storage-timeout')), ms)),
+  ]);
+
 const uploadToStorage = async (file: Blob, originalName: string) => {
   const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80);
   const storageRef = ref(storage, `properties/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`);
-  await uploadBytes(storageRef, file);
+  await withTimeout(uploadBytes(storageRef, file), STORAGE_TIMEOUT_MS);
   return getDownloadURL(storageRef);
 };
 
@@ -158,37 +169,45 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
   };
 
   // Single pipeline for both the file picker and drag & drop:
-  // compress → upload to Firebase Storage → keep only the lightweight URL.
+  // compress → upload to Firebase Storage (or base64 fallback) → keep the URL.
+  // Images are processed in parallel so a batch isn't bottlenecked one-by-one.
   const processImageFiles = async (files: File[]) => {
     const imageFiles = files.filter(f => f.type.startsWith('image/'));
     if (!imageFiles.length) return;
 
     setUploading(true);
     setUploadProgress(5);
+
+    let done = 0;
+    const tick = () => {
+      done++;
+      setUploadProgress(5 + Math.round((done / imageFiles.length) * 90));
+    };
+
+    const results = await Promise.all(imageFiles.map(async (file) => {
+      try {
+        const url = await storeImage(file);
+        tick();
+        return { url };
+      } catch (err) {
+        console.error("Image upload failed", err);
+        tick();
+        return { url: null };
+      }
+    }));
+
+    // Enforce the base64 cap *after* the parallel work, keeping the document small.
+    let base64Count = images.filter(isDataUrl).length;
     const uploadedUrls: string[] = [];
     let failures = 0;
     let skippedForSize = 0;
-    // Base64 fallback images already attached to this listing count against the cap.
-    let base64Count = images.filter(isDataUrl).length;
-
-    for (let i = 0; i < imageFiles.length; i++) {
-      const file = imageFiles[i];
-      try {
-        const url = await storeImage(file);
-        if (isDataUrl(url)) {
-          if (base64Count >= FALLBACK_MAX_IMAGES) {
-            skippedForSize++;
-            setUploadProgress(5 + Math.round(((i + 1) / imageFiles.length) * 90));
-            continue;
-          }
-          base64Count++;
-        }
-        uploadedUrls.push(url);
-      } catch (err) {
-        failures++;
-        console.error("Image upload failed", err);
+    for (const r of results) {
+      if (!r.url) { failures++; continue; }
+      if (isDataUrl(r.url)) {
+        if (base64Count >= FALLBACK_MAX_IMAGES) { skippedForSize++; continue; }
+        base64Count++;
       }
-      setUploadProgress(5 + Math.round(((i + 1) / imageFiles.length) * 90));
+      uploadedUrls.push(r.url);
     }
 
     if (uploadedUrls.length) {
