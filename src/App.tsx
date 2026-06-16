@@ -1623,8 +1623,7 @@ const Viewer3D = ({ property, onClose, isRtl }: { property: Property | undefined
   );
 };
 
-const PropertyModal = ({ property, onClose, onPurchase, t, isRtl }: { property: Property, onClose: () => void, onPurchase: (id: string) => void, t: any, isRtl: boolean }) => {
-  const [activeTab, setActiveTab] = useState<'details' | 'ai'>('details');
+const PropertyDetailPage = ({ property, onBack, onPurchase, t, isRtl }: { property: Property, onBack: () => void, onPurchase: (id: string) => void, t: any, isRtl: boolean }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [show3D, setShow3D] = useState(false);
   const displayImages = (property.images && property.images.length > 0 ? property.images : [property.imageUrl]).filter(Boolean);
@@ -1635,6 +1634,13 @@ const PropertyModal = ({ property, onClose, onPurchase, t, isRtl }: { property: 
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Reset the view whenever a different property is opened
+  useEffect(() => {
+    setCurrentImageIndex(0);
+    setShow3D(false);
+    window.scrollTo(0, 0);
+  }, [property.id]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -1666,10 +1672,13 @@ Area: ${property.area} sqm
 Bedrooms: ${property.bedrooms}
 Bathrooms: ${property.bathrooms}
 Status: ${property.status}
+Availability: ${property.availability || 'Available'}
+Payment Methods: ${property.paymentMethods?.join(', ') || 'Not specified'}
 Unit Code: ${property.unitCode || 'N/A'}
 Registry Number (raqm el shahr el 3aqary): ${property.registrationNumber || 'Not available'}
 Court Signature Validity (s7t tawqe3 el ma7kama): ${property.courtSignatureValidity ? 'Yes/Valid' : 'No/Pending'}
 Resale: ${property.isResale ? 'Yes, this is a resale property.' : 'No, direct sale.'}
+Description: ${property.description || 'N/A'}
 Images: ${property.images?.length ? property.images.join(', ') : property.imageUrl} (If the user asks to see the apartment / shape of the apartment / sor el shaqa, you MUST output ALL these images exactly in markdown format like this: ![Apartment](URL1) ![Apartment](URL2) etc.)
 
 ## Tone & Voice
@@ -1692,7 +1701,6 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
 
         let aiText = response.text || "Sorry, I couldn't process that request.";
 
-        // If the model asked to open the 3D viewer, strip the marker and launch it
         const { cleanText, show3D: wants3D } = extract3DMarker(aiText);
         if (wants3D) {
           aiText = cleanText || (isRtl ? 'جاري فتح الجولة ثلاثية الأبعاد...' : 'Opening the 3D tour...');
@@ -1701,7 +1709,6 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
 
         setMessages([...newMessages, { role: 'model', text: aiText, timestamp: new Date() }]);
       } else {
-        // Fallback mock
         setTimeout(() => {
           setMessages([...newMessages, { role: 'model', text: "API Key not found. Mock response: Property is great!", timestamp: new Date() }]);
         }, 1000);
@@ -1714,76 +1721,80 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
-      <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex border-b border-slate-200 dark:border-slate-800 shrink-0 relative">
-          <button onClick={() => setActiveTab('details')} className={`flex-1 py-4 font-bold text-center transition-colors ${activeTab === 'details' ? 'text-brand-600 border-b-2 border-brand-600' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}>
-            {isRtl ? 'تفاصيل العقار' : 'Property Details'}
-          </button>
-          <button onClick={() => setActiveTab('ai')} className={`flex-1 py-4 font-bold text-center transition-colors flex items-center justify-center gap-2 ${activeTab === 'ai' ? 'text-accent-500 border-b-2 border-accent-500' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}>
-            <MessageSquare size={18} /> {isRtl ? 'المساعد الذكي للوحدة' : 'Unit AI Assistant'}
-          </button>
-          <button onClick={onClose} className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full p-1 cursor-pointer"><X size={20}/></button>
-        </div>
+  const av = availabilityInfo(property.availability, property.status, isRtl);
 
-        <div className="overflow-y-auto flex-1">
-          {activeTab === 'details' ? (
-            <>
-              <div className="relative h-72 group">
-                {property.videoUrl && currentImageIndex === 0 ? (
-                  <video src={property.videoUrl} className="w-full h-full object-cover" controls playsInline />
-                ) : (
-                  <img src={displayImages[currentImageIndex]} alt={property.title} className="w-full h-full object-cover" />
-                )}
-                {displayImages.length > 0 && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setShow3D(true); }}
-                    className="absolute top-4 left-4 bg-black/60 hover:bg-brand-600 text-white backdrop-blur px-4 py-2 rounded-full text-sm font-bold transition-colors flex items-center gap-2 cursor-pointer z-10"
-                  >
-                    <Box size={16} /> {isRtl ? 'جولة 3D' : 'View in 3D'}
-                  </button>
-                )}
-                {displayImages.length > 1 && !property.videoUrl && (
-                  <>
-                    <button onClick={(e) => { e.stopPropagation(); setCurrentImageIndex(i => i === 0 ? displayImages.length - 1 : i - 1); }} className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-0 group-hover:opacity-100">
-                      <ChevronLeft size={20} />
-                    </button>
-                    <button onClick={(e) => { e.stopPropagation(); setCurrentImageIndex(i => (i + 1) % displayImages.length); }} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-0 group-hover:opacity-100">
-                      <ChevronRight size={20} />
-                    </button>
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-                       {displayImages.map((_, idx) => (
-                          <div key={idx} className={`w-2 h-2 rounded-full transition-all ${idx === currentImageIndex ? 'bg-white scale-125' : 'bg-white/50 cursor-pointer'}`} onClick={(e) => { e.stopPropagation(); setCurrentImageIndex(idx); }} />
-                       ))}
-                    </div>
-                  </>
-                )}
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-8 animate-fade-in">
+      <button onClick={onBack} className="flex items-center gap-2 text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 font-bold mb-6 transition-colors cursor-pointer">
+        {isRtl ? <ArrowRight size={18} /> : <ArrowLeft size={18} />} {isRtl ? 'رجوع للعقارات' : 'Back to listings'}
+      </button>
+
+      <div className="grid lg:grid-cols-3 gap-8 items-start">
+        {/* Details column */}
+        <div className="lg:col-span-2 space-y-8">
+          {/* Gallery */}
+          <div className="relative h-72 sm:h-96 group rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-lg">
+            {property.videoUrl && currentImageIndex === 0 ? (
+              <video src={property.videoUrl} className="w-full h-full object-cover" controls playsInline />
+            ) : (
+              <img src={displayImages[currentImageIndex]} alt={property.title} className="w-full h-full object-cover" />
+            )}
+            {av.taken && (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10 pointer-events-none">
+                <span className={`${av.color} text-white text-2xl font-black uppercase tracking-widest px-8 py-3 rounded-xl -rotate-12 shadow-2xl`}>{av.label}</span>
               </div>
-              <div className="p-8">
-          <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6">
+            )}
+            {displayImages.length > 0 && (
+              <button
+                onClick={() => setShow3D(true)}
+                className={`absolute top-4 ${isRtl ? 'right-4' : 'left-4'} bg-black/60 hover:bg-brand-600 text-white backdrop-blur px-4 py-2 rounded-full text-sm font-bold transition-colors flex items-center gap-2 cursor-pointer z-20`}
+              >
+                <Box size={16} /> {isRtl ? 'جولة 3D' : 'View in 3D'}
+              </button>
+            )}
+            {displayImages.length > 1 && !property.videoUrl && (
+              <>
+                <button onClick={() => setCurrentImageIndex(i => i === 0 ? displayImages.length - 1 : i - 1)} className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-0 group-hover:opacity-100 z-20">
+                  <ChevronLeft size={20} />
+                </button>
+                <button onClick={() => setCurrentImageIndex(i => (i + 1) % displayImages.length)} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-0 group-hover:opacity-100 z-20">
+                  <ChevronRight size={20} />
+                </button>
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-20">
+                  {displayImages.map((_, idx) => (
+                    <div key={idx} className={`w-2.5 h-2.5 rounded-full transition-all ${idx === currentImageIndex ? 'bg-white scale-125' : 'bg-white/50 cursor-pointer'}`} onClick={() => setCurrentImageIndex(idx)} />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2 flex-wrap">
-                <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">{property.title}</h2>
+                <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">{property.title}</h1>
                 {property.verificationStatus === 'Verified' && (
                   <span className="bg-green-500 text-white text-[10px] px-2 py-1 rounded-full font-black flex items-center gap-1 uppercase tracking-wider">
                     <ShieldCheck size={12}/> {isRtl ? 'أصلي + ثقة وقانون' : 'Verified Legal'}
                   </span>
                 )}
+                <span className={`${av.color} text-white text-[10px] px-2 py-1 rounded-full font-black uppercase tracking-wider`}>{av.label}</span>
               </div>
               <p className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mb-2 font-medium"><MapPin size={16} className="text-brand-500"/> {property.location}</p>
-              <div className="flex items-center gap-4 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+              <div className="flex items-center gap-4 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest flex-wrap">
                 {property.unitCode && <span>{isRtl ? 'كود الوحدة:' : 'Unit Code:'} {property.unitCode}</span>}
                 {property.publishDate && <span>{isRtl ? 'تاريخ النشر:' : 'Published:'} {property.publishDate}</span>}
               </div>
             </div>
-            <div className="text-right sm:bg-slate-50 sm:dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 self-stretch sm:self-auto flex sm:flex-col justify-between items-center sm:items-end">
+            <div className="text-right bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex sm:flex-col justify-between items-center sm:items-end gap-2 w-full sm:w-auto">
               <div className="text-2xl font-black text-brand-600 dark:text-brand-400">{property.price.toLocaleString()} EGP</div>
-              <div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded sm:mt-1">{property.status}</div>
+              <div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">{property.status === 'For Sale' ? (isRtl ? 'للبيع' : 'For Sale') : (isRtl ? 'للإيجار' : 'For Rent')}</div>
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4 py-6 border-y border-slate-100 dark:border-slate-800 my-6">
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-4">
             <div className="flex flex-col items-center p-4 bg-slate-50 dark:bg-slate-800 rounded-xl">
               <BedDouble className="text-brand-500 dark:text-brand-400 mb-2"/>
               <span className="font-bold text-slate-900 dark:text-white">{property.bedrooms}</span>
@@ -1802,13 +1813,37 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
           </div>
 
           {property.description && (
-            <div className="mb-6">
-               <h3 className="font-bold text-slate-900 dark:text-white mb-2">{isRtl ? 'الوصف' : 'Description'}</h3>
-               <p className="text-slate-600 dark:text-slate-300 whitespace-pre-wrap leading-relaxed text-sm">{property.description}</p>
+            <div>
+              <h3 className="font-bold text-slate-900 dark:text-white mb-2">{isRtl ? 'الوصف' : 'Description'}</h3>
+              <p className="text-slate-600 dark:text-slate-300 whitespace-pre-wrap leading-relaxed text-sm">{property.description}</p>
             </div>
           )}
 
-          <div className="mb-8">
+          {/* Legal & details */}
+          <div>
+            <h3 className="font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><Shield size={18} className="text-brand-500" /> {isRtl ? 'التفاصيل القانونية' : 'Legal Details'}</h3>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-xl text-sm">
+                <span className="text-slate-500 dark:text-slate-400">{isRtl ? 'رقم الشهر العقاري' : 'Registry Number'}</span>
+                <span className="font-bold text-slate-900 dark:text-white">{property.registrationNumber || (isRtl ? 'غير متاح' : 'N/A')}</span>
+              </div>
+              <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-xl text-sm">
+                <span className="text-slate-500 dark:text-slate-400">{isRtl ? 'صحة توقيع المحكمة' : 'Court Signature'}</span>
+                <span className={`font-bold ${property.courtSignatureValidity ? 'text-green-600 dark:text-green-400' : 'text-slate-900 dark:text-white'}`}>{property.courtSignatureValidity ? (isRtl ? 'صحيح' : 'Valid') : (isRtl ? 'غير محدد' : 'Pending')}</span>
+              </div>
+              <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-xl text-sm">
+                <span className="text-slate-500 dark:text-slate-400">{isRtl ? 'نوع البيع' : 'Sale Type'}</span>
+                <span className="font-bold text-slate-900 dark:text-white">{property.isResale ? (isRtl ? 'إعادة بيع' : 'Resale') : (isRtl ? 'بيع مباشر' : 'Direct')}</span>
+              </div>
+              <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-xl text-sm">
+                <span className="text-slate-500 dark:text-slate-400">{isRtl ? 'حالة التوفر' : 'Availability'}</span>
+                <span className="font-bold text-slate-900 dark:text-white">{av.label}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Payment methods */}
+          <div>
             <h3 className="font-bold text-slate-900 dark:text-white mb-3">{isRtl ? 'طرق الدفع المتاحة' : 'Available Payment Methods'}</h3>
             <div className="flex flex-wrap gap-2">
               {property.paymentMethods?.map(m => (
@@ -1820,63 +1855,67 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
             </div>
           </div>
 
-          {(() => {
-            const av = availabilityInfo(property.availability, property.status, isRtl);
-            return av.taken ? (
-              <div className="w-full py-4 text-lg text-center font-bold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                {isRtl ? `هذا العقار ${av.label} حاليًا` : `This property is ${av.label}`}
-              </div>
-            ) : (
-              <Button onClick={() => onPurchase(property.id)} className="w-full py-4 text-lg">
-                {isRtl ? 'المتابعة للدفع' : 'Proceed to Payment'}
-              </Button>
-            );
-          })()}
-        </div>
-            </>
+          {av.taken ? (
+            <div className="w-full py-4 text-lg text-center font-bold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+              {isRtl ? `هذا العقار ${av.label} حاليًا` : `This property is ${av.label}`}
+            </div>
           ) : (
-            <div className="flex flex-col h-[60vh] bg-slate-50 dark:bg-slate-900/50">
-              <div className="flex-1 overflow-y-auto p-6 space-y-4" ref={scrollRef}>
-                {messages.map((msg, i) => (
-                  <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
-                    <div className={`max-w-[85%] p-4 rounded-2xl shadow-sm ${msg.role === 'user' ? 'bg-brand-600 text-white rounded-tr-none' : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border border-slate-100 dark:border-slate-700'}`}>
-                      {msg.text.match(/!\[.*?\]\((.*?)\)/) ? (
-                        <>
-                          <p className="whitespace-pre-wrap leading-relaxed text-[15px]">{msg.text.replace(/!\[.*?\]\((.*?)\)/g, '')}</p>
-                          {msg.text.match(/!\[.*?\]\((.*?)\)/g)?.map((imgMatch, idx) => {
-                            const url = imgMatch.match(/\((.*?)\)/)?.[1];
-                            return url ? <img key={idx} src={url} alt="Property" className="mt-2 rounded-xl border border-slate-200 dark:border-slate-700 w-full object-cover" /> : null;
-                          })}
-                        </>
-                      ) : (
-                        <p className="whitespace-pre-wrap leading-relaxed text-[15px]">{msg.text}</p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {isLoading && (
-                  <div className="flex justify-start animate-fade-in">
-                    <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl rounded-tl-none border border-slate-100 dark:border-slate-700">
-                      <Loader2 className="w-5 h-5 text-brand-500 animate-spin" />
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="p-4 bg-white dark:bg-slate-800 border-t border-slate-100 dark:border-slate-700">
-                <form onSubmit={handleSendMessage} className="relative flex items-center">
-                  <input
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder={isRtl ? 'اسأل المساعد الذكي عن أي شيء يخص هذا العقار...' : 'Ask about this property...'}
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-4 pr-12 focus:outline-none focus:ring-2 focus:ring-accent-500 text-slate-900 dark:text-white"
-                  />
-                  <button type="submit" disabled={!input.trim() || isLoading} className="absolute right-2 p-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg disabled:opacity-50 transition-colors cursor-pointer">
-                    <Send size={18} className={isRtl ? 'rotate-180' : ''} />
-                  </button>
-                </form>
+            <Button onClick={() => onPurchase(property.id)} className="w-full py-4 text-lg">
+              {isRtl ? 'المتابعة للدفع' : 'Proceed to Payment'}
+            </Button>
+          )}
+        </div>
+
+        {/* AI assistant column (always visible) */}
+        <div className="lg:col-span-1">
+          <div className="lg:sticky lg:top-24 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden flex flex-col h-[32rem] lg:h-[calc(100vh-8rem)]">
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center gap-2 shrink-0">
+              <div className="w-8 h-8 rounded-full bg-accent-500/10 text-accent-500 flex items-center justify-center"><MessageSquare size={16} /></div>
+              <div>
+                <h3 className="font-black text-slate-900 dark:text-white text-sm">{isRtl ? 'المساعد الذكي للوحدة' : 'Unit AI Assistant'}</h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">{isRtl ? 'اسأل أي حاجة عن العقار ده' : 'Ask anything about this property'}</p>
               </div>
             </div>
-          )}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50 dark:bg-slate-900/50" ref={scrollRef}>
+              {messages.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+                  <div className={`max-w-[88%] p-3 rounded-2xl shadow-sm text-[14px] ${msg.role === 'user' ? 'bg-brand-600 text-white rounded-tr-none' : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border border-slate-100 dark:border-slate-700'}`}>
+                    {msg.text.match(/!\[.*?\]\((.*?)\)/) ? (
+                      <>
+                        <p className="whitespace-pre-wrap leading-relaxed">{msg.text.replace(/!\[.*?\]\((.*?)\)/g, '')}</p>
+                        {msg.text.match(/!\[.*?\]\((.*?)\)/g)?.map((imgMatch, idx) => {
+                          const url = imgMatch.match(/\((.*?)\)/)?.[1];
+                          return url ? <img key={idx} src={url} alt="Property" className="mt-2 rounded-xl border border-slate-200 dark:border-slate-700 w-full object-cover" /> : null;
+                        })}
+                      </>
+                    ) : (
+                      <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {isLoading && (
+                <div className="flex justify-start animate-fade-in">
+                  <div className="bg-white dark:bg-slate-800 p-3 rounded-2xl rounded-tl-none border border-slate-100 dark:border-slate-700">
+                    <Loader2 className="w-5 h-5 text-brand-500 animate-spin" />
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="p-3 bg-white dark:bg-slate-800 border-t border-slate-100 dark:border-slate-700 shrink-0">
+              <form onSubmit={handleSendMessage} className="relative flex items-center">
+                <input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder={isRtl ? 'اسأل عن العقار...' : 'Ask about this property...'}
+                  className={`w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-4 ${isRtl ? 'pl-12' : 'pr-12'} focus:outline-none focus:ring-2 focus:ring-accent-500 text-slate-900 dark:text-white`}
+                />
+                <button type="submit" disabled={!input.trim() || isLoading} className={`absolute ${isRtl ? 'left-2' : 'right-2'} p-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg disabled:opacity-50 transition-colors cursor-pointer`}>
+                  <Send size={18} className={isRtl ? 'rotate-180' : ''} />
+                </button>
+              </form>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1894,7 +1933,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
   );
 };
 
-const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFavorites, allProperties, onToggleFavorite, open3D }: { t: any, isRtl: boolean, onBrowse: () => void, onLogout: () => void, onLogin: () => void, userEmail: string | null, userFavorites: string[], allProperties: Property[], onToggleFavorite: (id: string) => void, open3D: (id: string) => void }) => {
+const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFavorites, allProperties, onToggleFavorite, open3D, onOpenProperty }: { t: any, isRtl: boolean, onBrowse: () => void, onLogout: () => void, onLogin: () => void, userEmail: string | null, userFavorites: string[], allProperties: Property[], onToggleFavorite: (id: string) => void, open3D: (id: string) => void, onOpenProperty: (id: string) => void }) => {
   const [profile, setProfile] = useState<any>(null);
   const [purchases, setPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2170,14 +2209,15 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
               {favoriteProperties.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   {favoriteProperties.map(p => (
-                    <PropertyCard 
-                      key={p.id} 
-                      property={p} 
-                      onView3D={() => open3D(p.id)} 
+                    <PropertyCard
+                      key={p.id}
+                      property={p}
+                      onView3D={() => open3D(p.id)}
                       onToggleFavorite={() => onToggleFavorite(p.id)}
                       isFavorited={true}
-                      t={t} 
-                      isRtl={isRtl} 
+                      onClick={() => onOpenProperty(p.id)}
+                      t={t}
+                      isRtl={isRtl}
                     />
                   ))}
                 </div>
@@ -2855,7 +2895,6 @@ export default function App() {
   const [minPrice, setMinPrice] = useState<number | ''>('');
   const [maxPrice, setMaxPrice] = useState<number | ''>('');
   const [sortBy, setSortBy] = useState<'default' | 'price-asc' | 'price-desc' | 'name-asc' | 'name-desc'>('default');
-  const [viewingProperty, setViewingProperty] = useState<Property | null>(null);
   const [paymentProperty, setPaymentProperty] = useState<Property | null>(null);
   const [aiFilteredIds, setAiFilteredIds] = useState<string[] | null>(null);
   const [isAiSearching, setIsAiSearching] = useState(false);
@@ -2875,9 +2914,14 @@ export default function App() {
   // Hash-based routing
   useEffect(() => {
     const handleHashChange = () => {
-      const hash = window.location.hash.replace('#', '');
-      if (hash) {
-        setCurrentPage(hash as Page);
+      const raw = window.location.hash.replace('#', '');
+      // Property pages carry their id in the hash: #property/<id>
+      const [page, param] = raw.split('/');
+      if (page === 'property' && param) {
+        setSelectedPropertyId(param);
+        setCurrentPage('property');
+      } else if (page) {
+        setCurrentPage(page as Page);
       } else {
         setCurrentPage('home');
       }
@@ -3188,6 +3232,15 @@ export default function App() {
     handleNav('3d');
   };
 
+  // Opens a property's full dedicated page (id encoded in the hash for deep links).
+  const openProperty = (id: string) => {
+    setSelectedPropertyId(id);
+    window.location.hash = `property/${id}`;
+    setCurrentPage('property');
+    setMobileMenuOpen(false);
+    window.scrollTo(0, 0);
+  };
+
   const NavLink = ({ page, label }: { page: Page, label: string }) => (
     <button 
       onClick={() => handleNav(page)} 
@@ -3462,7 +3515,7 @@ export default function App() {
                       onView3D={() => open3D(p.id)} 
                       onToggleFavorite={() => toggleFavorite(p.id)}
                       isFavorited={userFavorites.includes(p.id)}
-                      onClick={() => setViewingProperty(p)} 
+                      onClick={() => openProperty(p.id)}
                       t={t} 
                       isRtl={isRtl} 
                     />
@@ -3554,7 +3607,7 @@ export default function App() {
                       onView3D={() => open3D(p.id)} 
                       onToggleFavorite={() => toggleFavorite(p.id)}
                       isFavorited={userFavorites.includes(p.id)}
-                      onClick={() => setViewingProperty(p)} 
+                      onClick={() => openProperty(p.id)}
                       t={t} 
                       isRtl={isRtl} 
                     />
@@ -3575,6 +3628,33 @@ export default function App() {
         {currentPage === 'verification' && <VerificationPage onCta={() => handleNav('legal')} t={t} isRtl={isRtl} />}
         {currentPage === 'tours' && <Tours3DPage onCta={() => handleNav('3d-experience')} t={t} isRtl={isRtl} />}
         {currentPage === '3d' && selectedPropertyId && <Viewer3D property={properties.find(p => p.id === selectedPropertyId)} onClose={() => { setSelectedPropertyId(null); handleNav('listings'); }} t={t} isRtl={isRtl} />}
+        {currentPage === 'property' && selectedPropertyId && (() => {
+          const prop = properties.find(p => p.id === selectedPropertyId);
+          if (!prop) {
+            return (
+              <div className="max-w-3xl mx-auto px-4 py-24 text-center">
+                {loadingProps ? (
+                  <Loader2 className="w-10 h-10 text-brand-500 animate-spin mx-auto" />
+                ) : (
+                  <>
+                    <Building2 className="w-16 h-16 text-slate-300 dark:text-slate-700 mx-auto mb-4" />
+                    <p className="text-slate-500 dark:text-slate-400 mb-6">{isRtl ? 'العقار غير موجود أو تم حذفه.' : 'This property was not found or has been removed.'}</p>
+                    <Button onClick={() => handleNav('listings')}>{isRtl ? 'تصفح العقارات' : 'Browse Listings'}</Button>
+                  </>
+                )}
+              </div>
+            );
+          }
+          return (
+            <PropertyDetailPage
+              property={prop}
+              onBack={() => handleNav('listings')}
+              onPurchase={(id) => { setPaymentProperty(prop); handleNav('payment'); }}
+              t={t}
+              isRtl={isRtl}
+            />
+          );
+        })()}
         {currentPage === '3d-experience' && (
           <Experience3DPage
             properties={properties}
@@ -3596,6 +3676,7 @@ export default function App() {
             allProperties={properties}
             onToggleFavorite={toggleFavorite}
             open3D={open3D}
+            onOpenProperty={openProperty}
           />
         )}
         {currentPage === 'payment' && paymentProperty && (
@@ -3695,20 +3776,6 @@ export default function App() {
 
       {/* Cookie Consent Modal */}
       <CookieConsent t={t} isRtl={isRtl} onNavigateToLegal={handleNav} />
-
-      {viewingProperty && (
-        <PropertyModal
-          property={viewingProperty}
-          onClose={() => setViewingProperty(null)}
-          onPurchase={(id) => {
-            setViewingProperty(null);
-            setPaymentProperty(viewingProperty);
-            handleNav('payment');
-          }}
-          t={t}
-          isRtl={isRtl}
-        />
-      )}
 
       <footer className="bg-slate-900 dark:bg-black text-slate-400 py-12 border-t border-slate-800 transition-colors duration-500">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-12">
