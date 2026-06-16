@@ -1,19 +1,22 @@
 /**
- * Property3DViewer — immersive 3D gallery that displays a property's photos
- * as floating panels arranged in a circular showroom. The visitor stands in
- * the middle and can orbit/zoom freely, or use the arrows to glide between
- * photos. Used by the standalone 3D tour page, the property modal and the
- * AI assistant (when a user asks to "see the apartment in 3D").
+ * Property3DViewer — turns a flat property photo into an explorable 3D scene.
+ *
+ * Each photo is mapped onto a finely-subdivided plane and displaced along its
+ * depth cues (the image's own luminance drives a height map), so brighter/closer
+ * parts of the room pop forward. The visitor can then orbit the photo to view it
+ * from other angles, with real parallax between near and far surfaces — instead
+ * of just staring at a flat picture. Arrows switch between the property's photos.
+ *
+ * Used by the standalone 3D tour page, the property detail page and the AI
+ * assistant (when a user asks to "see the apartment in 3D").
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
-import { X, ChevronLeft, ChevronRight, Box, RotateCcw } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Box, RotateCcw, Move3d } from 'lucide-react';
 
-const PANEL_HEIGHT = 2.4;
-
-/** Loads a texture imperatively so a failed image degrades to a placeholder panel instead of crashing the canvas. */
+/** Loads a texture imperatively so a failed image degrades gracefully instead of crashing the canvas. */
 function useImageTexture(url: string) {
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
   const [aspect, setAspect] = useState(1.5);
@@ -27,13 +30,14 @@ function useImageTexture(url: string) {
       (tex) => {
         if (disposed) { tex.dispose(); return; }
         tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = 8;
         if (tex.image?.width && tex.image?.height) {
           setAspect(tex.image.width / tex.image.height);
         }
         setTexture(tex);
       },
       undefined,
-      () => { /* keep placeholder panel on load error */ }
+      () => { /* keep placeholder on load error */ }
     );
     return () => {
       disposed = true;
@@ -44,85 +48,80 @@ function useImageTexture(url: string) {
   return { texture, aspect };
 }
 
-const ImagePanel = ({ url, angle, radius, focused }: { url: string; angle: number; radius: number; focused: boolean }) => {
-  const { texture, aspect } = useImageTexture(url);
-  const frameRef = useRef<THREE.Group>(null);
-  const width = PANEL_HEIGHT * Math.min(aspect, 2.2);
-  const x = Math.sin(angle) * radius;
-  const z = Math.cos(angle) * radius;
+const PLANE_HEIGHT = 3;
+const DEPTH_SCALE = 0.55;
 
-  // Gentle scale-up + glow on the focused panel
-  useFrame(() => {
-    if (frameRef.current) {
-      const target = focused ? 1.12 : 1;
-      frameRef.current.scale.lerp(new THREE.Vector3(target, target, target), 0.08);
+/**
+ * The photo as a displaced 3D relief. The same texture is used both as the
+ * colour map and as the displacement (height) map, so the picture's lighter
+ * regions are pushed toward the viewer — giving genuine parallax when orbited.
+ */
+const DepthPhoto = ({ url }: { url: string }) => {
+  const { texture, aspect } = useImageTexture(url);
+  const groupRef = useRef<THREE.Group>(null);
+  const width = PLANE_HEIGHT * Math.min(Math.max(aspect, 0.6), 2.4);
+
+  // Subtle "breathing" sway so the depth reads even before the user interacts.
+  useFrame((state) => {
+    if (groupRef.current) {
+      const t = state.clock.elapsedTime;
+      groupRef.current.rotation.y = Math.sin(t * 0.3) * 0.06;
+      groupRef.current.rotation.x = Math.cos(t * 0.22) * 0.025;
     }
   });
 
   return (
-    <group ref={frameRef} position={[x, PANEL_HEIGHT / 2 + 0.4, z]} rotation={[0, angle + Math.PI, 0]}>
-      {/* Frame */}
-      <mesh position={[0, 0, -0.03]}>
-        <boxGeometry args={[width + 0.14, PANEL_HEIGHT + 0.14, 0.05]} />
-        <meshStandardMaterial color={focused ? '#c8a24a' : '#1e293b'} metalness={0.6} roughness={0.35} />
+    <group ref={groupRef}>
+      {/* Soft frame behind the relief */}
+      <mesh position={[0, 0, -0.06]}>
+        <boxGeometry args={[width + 0.12, PLANE_HEIGHT + 0.12, 0.08]} />
+        <meshStandardMaterial color="#0b1220" metalness={0.5} roughness={0.4} />
       </mesh>
-      {/* Photo (or dark placeholder while loading / on error) */}
+      {/* Displaced photo */}
       <mesh>
-        <planeGeometry args={[width, PANEL_HEIGHT]} />
-        {texture
-          ? <meshBasicMaterial map={texture} toneMapped={false} />
-          : <meshStandardMaterial color="#334155" />}
+        <planeGeometry args={[width, PLANE_HEIGHT, 220, 220]} />
+        {texture ? (
+          <meshStandardMaterial
+            map={texture}
+            displacementMap={texture}
+            displacementScale={DEPTH_SCALE}
+            displacementBias={-DEPTH_SCALE / 2}
+            roughness={0.85}
+            metalness={0.0}
+            side={THREE.DoubleSide}
+          />
+        ) : (
+          <meshStandardMaterial color="#334155" />
+        )}
       </mesh>
     </group>
   );
 };
 
-const Showroom = ({ images, focusedIndex }: { images: string[]; focusedIndex: number }) => {
-  const groupRef = useRef<THREE.Group>(null);
-  const radius = Math.max(4.5, (images.length * 3.6) / (2 * Math.PI));
-
-  // Rotate the whole gallery so the focused photo faces the camera
-  useFrame(() => {
-    if (!groupRef.current) return;
-    const targetRotation = -((2 * Math.PI) / images.length) * focusedIndex;
-    const current = groupRef.current.rotation.y;
-    let delta = targetRotation - current;
-    // shortest path around the circle
-    delta = Math.atan2(Math.sin(delta), Math.cos(delta));
-    groupRef.current.rotation.y = current + delta * 0.06;
-  });
-
-  const floorRadius = radius + 2.5;
+const Scene = ({ url, autoRotate }: { url: string; autoRotate: boolean }) => {
+  const { camera } = useThree();
+  useEffect(() => {
+    camera.position.set(0, 0, 4);
+  }, [url, camera]);
 
   return (
     <>
-      <ambientLight intensity={0.7} />
-      <pointLight position={[0, 6, 0]} intensity={60} color="#fff7e6" />
-      <pointLight position={[0, 2, 4]} intensity={25} color="#ffffff" />
-
-      <group ref={groupRef}>
-        {images.map((url, i) => (
-          <ImagePanel
-            key={`${i}-${url.slice(0, 64)}`}
-            url={url}
-            angle={(i * 2 * Math.PI) / images.length}
-            radius={radius}
-            focused={i === focusedIndex}
-          />
-        ))}
-      </group>
-
-      {/* Floor */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-        <circleGeometry args={[floorRadius, 64]} />
-        <meshStandardMaterial color="#0b1220" metalness={0.4} roughness={0.7} />
-      </mesh>
-      <gridHelper args={[floorRadius * 2, 24, '#1e293b', '#13203a']} position={[0, 0.01, 0]} />
-      {/* Ceiling glow disc */}
-      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 7, 0]}>
-        <circleGeometry args={[floorRadius, 64]} />
-        <meshBasicMaterial color="#070d1a" />
-      </mesh>
+      <ambientLight intensity={0.9} />
+      <directionalLight position={[2, 3, 4]} intensity={1.1} />
+      <directionalLight position={[-3, -1, 2]} intensity={0.4} color="#cbd5e1" />
+      <DepthPhoto key={url} url={url} />
+      <OrbitControls
+        enablePan={false}
+        enableZoom
+        autoRotate={autoRotate}
+        autoRotateSpeed={1.2}
+        minDistance={2.2}
+        maxDistance={6}
+        minPolarAngle={Math.PI / 2 - 0.7}
+        maxPolarAngle={Math.PI / 2 + 0.7}
+        minAzimuthAngle={-0.9}
+        maxAzimuthAngle={0.9}
+      />
     </>
   );
 };
@@ -136,18 +135,21 @@ export interface Property3DViewerProps {
 
 const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, title, onClose, isRtl }) => {
   const validImages = useMemo(() => images.filter(Boolean), [images]);
-  const [focusedIndex, setFocusedIndex] = useState(0);
-  const controlsRef = useRef<any>(null);
+  const [index, setIndex] = useState(0);
+  const [autoRotate, setAutoRotate] = useState(true);
 
-  // Keyboard navigation + Escape to close
+  const next = () => { setIndex((i) => (i + 1) % validImages.length); setAutoRotate(true); };
+  const prev = () => { setIndex((i) => (i === 0 ? validImages.length - 1 : i - 1)); setAutoRotate(true); };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
-      if (e.key === 'ArrowRight') setFocusedIndex((i) => (i + 1) % validImages.length);
-      if (e.key === 'ArrowLeft') setFocusedIndex((i) => (i === 0 ? validImages.length - 1 : i - 1));
+      if (e.key === 'ArrowRight') next();
+      if (e.key === 'ArrowLeft') prev();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [validImages.length, onClose]);
 
   if (validImages.length === 0) {
@@ -165,59 +167,51 @@ const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, title, onCl
   return (
     <div className="fixed inset-0 z-[70] bg-black flex flex-col animate-fade-in" dir="ltr">
       {/* Toolbar */}
-      <div className="absolute top-0 w-full p-4 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none">
+      <div className="absolute top-0 w-full p-4 flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none">
         <div className="text-white pointer-events-auto">
-          <h3 className="font-bold text-lg flex items-center gap-2"><Box size={20} className="text-accent-500" /> {isRtl ? 'جولة ثلاثية الأبعاد' : '3D Virtual Tour'}</h3>
+          <h3 className="font-bold text-lg flex items-center gap-2"><Box size={20} className="text-accent-500" /> {isRtl ? 'عرض ثلاثي الأبعاد' : '3D Depth View'}</h3>
           {title && <p className="text-sm text-white/70">{title}</p>}
         </div>
         <button onClick={onClose} aria-label="Close 3D viewer" className="pointer-events-auto bg-white/10 hover:bg-white/20 p-2 rounded-full text-white backdrop-blur cursor-pointer transition-colors"><X /></button>
       </div>
 
       {/* 3D Scene */}
-      <Canvas camera={{ position: [0, 1.7, 0.1], fov: 65 }} className="flex-1" gl={{ antialias: true }}>
+      <Canvas
+        camera={{ position: [0, 0, 4], fov: 50 }}
+        className="flex-1"
+        gl={{ antialias: true }}
+        onPointerDown={() => setAutoRotate(false)}
+      >
         <color attach="background" args={['#05080f']} />
-        <fog attach="fog" args={['#05080f', 10, 26]} />
-        <Showroom images={validImages} focusedIndex={focusedIndex} />
-        <OrbitControls
-          ref={controlsRef}
-          target={[0, 1.6, -0.001]}
-          enablePan={false}
-          enableZoom
-          minDistance={0.1}
-          maxDistance={6}
-          rotateSpeed={-0.4}
-        />
+        <fog attach="fog" args={['#05080f', 6, 16]} />
+        <Scene url={validImages[index]} autoRotate={autoRotate} />
       </Canvas>
 
       {/* Bottom controls */}
-      <div className="absolute bottom-0 w-full p-6 flex items-center justify-center gap-6 bg-gradient-to-t from-black/80 to-transparent z-10">
-        <button
-          onClick={() => setFocusedIndex((i) => (i === 0 ? validImages.length - 1 : i - 1))}
-          aria-label="Previous image"
-          className="bg-white/10 hover:bg-white/25 p-3 rounded-full text-white backdrop-blur border border-white/20 transition-colors cursor-pointer"
-        >
-          <ChevronLeft size={22} />
-        </button>
+      <div className="absolute bottom-0 w-full p-6 flex items-center justify-center gap-4 bg-gradient-to-t from-black/80 to-transparent z-10">
+        {validImages.length > 1 && (
+          <button onClick={prev} aria-label="Previous image" className="bg-white/10 hover:bg-white/25 p-3 rounded-full text-white backdrop-blur border border-white/20 transition-colors cursor-pointer">
+            <ChevronLeft size={22} />
+          </button>
+        )}
         <div className="text-white/80 text-sm font-bold tracking-widest min-w-[64px] text-center select-none">
-          {focusedIndex + 1} / {validImages.length}
+          {index + 1} / {validImages.length}
         </div>
+        {validImages.length > 1 && (
+          <button onClick={next} aria-label="Next image" className="bg-white/10 hover:bg-white/25 p-3 rounded-full text-white backdrop-blur border border-white/20 transition-colors cursor-pointer">
+            <ChevronRight size={22} />
+          </button>
+        )}
         <button
-          onClick={() => setFocusedIndex((i) => (i + 1) % validImages.length)}
-          aria-label="Next image"
-          className="bg-white/10 hover:bg-white/25 p-3 rounded-full text-white backdrop-blur border border-white/20 transition-colors cursor-pointer"
-        >
-          <ChevronRight size={22} />
-        </button>
-        <button
-          onClick={() => controlsRef.current?.reset?.()}
-          aria-label="Reset camera"
-          className="bg-white/10 hover:bg-white/25 p-3 rounded-full text-white backdrop-blur border border-white/20 transition-colors cursor-pointer"
+          onClick={() => setAutoRotate((a) => !a)}
+          aria-label="Toggle auto-rotate"
+          className={`p-3 rounded-full backdrop-blur border transition-colors cursor-pointer ${autoRotate ? 'bg-brand-600 border-brand-500 text-white' : 'bg-white/10 hover:bg-white/25 border-white/20 text-white'}`}
         >
           <RotateCcw size={20} />
         </button>
       </div>
-      <p className="absolute bottom-24 w-full text-center text-white/40 text-xs pointer-events-none select-none">
-        {isRtl ? 'اسحب للتحرك حول الصالة • عجلة الفأرة للتقريب' : 'Drag to look around • Scroll to zoom'}
+      <p className="absolute bottom-24 w-full text-center text-white/40 text-xs pointer-events-none select-none flex items-center justify-center gap-2">
+        <Move3d size={14} /> {isRtl ? 'اسحب لرؤية الصورة من زوايا مختلفة • عجلة الفأرة للتقريب' : 'Drag to view from different angles • Scroll to zoom'}
       </p>
     </div>
   );
