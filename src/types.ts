@@ -11,8 +11,9 @@ export interface Property {
   area: number;
   imageUrl: string;
   images?: string[];
+  panoramas?: string[]; // Equirectangular 360° photos for the immersive look-around viewer
   videoUrl?: string;
-  digitalTwinUrl?: string; // For 3D Digital Twin or Polycam link
+  digitalTwinUrl?: string; // For 3D Digital Twin or Polycam/Matterport walkthrough link
   status: 'For Sale' | 'For Rent';
   // Listing lifecycle: still on the market, taken, or reserved.
   availability?: 'Available' | 'Sold' | 'Reserved';
