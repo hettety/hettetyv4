@@ -1615,6 +1615,7 @@ const Viewer3D = ({ property, onClose, isRtl }: { property: Property | undefined
     <React.Suspense fallback={<Loading3DFallback />}>
       <Property3DViewer
         images={images}
+        panoramas={property?.panoramas}
         title={property?.title}
         onClose={onClose}
         isRtl={isRtl}
@@ -1744,12 +1745,12 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
                 <span className={`${av.color} text-white text-2xl font-black uppercase tracking-widest px-8 py-3 rounded-xl -rotate-12 shadow-2xl`}>{av.label}</span>
               </div>
             )}
-            {displayImages.length > 0 && (
+            {(displayImages.length > 0 || (property.panoramas && property.panoramas.length > 0)) && (
               <button
                 onClick={() => setShow3D(true)}
                 className={`absolute top-4 ${isRtl ? 'right-4' : 'left-4'} bg-black/60 hover:bg-brand-600 text-white backdrop-blur px-4 py-2 rounded-full text-sm font-bold transition-colors flex items-center gap-2 cursor-pointer z-20`}
               >
-                <Box size={16} /> {isRtl ? 'جولة 3D' : 'View in 3D'}
+                <Box size={16} /> {property.panoramas && property.panoramas.length > 0 ? (isRtl ? 'جولة 360°' : '360° Tour') : (isRtl ? 'جولة 3D' : 'View in 3D')}
               </button>
             )}
             {displayImages.length > 1 && !property.videoUrl && (
@@ -1816,6 +1817,26 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
             <div>
               <h3 className="font-bold text-slate-900 dark:text-white mb-2">{isRtl ? 'الوصف' : 'Description'}</h3>
               <p className="text-slate-600 dark:text-slate-300 whitespace-pre-wrap leading-relaxed text-sm">{property.description}</p>
+            </div>
+          )}
+
+          {/* Real virtual tour (Matterport / Polycam / Kuula …) */}
+          {property.digitalTwinUrl && (
+            <div>
+              <h3 className="font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><Box size={18} className="text-brand-500" /> {isRtl ? 'الجولة الافتراضية الحقيقية' : 'Real Virtual Tour'}</h3>
+              <div className="relative w-full rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-lg bg-slate-100 dark:bg-slate-800" style={{ aspectRatio: '16 / 10' }}>
+                <iframe
+                  src={property.digitalTwinUrl}
+                  title={isRtl ? 'جولة افتراضية' : 'Virtual Tour'}
+                  className="absolute inset-0 w-full h-full"
+                  allow="xr-spatial-tracking; gyroscope; accelerometer; fullscreen"
+                  allowFullScreen
+                  loading="lazy"
+                />
+              </div>
+              <a href={property.digitalTwinUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 mt-2 text-sm font-bold text-brand-600 dark:text-brand-400 hover:underline">
+                {isRtl ? 'افتح الجولة في نافذة كاملة' : 'Open tour in full window'} <ArrowRight size={14} className={isRtl ? 'rotate-180' : ''} />
+              </a>
             </div>
           )}
 
@@ -1923,6 +1944,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
         <React.Suspense fallback={<Loading3DFallback />}>
           <Property3DViewer
             images={displayImages}
+            panoramas={property.panoramas}
             title={property.title}
             onClose={() => setShow3D(false)}
             isRtl={isRtl}

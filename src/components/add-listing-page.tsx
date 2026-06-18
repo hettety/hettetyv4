@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  CheckCircle, Loader2, PlusCircle, Upload, PlayCircle, Shield, ArrowRight, ArrowLeft, Wand2, FileText, Image as ImageIcon, X
+  CheckCircle, Loader2, PlusCircle, Upload, PlayCircle, Shield, ArrowRight, ArrowLeft, Wand2, FileText, Image as ImageIcon, X, Box, Globe
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { GoogleGenAI } from '@google/genai';
@@ -94,6 +94,7 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
   const togglePayment = (m: string) =>
     setPaymentMethods(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
   const [images, setImages] = useState<string[]>([]);
+  const [panoramas, setPanoramas] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -245,6 +246,28 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
     processImageFiles(files);
   };
 
+  // 360° equirectangular panoramas, stored separately so the viewer knows to
+  // render them inside a sphere (look-around) rather than as a flat photo.
+  const handlePanoramaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
+    e.target.value = '';
+    if (!files.length) return;
+    setUploading(true);
+    setUploadProgress(5);
+    const urls: string[] = [];
+    let failures = 0;
+    let done = 0;
+    await Promise.all(files.map(async (file) => {
+      try { urls.push(await storeImage(file)); }
+      catch (err) { failures++; console.error('Panorama upload failed', err); }
+      done++; setUploadProgress(5 + Math.round((done / files.length) * 90));
+    }));
+    if (urls.length) setPanoramas(prev => [...prev, ...urls]);
+    if (failures) alert(isRtl ? `تعذر رفع ${failures} من صور البانوراما` : `${failures} panorama(s) failed to upload`);
+    setUploadProgress(100);
+    setTimeout(() => setUploading(false), 400);
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     processImageFiles(Array.from(e.dataTransfer.files));
@@ -326,6 +349,7 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
       area: Number(formData.area),
       imageUrl: formData.imageUrl || images[0] || '',
       images: images,
+      panoramas: panoramas,
       status: formData.status as 'For Sale' | 'For Rent',
       availability: formData.availability,
       isVerified: (isAdmin || isSuperAdmin),
@@ -353,6 +377,7 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
       });
       setPaymentMethods(['Cash']);
       setImages([]);
+      setPanoramas([]);
       setStep(1);
     } catch (err) {
       console.error("Failed to publish property", err);
@@ -585,6 +610,61 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
                       )}
                     </label>
                   </div>
+                </div>
+
+                {/* 360° panoramas */}
+                <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    <div className="flex items-center gap-2">
+                      <Box size={18} className="text-brand-500" />
+                      {isRtl ? 'صور بانوراما 360°' : '360° Panorama Photos'}
+                    </div>
+                  </label>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                    {isRtl
+                      ? 'صور بزاوية 360 (من كاميرا 360 أو وضع البانوراما) — هتظهر كجولة تلف جواها 360 درجة.'
+                      : 'Equirectangular 360° shots (from a 360 camera or panorama mode) — shown as a look-around tour.'}
+                  </p>
+                  <input type="file" multiple accept="image/*" onChange={handlePanoramaUpload} className="hidden" id="panorama-upload" disabled={uploading} />
+                  <label htmlFor="panorama-upload" className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-2xl cursor-pointer transition-all bg-slate-50 dark:bg-slate-800/30 border-slate-300 dark:border-slate-700 hover:border-brand-500 hover:bg-white dark:hover:bg-slate-800 group">
+                    <Box className="text-slate-400 mb-2 group-hover:text-brand-500 transition-colors" size={28} />
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{isRtl ? 'انقر لرفع صور 360°' : 'Click to upload 360° photos'}</p>
+                  </label>
+                  {panoramas.length > 0 && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+                      {panoramas.map((img, i) => (
+                        <div key={i} className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 group">
+                          <img src={img} className="w-full h-full object-cover" alt="Panorama" />
+                          <span className="absolute top-1.5 left-1.5 bg-brand-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded">360°</span>
+                          <button onClick={() => setPanoramas(panoramas.filter((_, idx) => idx !== i))} className="absolute top-1.5 right-1.5 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600">
+                            <X size={11} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Real virtual tour link (Matterport / Polycam / Kuula …) */}
+                <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    <div className="flex items-center gap-2">
+                      <Globe size={18} className="text-accent-500" />
+                      {isRtl ? 'رابط الجولة الافتراضية الحقيقية' : 'Real Virtual Tour Link'}
+                    </div>
+                  </label>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                    {isRtl
+                      ? 'صوّر الوحدة بتطبيق Matterport أو Polycam والصق اللينك هنا — هيظهر كجولة كاملة تتمشى جواها.'
+                      : 'Scan the unit with Matterport or Polycam and paste the link — shown as a full walkthrough tour.'}
+                  </p>
+                  <input
+                    type="url"
+                    value={formData.digitalTwinUrl}
+                    onChange={e => setFormData({ ...formData, digitalTwinUrl: e.target.value })}
+                    placeholder="https://my.matterport.com/show/?m=... | https://poly.cam/capture/..."
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white text-sm"
+                  />
                 </div>
             </div>
         )}
