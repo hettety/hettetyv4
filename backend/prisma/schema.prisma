@@ -194,6 +194,21 @@ model Notification {
   @@index([userId])
 }
 
+model UserConsent {
+  id            String   @id @default(uuid())
+  userId        String?  // null for guests
+  agreedToTerms Boolean
+  necessary     Boolean  @default(true)
+  analytics     Boolean  @default(false)
+  marketing     Boolean  @default(false)
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
 model AIRecommendationLog {
   id              String   @id @default(uuid())
   userId          String

@@ -48,9 +48,13 @@ service cloud.firestore {
     }
     
     function isAdmin() {
-      return isAuthenticated() && 
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' || 
-         isSuperAdmin());
+      // Check the cheap, read-free super-admin allowlist FIRST so a super-admin
+      // with no /users doc is still recognised. Only touch the users doc when it
+      // actually exists — get() on a missing doc errors out and denies the rule.
+      return isAuthenticated() &&
+        (isSuperAdmin() ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
     }
 
     function isSuperAdmin() {
@@ -77,7 +81,7 @@ service cloud.firestore {
     }
 
     function isValidProperty(data) {
-      return data.keys().hasOnly(['title', 'price', 'location', 'bedrooms', 'bathrooms', 'area', 'imageUrl', 'images', 'videoUrl', 'digitalTwinUrl', 'status', 'isVerified', 'verificationStatus', 'paymentMethods', 'publishDate', 'unitCode', 'legalDocs', 'authorUid', 'description', 'registrationNumber', 'courtSignatureValidity', 'isResale']) &&
+      return data.keys().hasOnly(['title', 'price', 'location', 'bedrooms', 'bathrooms', 'area', 'imageUrl', 'images', 'videoUrl', 'digitalTwinUrl', 'panoramas', 'status', 'isVerified', 'verificationStatus', 'paymentMethods', 'publishDate', 'unitCode', 'legalDocs', 'authorUid', 'description', 'registrationNumber', 'courtSignatureValidity', 'isResale']) &&
              data.keys().hasAll(['title', 'price', 'location', 'status']) &&
              data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
              data.price is number && data.price >= 0 &&
@@ -88,6 +92,7 @@ service cloud.firestore {
              (!('area' in data) || data.area is number) &&
              (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() < 2000000)) &&
              (!('images' in data) || (data.images is list && data.images.size() <= 20)) &&
+             (!('panoramas' in data) || (data.panoramas is list && data.panoramas.size() <= 20)) &&
              (!('videoUrl' in data) || (data.videoUrl is string && data.videoUrl.size() < 2000000)) &&
              (!('digitalTwinUrl' in data) || (data.digitalTwinUrl is string && data.digitalTwinUrl.size() < 2000)) &&
              (!('isVerified' in data) || data.isVerified is bool) &&
@@ -160,7 +165,15 @@ service cloud.firestore {
 
     match /properties/{propertyId} {
       allow read, list: if true;
-      allow create: if isAdmin() && isValidProperty(request.resource.data);
+      // Admins create anything; any authenticated user may submit their OWN
+      // listing for review, but only as an unverified "Pending" entry.
+      allow create: if isValidProperty(request.resource.data) && (
+                      isAdmin() ||
+                      (isAuthenticated()
+                        && request.resource.data.authorUid == request.auth.uid
+                        && request.resource.data.verificationStatus == 'Pending'
+                        && request.resource.data.isVerified == false)
+                    );
       allow update: if isAdmin() && isValidProperty(request.resource.data);
       allow delete: if isAdmin();
     }

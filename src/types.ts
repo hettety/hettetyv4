@@ -12,7 +12,8 @@ export interface Property {
   imageUrl: string;
   images?: string[];
   videoUrl?: string;
-  digitalTwinUrl?: string; // For 3D Digital Twin or Polycam link
+  digitalTwinUrl?: string; // Real walkthrough tour — Matterport or Polycam link
+  panoramas?: string[]; // Equirectangular 360° photos for the panorama viewer
   status: 'For Sale' | 'For Rent';
   isVerified: boolean;
   verificationStatus?: 'Pending' | 'Verified' | 'Rejected';

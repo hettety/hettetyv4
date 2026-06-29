@@ -13,7 +13,7 @@ import {
   DollarSign, BedDouble, Bath, Maximize, Loader2,
   Check, FileCheck, Key, RefreshCw,
   User, ArrowLeft, Phone, Target, CreditCard, PlusCircle, Edit2, Save, LogOut, Shield, Trash2, Bell, Lock as LockIcon,
-  Plus, History, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, MessageSquare, Sun, Moon, Heart
+  Plus, History, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, MessageSquare, Sun, Moon, Heart, Compass
 } from 'lucide-react';
 import { GoogleGenAI, Type } from '@google/genai';
 import { GEMINI_MODEL, GEMINI_FALLBACK_MODEL, getGeminiApiKey, extract3DMarker, withRetry, isOverloadedError, generateContentResilient, aiErrorMessage } from './ai';
@@ -40,6 +40,8 @@ import PremiumHero from './components/PremiumHero';
 
 // Lazy-loaded so the heavy three.js bundle is only fetched when a 3D tour is opened
 const Property3DViewer = React.lazy(() => import('./components/Property3DViewer'));
+const PanoramaViewer = React.lazy(() => import('./components/PanoramaViewer'));
+const TourEmbed = React.lazy(() => import('./components/TourEmbed'));
 
 const Loading3DFallback = () => (
   <div className="fixed inset-0 z-[70] bg-black flex items-center justify-center">
@@ -834,7 +836,13 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
 - A licensed Egyptian real estate lawyer for legal matters.
 - A certified financial advisor for investment decisions.`;
         chatConfigRef.current = { apiKey, systemInstruction };
-        chatRef.current = ai.chats.create({ model: GEMINI_MODEL, config: { systemInstruction } });
+        // Only build a fresh chat when one doesn't exist yet. Recreating it on
+        // every `properties` refresh would silently wipe an ongoing
+        // conversation's history. The latest instruction is kept in
+        // chatConfigRef for the fallback path / any newly-created chat.
+        if (!chatRef.current) {
+          chatRef.current = ai.chats.create({ model: GEMINI_MODEL, config: { systemInstruction } });
+        }
       } else {
         console.error("No API key found for Gemini");
       }
@@ -843,15 +851,18 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
     }
   }, [properties, userName]);
 
-  // Re-sync welcome message when language changes
+  // Re-sync welcome message when language changes — but only on a fresh, unsaved
+  // chat. A loaded session can legitimately contain a single model message, and
+  // we must not overwrite its real content with the generic welcome text.
   useEffect(() => {
+    if (currentSessionId) return;
     setMessages(prev => {
         if (prev.length === 1 && prev[0].role === 'model') {
             return [{ role: 'model', text: t.ai_welcome, timestamp: new Date() }];
         }
         return prev;
     });
-  }, [t]);
+  }, [t, currentSessionId]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -860,7 +871,9 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
   }, [messages]);
 
   const handleSend = async () => {
-    if (!input.trim() || !auth.currentUser) return;
+    // Re-entry guard: a second send before the first one resolves would race on
+    // session creation and produce duplicate chat_sessions documents.
+    if (!input.trim() || !auth.currentUser || isLoading) return;
 
     const userMsg: ChatMessage = { role: 'user', text: input, timestamp: new Date() };
     const newMessages = [...messages, userMsg];
@@ -1604,7 +1617,17 @@ const PropertyModal = ({ property, onClose, onPurchase, t, isRtl }: { property: 
   const [activeTab, setActiveTab] = useState<'details' | 'ai'>('details');
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [show3D, setShow3D] = useState(false);
+  const [showTour, setShowTour] = useState(false);
+  const [showPano, setShowPano] = useState(false);
   const displayImages = (property.images && property.images.length > 0 ? property.images : [property.imageUrl]).filter(Boolean);
+  const hasPanoramas = !!(property.panoramas && property.panoramas.length > 0);
+  const hasTour = !!property.digitalTwinUrl;
+  // Unified media carousel: an optional video slide followed by every photo, so
+  // the photos stay reachable even when the property has a video.
+  const slides: { type: 'video' | 'image'; src: string }[] = [
+    ...(property.videoUrl ? [{ type: 'video' as const, src: property.videoUrl }] : []),
+    ...displayImages.map((src) => ({ type: 'image' as const, src })),
+  ];
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'model', text: isRtl ? `أهلاً! أنا المساعد الذكي الخاص بهذا العقار (${property.title}). اسألني عن تفاصيل العقار، الأوراق القانونية، حالة إعادة البيع، أو رقم الشهر العقاري.` : `Hello! I'm the AI assistant for this property (${property.title}). Ask me about its details, legal documents, resale status, or registry number.`, timestamp: new Date() }
@@ -1708,29 +1731,47 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
           {activeTab === 'details' ? (
             <>
               <div className="relative h-72 group">
-                {property.videoUrl && currentImageIndex === 0 ? (
-                  <video src={property.videoUrl} className="w-full h-full object-cover" controls playsInline />
+                {slides[currentImageIndex]?.type === 'video' ? (
+                  <video src={slides[currentImageIndex].src} className="w-full h-full object-cover" controls playsInline />
                 ) : (
-                  <img src={displayImages[currentImageIndex]} alt={property.title} className="w-full h-full object-cover" />
+                  <img src={slides[currentImageIndex]?.src} alt={property.title} className="w-full h-full object-cover" />
                 )}
-                {displayImages.length > 0 && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setShow3D(true); }}
-                    className="absolute top-4 left-4 bg-black/60 hover:bg-brand-600 text-white backdrop-blur px-4 py-2 rounded-full text-sm font-bold transition-colors flex items-center gap-2 cursor-pointer z-10"
-                  >
-                    <Box size={16} /> {isRtl ? 'جولة 3D' : 'View in 3D'}
-                  </button>
-                )}
-                {displayImages.length > 1 && !property.videoUrl && (
+                <div className="absolute top-4 left-4 flex flex-col items-start gap-2 z-10">
+                  {hasTour && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setShowTour(true); }}
+                      className="bg-accent-500 hover:bg-accent-600 text-white backdrop-blur px-4 py-2 rounded-full text-sm font-bold transition-colors flex items-center gap-2 cursor-pointer shadow-lg"
+                    >
+                      <Box size={16} /> {isRtl ? 'جولة حقيقية' : 'Real 3D Tour'}
+                    </button>
+                  )}
+                  {hasPanoramas && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setShowPano(true); }}
+                      className="bg-black/60 hover:bg-brand-600 text-white backdrop-blur px-4 py-2 rounded-full text-sm font-bold transition-colors flex items-center gap-2 cursor-pointer"
+                    >
+                      <Compass size={16} /> {isRtl ? 'بانوراما 360°' : '360° Panorama'}
+                    </button>
+                  )}
+                  {displayImages.length > 0 && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setShow3D(true); }}
+                      className="bg-black/60 hover:bg-brand-600 text-white backdrop-blur px-4 py-2 rounded-full text-sm font-bold transition-colors flex items-center gap-2 cursor-pointer"
+                    >
+                      <Box size={16} /> {isRtl ? 'معرض 3D' : 'View in 3D'}
+                    </button>
+                  )}
+                </div>
+                {slides.length > 1 && (
                   <>
-                    <button onClick={(e) => { e.stopPropagation(); setCurrentImageIndex(i => i === 0 ? displayImages.length - 1 : i - 1); }} className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-0 group-hover:opacity-100">
+                    <button onClick={(e) => { e.stopPropagation(); setCurrentImageIndex(i => i === 0 ? slides.length - 1 : i - 1); }} className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-0 group-hover:opacity-100">
                       <ChevronLeft size={20} />
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); setCurrentImageIndex(i => (i + 1) % displayImages.length); }} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-0 group-hover:opacity-100">
+                    <button onClick={(e) => { e.stopPropagation(); setCurrentImageIndex(i => (i + 1) % slides.length); }} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-0 group-hover:opacity-100">
                       <ChevronRight size={20} />
                     </button>
                     <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-                       {displayImages.map((_, idx) => (
+                       {slides.map((_, idx) => (
                           <div key={idx} className={`w-2 h-2 rounded-full transition-all ${idx === currentImageIndex ? 'bg-white scale-125' : 'bg-white/50 cursor-pointer'}`} onClick={(e) => { e.stopPropagation(); setCurrentImageIndex(idx); }} />
                        ))}
                     </div>
@@ -1858,6 +1899,26 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
           />
         </React.Suspense>
       )}
+      {showPano && (
+        <React.Suspense fallback={<Loading3DFallback />}>
+          <PanoramaViewer
+            panoramas={property.panoramas || []}
+            title={property.title}
+            onClose={() => setShowPano(false)}
+            isRtl={isRtl}
+          />
+        </React.Suspense>
+      )}
+      {showTour && property.digitalTwinUrl && (
+        <React.Suspense fallback={<Loading3DFallback />}>
+          <TourEmbed
+            url={property.digitalTwinUrl}
+            title={property.title}
+            onClose={() => setShowTour(false)}
+            isRtl={isRtl}
+          />
+        </React.Suspense>
+      )}
     </div>
   );
 };
@@ -1968,7 +2029,7 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
         <div className="md:col-span-1 space-y-6">
           <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="w-20 h-20 bg-brand-100 dark:bg-brand-900 text-brand-600 dark:text-brand-400 rounded-full flex items-center justify-center text-2xl font-bold mb-4 relative">
-              {profile.name.charAt(0)}
+              {(profile.name || profile.email || '?').charAt(0).toUpperCase()}
               {SUPER_ADMIN_EMAILS.includes(userEmail || '') && (
                 <div className="absolute -bottom-1 -right-1 bg-brand-600 text-white p-1 rounded-full border-2 border-white dark:border-slate-900" title="Admin">
                   <Shield size={14} />
@@ -2287,8 +2348,8 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
   const forRentCount = allProperties.filter(p => p.status === 'For Rent').length;
   const openPurchases = purchases.filter(p => p.status === 'processing');
 
-  const propertyTitle = (id: string) => allProperties.find(p => p.id === id)?.title || `#${id.slice(0, 8)}`;
-  const purchaserEmail = (uid: string) => users.find(u => u.id === uid)?.email || `#${uid.slice(0, 8)}`;
+  const propertyTitle = (id?: string) => allProperties.find(p => p.id === id)?.title || (id ? `#${id.slice(0, 8)}` : '#unknown');
+  const purchaserEmail = (uid?: string) => users.find(u => u.id === uid)?.email || (uid ? `#${uid.slice(0, 8)}` : '#unknown');
 
   // Firestore stores dates as ISO strings or Timestamps depending on writer
   const toDate = (v: any): Date | null => {

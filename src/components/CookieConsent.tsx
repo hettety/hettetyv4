@@ -24,6 +24,9 @@ const CookieConsent: React.FC<CookieConsentProps> = ({ t, isRtl, onNavigateToLeg
       setIsVisible(true);
       document.body.style.overflow = 'hidden'; // Prevent scrolling
     }
+    // Always restore scrolling on unmount — otherwise navigating away while the
+    // banner is open (e.g. to the Terms page) leaves the whole site frozen.
+    return () => { document.body.style.overflow = 'auto'; };
   }, []);
 
   const handleAcceptAll = async () => {
@@ -41,12 +44,17 @@ const CookieConsent: React.FC<CookieConsentProps> = ({ t, isRtl, onNavigateToLeg
   const saveConsent = async (prefs: any) => {
     // 1. Save to LocalStorage
     localStorage.setItem('hettety_consent', JSON.stringify(prefs));
-    
+
     // 2. Save to Cookies (valid for 1 year)
     document.cookie = `hettety_consent=true; max-age=${60 * 60 * 24 * 365}; path=/`;
 
-    // 3. Save to Backend Database
-    await api.saveConsent(prefs);
+    // 3. Save to Backend Database — never let a backend failure trap the user
+    // behind a modal with scrolling disabled; the local choice is already saved.
+    try {
+      await api.saveConsent(prefs);
+    } catch (err) {
+      console.error('Failed to persist consent to backend:', err);
+    }
 
     setIsVisible(false);
     document.body.style.overflow = 'auto'; // Restore scrolling

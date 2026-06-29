@@ -1,33 +1,37 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../../../lib/prisma';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { userId, preferences, agreedToTerms } = body;
-    
+    const { userId, preferences, agreedToTerms } = body ?? {};
+
     // Validate request
-    if (!preferences || typeof agreedToTerms !== 'boolean') {
+    if (
+      !preferences ||
+      typeof preferences !== 'object' ||
+      typeof agreedToTerms !== 'boolean'
+    ) {
       return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
     }
 
-    // In a real application, you would store this in a dedicated Consent table
-    // Example:
-    // await prisma.userConsent.create({
-    //   data: {
-    //     userId: userId || null, // Optional if guest
-    //     agreedToTerms,
-    //     necessary: preferences.necessary,
-    //     analytics: preferences.analytics,
-    //     marketing: preferences.marketing,
-    //     ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-    //     userAgent: request.headers.get('user-agent') || 'unknown',
-    //   }
-    // });
+    // Coerce the consent flags to real booleans so a malformed body can't slip
+    // arbitrary values into the database.
+    const necessary = preferences.necessary !== false; // necessary cookies are always on
+    const analytics = preferences.analytics === true;
+    const marketing = preferences.marketing === true;
 
-    console.log("Consent saved to backend database:", { userId, preferences, agreedToTerms });
+    await prisma.userConsent.create({
+      data: {
+        userId: typeof userId === 'string' && userId.length > 0 ? userId : null,
+        agreedToTerms,
+        necessary,
+        analytics,
+        marketing,
+        ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown',
+      },
+    });
 
     return NextResponse.json({ success: true, message: 'Consent saved successfully' });
   } catch (error) {
