@@ -13,11 +13,11 @@ import {
   DollarSign, BedDouble, Bath, Maximize, Loader2,
   Check, FileCheck, Key, RefreshCw,
   User, ArrowLeft, Phone, Target, CreditCard, PlusCircle, Edit2, Save, LogOut, Shield, Trash2, Bell, Lock as LockIcon,
-  Plus, History, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, MessageSquare, Sun, Moon, Heart, Compass
+  Plus, History, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, MessageSquare, Sun, Moon, Heart
 } from 'lucide-react';
 import { GoogleGenAI, Type } from '@google/genai';
 import { GEMINI_MODEL, GEMINI_FALLBACK_MODEL, getGeminiApiKey, extract3DMarker, withRetry, isOverloadedError, generateContentResilient, aiErrorMessage } from './ai';
-import { AddListingPage } from './components/add-listing-page';
+import { AddListingPage, PAYMENT_OPTIONS } from './components/add-listing-page';
 import { INITIAL_ENTITY_DATA, TRANSLATIONS, SUPER_ADMIN_EMAILS } from './constants';
 import { Property, ChatMessage, UserDocument, Page, Notification, ChatSession } from './types';
 import imageCompression from 'browser-image-compression';
@@ -40,14 +40,30 @@ import PremiumHero from './components/PremiumHero';
 
 // Lazy-loaded so the heavy three.js bundle is only fetched when a 3D tour is opened
 const Property3DViewer = React.lazy(() => import('./components/Property3DViewer'));
-const PanoramaViewer = React.lazy(() => import('./components/PanoramaViewer'));
-const TourEmbed = React.lazy(() => import('./components/TourEmbed'));
 
 const Loading3DFallback = () => (
   <div className="fixed inset-0 z-[70] bg-black flex items-center justify-center">
     <Loader2 className="w-10 h-10 text-brand-500 animate-spin" />
   </div>
 );
+
+/** Localized label for a stored (English) payment-method value. */
+const paymentLabel = (value: string, isRtl: boolean) => {
+  const opt = PAYMENT_OPTIONS.find(o => o.value === value);
+  return opt ? (isRtl ? opt.ar : opt.en) : value;
+};
+
+/** Localized label + styling for a property's availability. `status` switches Sold↔Rented wording. */
+const availabilityInfo = (availability: Property['availability'], status: Property['status'], isRtl: boolean) => {
+  switch (availability) {
+    case 'Sold':
+      return { label: status === 'For Rent' ? (isRtl ? 'مؤجَّر' : 'Rented') : (isRtl ? 'مباع' : 'Sold'), color: 'bg-red-500', taken: true };
+    case 'Reserved':
+      return { label: isRtl ? 'محجوز' : 'Reserved', color: 'bg-amber-500', taken: true };
+    default:
+      return { label: isRtl ? 'متاح' : 'Available', color: 'bg-green-500', taken: false };
+  }
+};
 
 // --- Components ---
 
@@ -265,6 +281,11 @@ const PropertyCard: React.FC<{
   <div onClick={onClick} className={`group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl dark:shadow-none transition-all duration-300 overflow-hidden flex flex-col h-full animate-fade-in ${onClick ? 'cursor-pointer' : ''}`}>
     <div className="relative h-64 overflow-hidden">
       <img src={property.imageUrl} alt={property.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+      {(() => { const av = availabilityInfo(property.availability, property.status, isRtl); return av.taken ? (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
+          <span className={`${av.color} text-white text-lg font-black uppercase tracking-widest px-6 py-2 rounded-lg -rotate-12 shadow-xl`}>{av.label}</span>
+        </div>
+      ) : null; })()}
       <div className={`absolute top-4 ${isRtl ? 'right-4' : 'left-4'} bg-accent-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-sm`}>
         {property.status === 'For Sale' ? t.prop_forsale : t.prop_forrent}
       </div>
@@ -306,7 +327,7 @@ const PropertyCard: React.FC<{
         <div className="flex flex-wrap gap-1 mb-4">
           {property.paymentMethods.map(method => (
             <span key={method} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] uppercase tracking-wider font-bold rounded">
-              {method}
+              {paymentLabel(method, isRtl)}
             </span>
           ))}
         </div>
@@ -836,13 +857,7 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
 - A licensed Egyptian real estate lawyer for legal matters.
 - A certified financial advisor for investment decisions.`;
         chatConfigRef.current = { apiKey, systemInstruction };
-        // Only build a fresh chat when one doesn't exist yet. Recreating it on
-        // every `properties` refresh would silently wipe an ongoing
-        // conversation's history. The latest instruction is kept in
-        // chatConfigRef for the fallback path / any newly-created chat.
-        if (!chatRef.current) {
-          chatRef.current = ai.chats.create({ model: GEMINI_MODEL, config: { systemInstruction } });
-        }
+        chatRef.current = ai.chats.create({ model: GEMINI_MODEL, config: { systemInstruction } });
       } else {
         console.error("No API key found for Gemini");
       }
@@ -851,18 +866,15 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
     }
   }, [properties, userName]);
 
-  // Re-sync welcome message when language changes — but only on a fresh, unsaved
-  // chat. A loaded session can legitimately contain a single model message, and
-  // we must not overwrite its real content with the generic welcome text.
+  // Re-sync welcome message when language changes
   useEffect(() => {
-    if (currentSessionId) return;
     setMessages(prev => {
         if (prev.length === 1 && prev[0].role === 'model') {
             return [{ role: 'model', text: t.ai_welcome, timestamp: new Date() }];
         }
         return prev;
     });
-  }, [t, currentSessionId]);
+  }, [t]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -871,9 +883,7 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
   }, [messages]);
 
   const handleSend = async () => {
-    // Re-entry guard: a second send before the first one resolves would race on
-    // session creation and produce duplicate chat_sessions documents.
-    if (!input.trim() || !auth.currentUser || isLoading) return;
+    if (!input.trim() || !auth.currentUser) return;
 
     const userMsg: ChatMessage = { role: 'user', text: input, timestamp: new Date() };
     const newMessages = [...messages, userMsg];
@@ -1605,6 +1615,7 @@ const Viewer3D = ({ property, onClose, isRtl }: { property: Property | undefined
     <React.Suspense fallback={<Loading3DFallback />}>
       <Property3DViewer
         images={images}
+        panoramas={property?.panoramas}
         title={property?.title}
         onClose={onClose}
         isRtl={isRtl}
@@ -1613,21 +1624,10 @@ const Viewer3D = ({ property, onClose, isRtl }: { property: Property | undefined
   );
 };
 
-const PropertyModal = ({ property, onClose, onPurchase, t, isRtl }: { property: Property, onClose: () => void, onPurchase: (id: string) => void, t: any, isRtl: boolean }) => {
-  const [activeTab, setActiveTab] = useState<'details' | 'ai'>('details');
+const PropertyDetailPage = ({ property, onBack, onPurchase, t, isRtl }: { property: Property, onBack: () => void, onPurchase: (id: string) => void, t: any, isRtl: boolean }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [show3D, setShow3D] = useState(false);
-  const [showTour, setShowTour] = useState(false);
-  const [showPano, setShowPano] = useState(false);
   const displayImages = (property.images && property.images.length > 0 ? property.images : [property.imageUrl]).filter(Boolean);
-  const hasPanoramas = !!(property.panoramas && property.panoramas.length > 0);
-  const hasTour = !!property.digitalTwinUrl;
-  // Unified media carousel: an optional video slide followed by every photo, so
-  // the photos stay reachable even when the property has a video.
-  const slides: { type: 'video' | 'image'; src: string }[] = [
-    ...(property.videoUrl ? [{ type: 'video' as const, src: property.videoUrl }] : []),
-    ...displayImages.map((src) => ({ type: 'image' as const, src })),
-  ];
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'model', text: isRtl ? `أهلاً! أنا المساعد الذكي الخاص بهذا العقار (${property.title}). اسألني عن تفاصيل العقار، الأوراق القانونية، حالة إعادة البيع، أو رقم الشهر العقاري.` : `Hello! I'm the AI assistant for this property (${property.title}). Ask me about its details, legal documents, resale status, or registry number.`, timestamp: new Date() }
@@ -1635,6 +1635,13 @@ const PropertyModal = ({ property, onClose, onPurchase, t, isRtl }: { property: 
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Reset the view whenever a different property is opened
+  useEffect(() => {
+    setCurrentImageIndex(0);
+    setShow3D(false);
+    window.scrollTo(0, 0);
+  }, [property.id]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -1666,10 +1673,13 @@ Area: ${property.area} sqm
 Bedrooms: ${property.bedrooms}
 Bathrooms: ${property.bathrooms}
 Status: ${property.status}
+Availability: ${property.availability || 'Available'}
+Payment Methods: ${property.paymentMethods?.join(', ') || 'Not specified'}
 Unit Code: ${property.unitCode || 'N/A'}
 Registry Number (raqm el shahr el 3aqary): ${property.registrationNumber || 'Not available'}
 Court Signature Validity (s7t tawqe3 el ma7kama): ${property.courtSignatureValidity ? 'Yes/Valid' : 'No/Pending'}
 Resale: ${property.isResale ? 'Yes, this is a resale property.' : 'No, direct sale.'}
+Description: ${property.description || 'N/A'}
 Images: ${property.images?.length ? property.images.join(', ') : property.imageUrl} (If the user asks to see the apartment / shape of the apartment / sor el shaqa, you MUST output ALL these images exactly in markdown format like this: ![Apartment](URL1) ![Apartment](URL2) etc.)
 
 ## Tone & Voice
@@ -1692,7 +1702,6 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
 
         let aiText = response.text || "Sorry, I couldn't process that request.";
 
-        // If the model asked to open the 3D viewer, strip the marker and launch it
         const { cleanText, show3D: wants3D } = extract3DMarker(aiText);
         if (wants3D) {
           aiText = cleanText || (isRtl ? 'جاري فتح الجولة ثلاثية الأبعاد...' : 'Opening the 3D tour...');
@@ -1701,7 +1710,6 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
 
         setMessages([...newMessages, { role: 'model', text: aiText, timestamp: new Date() }]);
       } else {
-        // Fallback mock
         setTimeout(() => {
           setMessages([...newMessages, { role: 'model', text: "API Key not found. Mock response: Property is great!", timestamp: new Date() }]);
         }, 1000);
@@ -1714,94 +1722,80 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
-      <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex border-b border-slate-200 dark:border-slate-800 shrink-0 relative">
-          <button onClick={() => setActiveTab('details')} className={`flex-1 py-4 font-bold text-center transition-colors ${activeTab === 'details' ? 'text-brand-600 border-b-2 border-brand-600' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}>
-            {isRtl ? 'تفاصيل العقار' : 'Property Details'}
-          </button>
-          <button onClick={() => setActiveTab('ai')} className={`flex-1 py-4 font-bold text-center transition-colors flex items-center justify-center gap-2 ${activeTab === 'ai' ? 'text-accent-500 border-b-2 border-accent-500' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}>
-            <MessageSquare size={18} /> {isRtl ? 'المساعد الذكي للوحدة' : 'Unit AI Assistant'}
-          </button>
-          <button onClick={onClose} className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full p-1 cursor-pointer"><X size={20}/></button>
-        </div>
+  const av = availabilityInfo(property.availability, property.status, isRtl);
 
-        <div className="overflow-y-auto flex-1">
-          {activeTab === 'details' ? (
-            <>
-              <div className="relative h-72 group">
-                {slides[currentImageIndex]?.type === 'video' ? (
-                  <video src={slides[currentImageIndex].src} className="w-full h-full object-cover" controls playsInline />
-                ) : (
-                  <img src={slides[currentImageIndex]?.src} alt={property.title} className="w-full h-full object-cover" />
-                )}
-                <div className="absolute top-4 left-4 flex flex-col items-start gap-2 z-10">
-                  {hasTour && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setShowTour(true); }}
-                      className="bg-accent-500 hover:bg-accent-600 text-white backdrop-blur px-4 py-2 rounded-full text-sm font-bold transition-colors flex items-center gap-2 cursor-pointer shadow-lg"
-                    >
-                      <Box size={16} /> {isRtl ? 'جولة حقيقية' : 'Real 3D Tour'}
-                    </button>
-                  )}
-                  {hasPanoramas && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setShowPano(true); }}
-                      className="bg-black/60 hover:bg-brand-600 text-white backdrop-blur px-4 py-2 rounded-full text-sm font-bold transition-colors flex items-center gap-2 cursor-pointer"
-                    >
-                      <Compass size={16} /> {isRtl ? 'بانوراما 360°' : '360° Panorama'}
-                    </button>
-                  )}
-                  {displayImages.length > 0 && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setShow3D(true); }}
-                      className="bg-black/60 hover:bg-brand-600 text-white backdrop-blur px-4 py-2 rounded-full text-sm font-bold transition-colors flex items-center gap-2 cursor-pointer"
-                    >
-                      <Box size={16} /> {isRtl ? 'معرض 3D' : 'View in 3D'}
-                    </button>
-                  )}
-                </div>
-                {slides.length > 1 && (
-                  <>
-                    <button onClick={(e) => { e.stopPropagation(); setCurrentImageIndex(i => i === 0 ? slides.length - 1 : i - 1); }} className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-0 group-hover:opacity-100">
-                      <ChevronLeft size={20} />
-                    </button>
-                    <button onClick={(e) => { e.stopPropagation(); setCurrentImageIndex(i => (i + 1) % slides.length); }} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-0 group-hover:opacity-100">
-                      <ChevronRight size={20} />
-                    </button>
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-                       {slides.map((_, idx) => (
-                          <div key={idx} className={`w-2 h-2 rounded-full transition-all ${idx === currentImageIndex ? 'bg-white scale-125' : 'bg-white/50 cursor-pointer'}`} onClick={(e) => { e.stopPropagation(); setCurrentImageIndex(idx); }} />
-                       ))}
-                    </div>
-                  </>
-                )}
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-8 animate-fade-in">
+      <button onClick={onBack} className="flex items-center gap-2 text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 font-bold mb-6 transition-colors cursor-pointer">
+        {isRtl ? <ArrowRight size={18} /> : <ArrowLeft size={18} />} {isRtl ? 'رجوع للعقارات' : 'Back to listings'}
+      </button>
+
+      <div className="grid lg:grid-cols-3 gap-8 items-start">
+        {/* Details column */}
+        <div className="lg:col-span-2 space-y-8">
+          {/* Gallery */}
+          <div className="relative h-72 sm:h-96 group rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-lg">
+            {property.videoUrl && currentImageIndex === 0 ? (
+              <video src={property.videoUrl} className="w-full h-full object-cover" controls playsInline />
+            ) : (
+              <img src={displayImages[currentImageIndex]} alt={property.title} className="w-full h-full object-cover" />
+            )}
+            {av.taken && (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10 pointer-events-none">
+                <span className={`${av.color} text-white text-2xl font-black uppercase tracking-widest px-8 py-3 rounded-xl -rotate-12 shadow-2xl`}>{av.label}</span>
               </div>
-              <div className="p-8">
-          <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6">
+            )}
+            {(displayImages.length > 0 || (property.panoramas && property.panoramas.length > 0)) && (
+              <button
+                onClick={() => setShow3D(true)}
+                className={`absolute top-4 ${isRtl ? 'right-4' : 'left-4'} bg-black/60 hover:bg-brand-600 text-white backdrop-blur px-4 py-2 rounded-full text-sm font-bold transition-colors flex items-center gap-2 cursor-pointer z-20`}
+              >
+                <Box size={16} /> {property.panoramas && property.panoramas.length > 0 ? (isRtl ? 'جولة 360°' : '360° Tour') : (isRtl ? 'جولة 3D' : 'View in 3D')}
+              </button>
+            )}
+            {displayImages.length > 1 && !property.videoUrl && (
+              <>
+                <button onClick={() => setCurrentImageIndex(i => i === 0 ? displayImages.length - 1 : i - 1)} className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-0 group-hover:opacity-100 z-20">
+                  <ChevronLeft size={20} />
+                </button>
+                <button onClick={() => setCurrentImageIndex(i => (i + 1) % displayImages.length)} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-0 group-hover:opacity-100 z-20">
+                  <ChevronRight size={20} />
+                </button>
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-20">
+                  {displayImages.map((_, idx) => (
+                    <div key={idx} className={`w-2.5 h-2.5 rounded-full transition-all ${idx === currentImageIndex ? 'bg-white scale-125' : 'bg-white/50 cursor-pointer'}`} onClick={() => setCurrentImageIndex(idx)} />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2 flex-wrap">
-                <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">{property.title}</h2>
+                <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">{property.title}</h1>
                 {property.verificationStatus === 'Verified' && (
                   <span className="bg-green-500 text-white text-[10px] px-2 py-1 rounded-full font-black flex items-center gap-1 uppercase tracking-wider">
                     <ShieldCheck size={12}/> {isRtl ? 'أصلي + ثقة وقانون' : 'Verified Legal'}
                   </span>
                 )}
+                <span className={`${av.color} text-white text-[10px] px-2 py-1 rounded-full font-black uppercase tracking-wider`}>{av.label}</span>
               </div>
               <p className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mb-2 font-medium"><MapPin size={16} className="text-brand-500"/> {property.location}</p>
-              <div className="flex items-center gap-4 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+              <div className="flex items-center gap-4 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest flex-wrap">
                 {property.unitCode && <span>{isRtl ? 'كود الوحدة:' : 'Unit Code:'} {property.unitCode}</span>}
                 {property.publishDate && <span>{isRtl ? 'تاريخ النشر:' : 'Published:'} {property.publishDate}</span>}
               </div>
             </div>
-            <div className="text-right sm:bg-slate-50 sm:dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 self-stretch sm:self-auto flex sm:flex-col justify-between items-center sm:items-end">
+            <div className="text-right bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex sm:flex-col justify-between items-center sm:items-end gap-2 w-full sm:w-auto">
               <div className="text-2xl font-black text-brand-600 dark:text-brand-400">{property.price.toLocaleString()} EGP</div>
-              <div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded sm:mt-1">{property.status}</div>
+              <div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">{property.status === 'For Sale' ? (isRtl ? 'للبيع' : 'For Sale') : (isRtl ? 'للإيجار' : 'For Rent')}</div>
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4 py-6 border-y border-slate-100 dark:border-slate-800 my-6">
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-4">
             <div className="flex flex-col items-center p-4 bg-slate-50 dark:bg-slate-800 rounded-xl">
               <BedDouble className="text-brand-500 dark:text-brand-400 mb-2"/>
               <span className="font-bold text-slate-900 dark:text-white">{property.bedrooms}</span>
@@ -1820,17 +1814,61 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
           </div>
 
           {property.description && (
-            <div className="mb-6">
-               <h3 className="font-bold text-slate-900 dark:text-white mb-2">{isRtl ? 'الوصف' : 'Description'}</h3>
-               <p className="text-slate-600 dark:text-slate-300 whitespace-pre-wrap leading-relaxed text-sm">{property.description}</p>
+            <div>
+              <h3 className="font-bold text-slate-900 dark:text-white mb-2">{isRtl ? 'الوصف' : 'Description'}</h3>
+              <p className="text-slate-600 dark:text-slate-300 whitespace-pre-wrap leading-relaxed text-sm">{property.description}</p>
             </div>
           )}
 
-          <div className="mb-8">
+          {/* Real virtual tour (Matterport / Polycam / Kuula …) */}
+          {property.digitalTwinUrl && (
+            <div>
+              <h3 className="font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><Box size={18} className="text-brand-500" /> {isRtl ? 'الجولة الافتراضية الحقيقية' : 'Real Virtual Tour'}</h3>
+              <div className="relative w-full rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-lg bg-slate-100 dark:bg-slate-800" style={{ aspectRatio: '16 / 10' }}>
+                <iframe
+                  src={property.digitalTwinUrl}
+                  title={isRtl ? 'جولة افتراضية' : 'Virtual Tour'}
+                  className="absolute inset-0 w-full h-full"
+                  allow="xr-spatial-tracking; gyroscope; accelerometer; fullscreen"
+                  allowFullScreen
+                  loading="lazy"
+                />
+              </div>
+              <a href={property.digitalTwinUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 mt-2 text-sm font-bold text-brand-600 dark:text-brand-400 hover:underline">
+                {isRtl ? 'افتح الجولة في نافذة كاملة' : 'Open tour in full window'} <ArrowRight size={14} className={isRtl ? 'rotate-180' : ''} />
+              </a>
+            </div>
+          )}
+
+          {/* Legal & details */}
+          <div>
+            <h3 className="font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><Shield size={18} className="text-brand-500" /> {isRtl ? 'التفاصيل القانونية' : 'Legal Details'}</h3>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-xl text-sm">
+                <span className="text-slate-500 dark:text-slate-400">{isRtl ? 'رقم الشهر العقاري' : 'Registry Number'}</span>
+                <span className="font-bold text-slate-900 dark:text-white">{property.registrationNumber || (isRtl ? 'غير متاح' : 'N/A')}</span>
+              </div>
+              <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-xl text-sm">
+                <span className="text-slate-500 dark:text-slate-400">{isRtl ? 'صحة توقيع المحكمة' : 'Court Signature'}</span>
+                <span className={`font-bold ${property.courtSignatureValidity ? 'text-green-600 dark:text-green-400' : 'text-slate-900 dark:text-white'}`}>{property.courtSignatureValidity ? (isRtl ? 'صحيح' : 'Valid') : (isRtl ? 'غير محدد' : 'Pending')}</span>
+              </div>
+              <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-xl text-sm">
+                <span className="text-slate-500 dark:text-slate-400">{isRtl ? 'نوع البيع' : 'Sale Type'}</span>
+                <span className="font-bold text-slate-900 dark:text-white">{property.isResale ? (isRtl ? 'إعادة بيع' : 'Resale') : (isRtl ? 'بيع مباشر' : 'Direct')}</span>
+              </div>
+              <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-xl text-sm">
+                <span className="text-slate-500 dark:text-slate-400">{isRtl ? 'حالة التوفر' : 'Availability'}</span>
+                <span className="font-bold text-slate-900 dark:text-white">{av.label}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Payment methods */}
+          <div>
             <h3 className="font-bold text-slate-900 dark:text-white mb-3">{isRtl ? 'طرق الدفع المتاحة' : 'Available Payment Methods'}</h3>
             <div className="flex flex-wrap gap-2">
               {property.paymentMethods?.map(m => (
-                <span key={m} className="px-3 py-1.5 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 rounded-lg text-sm font-medium border border-brand-100 dark:border-brand-800">{m}</span>
+                <span key={m} className="px-3 py-1.5 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 rounded-lg text-sm font-medium border border-brand-100 dark:border-brand-800">{paymentLabel(m, isRtl)}</span>
               ))}
               {(!property.paymentMethods || property.paymentMethods.length === 0) && (
                 <span className="text-slate-500 dark:text-slate-400 text-sm">{isRtl ? 'غير محدد' : 'Not specified'}</span>
@@ -1838,54 +1876,67 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
             </div>
           </div>
 
-          <Button onClick={() => onPurchase(property.id)} className="w-full py-4 text-lg">
-            {isRtl ? 'المتابعة للدفع' : 'Proceed to Payment'}
-          </Button>
-        </div>
-            </>
+          {av.taken ? (
+            <div className="w-full py-4 text-lg text-center font-bold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+              {isRtl ? `هذا العقار ${av.label} حاليًا` : `This property is ${av.label}`}
+            </div>
           ) : (
-            <div className="flex flex-col h-[60vh] bg-slate-50 dark:bg-slate-900/50">
-              <div className="flex-1 overflow-y-auto p-6 space-y-4" ref={scrollRef}>
-                {messages.map((msg, i) => (
-                  <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
-                    <div className={`max-w-[85%] p-4 rounded-2xl shadow-sm ${msg.role === 'user' ? 'bg-brand-600 text-white rounded-tr-none' : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border border-slate-100 dark:border-slate-700'}`}>
-                      {msg.text.match(/!\[.*?\]\((.*?)\)/) ? (
-                        <>
-                          <p className="whitespace-pre-wrap leading-relaxed text-[15px]">{msg.text.replace(/!\[.*?\]\((.*?)\)/g, '')}</p>
-                          {msg.text.match(/!\[.*?\]\((.*?)\)/g)?.map((imgMatch, idx) => {
-                            const url = imgMatch.match(/\((.*?)\)/)?.[1];
-                            return url ? <img key={idx} src={url} alt="Property" className="mt-2 rounded-xl border border-slate-200 dark:border-slate-700 w-full object-cover" /> : null;
-                          })}
-                        </>
-                      ) : (
-                        <p className="whitespace-pre-wrap leading-relaxed text-[15px]">{msg.text}</p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {isLoading && (
-                  <div className="flex justify-start animate-fade-in">
-                    <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl rounded-tl-none border border-slate-100 dark:border-slate-700">
-                      <Loader2 className="w-5 h-5 text-brand-500 animate-spin" />
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="p-4 bg-white dark:bg-slate-800 border-t border-slate-100 dark:border-slate-700">
-                <form onSubmit={handleSendMessage} className="relative flex items-center">
-                  <input
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder={isRtl ? 'اسأل المساعد الذكي عن أي شيء يخص هذا العقار...' : 'Ask about this property...'}
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-4 pr-12 focus:outline-none focus:ring-2 focus:ring-accent-500 text-slate-900 dark:text-white"
-                  />
-                  <button type="submit" disabled={!input.trim() || isLoading} className="absolute right-2 p-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg disabled:opacity-50 transition-colors cursor-pointer">
-                    <Send size={18} className={isRtl ? 'rotate-180' : ''} />
-                  </button>
-                </form>
+            <Button onClick={() => onPurchase(property.id)} className="w-full py-4 text-lg">
+              {isRtl ? 'المتابعة للدفع' : 'Proceed to Payment'}
+            </Button>
+          )}
+        </div>
+
+        {/* AI assistant column (always visible) */}
+        <div className="lg:col-span-1">
+          <div className="lg:sticky lg:top-24 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden flex flex-col h-[32rem] lg:h-[calc(100vh-8rem)]">
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center gap-2 shrink-0">
+              <div className="w-8 h-8 rounded-full bg-accent-500/10 text-accent-500 flex items-center justify-center"><MessageSquare size={16} /></div>
+              <div>
+                <h3 className="font-black text-slate-900 dark:text-white text-sm">{isRtl ? 'المساعد الذكي للوحدة' : 'Unit AI Assistant'}</h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">{isRtl ? 'اسأل أي حاجة عن العقار ده' : 'Ask anything about this property'}</p>
               </div>
             </div>
-          )}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50 dark:bg-slate-900/50" ref={scrollRef}>
+              {messages.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+                  <div className={`max-w-[88%] p-3 rounded-2xl shadow-sm text-[14px] ${msg.role === 'user' ? 'bg-brand-600 text-white rounded-tr-none' : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border border-slate-100 dark:border-slate-700'}`}>
+                    {msg.text.match(/!\[.*?\]\((.*?)\)/) ? (
+                      <>
+                        <p className="whitespace-pre-wrap leading-relaxed">{msg.text.replace(/!\[.*?\]\((.*?)\)/g, '')}</p>
+                        {msg.text.match(/!\[.*?\]\((.*?)\)/g)?.map((imgMatch, idx) => {
+                          const url = imgMatch.match(/\((.*?)\)/)?.[1];
+                          return url ? <img key={idx} src={url} alt="Property" className="mt-2 rounded-xl border border-slate-200 dark:border-slate-700 w-full object-cover" /> : null;
+                        })}
+                      </>
+                    ) : (
+                      <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {isLoading && (
+                <div className="flex justify-start animate-fade-in">
+                  <div className="bg-white dark:bg-slate-800 p-3 rounded-2xl rounded-tl-none border border-slate-100 dark:border-slate-700">
+                    <Loader2 className="w-5 h-5 text-brand-500 animate-spin" />
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="p-3 bg-white dark:bg-slate-800 border-t border-slate-100 dark:border-slate-700 shrink-0">
+              <form onSubmit={handleSendMessage} className="relative flex items-center">
+                <input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder={isRtl ? 'اسأل عن العقار...' : 'Ask about this property...'}
+                  className={`w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-4 ${isRtl ? 'pl-12' : 'pr-12'} focus:outline-none focus:ring-2 focus:ring-accent-500 text-slate-900 dark:text-white`}
+                />
+                <button type="submit" disabled={!input.trim() || isLoading} className={`absolute ${isRtl ? 'left-2' : 'right-2'} p-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg disabled:opacity-50 transition-colors cursor-pointer`}>
+                  <Send size={18} className={isRtl ? 'rotate-180' : ''} />
+                </button>
+              </form>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1893,28 +1944,9 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
         <React.Suspense fallback={<Loading3DFallback />}>
           <Property3DViewer
             images={displayImages}
+            panoramas={property.panoramas}
             title={property.title}
             onClose={() => setShow3D(false)}
-            isRtl={isRtl}
-          />
-        </React.Suspense>
-      )}
-      {showPano && (
-        <React.Suspense fallback={<Loading3DFallback />}>
-          <PanoramaViewer
-            panoramas={property.panoramas || []}
-            title={property.title}
-            onClose={() => setShowPano(false)}
-            isRtl={isRtl}
-          />
-        </React.Suspense>
-      )}
-      {showTour && property.digitalTwinUrl && (
-        <React.Suspense fallback={<Loading3DFallback />}>
-          <TourEmbed
-            url={property.digitalTwinUrl}
-            title={property.title}
-            onClose={() => setShowTour(false)}
             isRtl={isRtl}
           />
         </React.Suspense>
@@ -1923,7 +1955,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
   );
 };
 
-const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFavorites, allProperties, onToggleFavorite, open3D }: { t: any, isRtl: boolean, onBrowse: () => void, onLogout: () => void, onLogin: () => void, userEmail: string | null, userFavorites: string[], allProperties: Property[], onToggleFavorite: (id: string) => void, open3D: (id: string) => void }) => {
+const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFavorites, allProperties, onToggleFavorite, open3D, onOpenProperty }: { t: any, isRtl: boolean, onBrowse: () => void, onLogout: () => void, onLogin: () => void, userEmail: string | null, userFavorites: string[], allProperties: Property[], onToggleFavorite: (id: string) => void, open3D: (id: string) => void, onOpenProperty: (id: string) => void }) => {
   const [profile, setProfile] = useState<any>(null);
   const [purchases, setPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2029,7 +2061,7 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
         <div className="md:col-span-1 space-y-6">
           <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="w-20 h-20 bg-brand-100 dark:bg-brand-900 text-brand-600 dark:text-brand-400 rounded-full flex items-center justify-center text-2xl font-bold mb-4 relative">
-              {(profile.name || profile.email || '?').charAt(0).toUpperCase()}
+              {profile.name.charAt(0)}
               {SUPER_ADMIN_EMAILS.includes(userEmail || '') && (
                 <div className="absolute -bottom-1 -right-1 bg-brand-600 text-white p-1 rounded-full border-2 border-white dark:border-slate-900" title="Admin">
                   <Shield size={14} />
@@ -2199,14 +2231,15 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
               {favoriteProperties.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   {favoriteProperties.map(p => (
-                    <PropertyCard 
-                      key={p.id} 
-                      property={p} 
-                      onView3D={() => open3D(p.id)} 
+                    <PropertyCard
+                      key={p.id}
+                      property={p}
+                      onView3D={() => open3D(p.id)}
                       onToggleFavorite={() => onToggleFavorite(p.id)}
                       isFavorited={true}
-                      t={t} 
-                      isRtl={isRtl} 
+                      onClick={() => onOpenProperty(p.id)}
+                      t={t}
+                      isRtl={isRtl}
                     />
                   ))}
                 </div>
@@ -2348,8 +2381,8 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
   const forRentCount = allProperties.filter(p => p.status === 'For Rent').length;
   const openPurchases = purchases.filter(p => p.status === 'processing');
 
-  const propertyTitle = (id?: string) => allProperties.find(p => p.id === id)?.title || (id ? `#${id.slice(0, 8)}` : '#unknown');
-  const purchaserEmail = (uid?: string) => users.find(u => u.id === uid)?.email || (uid ? `#${uid.slice(0, 8)}` : '#unknown');
+  const propertyTitle = (id: string) => allProperties.find(p => p.id === id)?.title || `#${id.slice(0, 8)}`;
+  const purchaserEmail = (uid: string) => users.find(u => u.id === uid)?.email || `#${uid.slice(0, 8)}`;
 
   // Firestore stores dates as ISO strings or Timestamps depending on writer
   const toDate = (v: any): Date | null => {
@@ -2412,6 +2445,19 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
     } catch (error) {
       console.error("Error deleting user:", error);
       alert(isRtl ? 'فشل حذف المستخدم' : 'Failed to delete the user');
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  const handleSetAvailability = async (propId: string, availability: 'Available' | 'Sold' | 'Reserved') => {
+    setUpdating(propId);
+    try {
+      await updateDoc(doc(db, 'properties', propId), { availability });
+      setAllProperties(prev => prev.map(p => p.id === propId ? { ...p, availability } : p));
+    } catch (error) {
+      console.error("Error updating availability:", error);
+      alert(isRtl ? 'فشل تحديث حالة التوفر' : 'Failed to update availability');
     } finally {
       setUpdating(null);
     }
@@ -2617,6 +2663,7 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                     <th className="px-8 py-4">{isRtl ? 'الموقع' : 'Location'}</th>
                     <th className="px-8 py-4">{isRtl ? 'السعر' : 'Price'}</th>
                     <th className="px-8 py-4">{isRtl ? 'الحالة' : 'Status'}</th>
+                    <th className="px-8 py-4">{isRtl ? 'التوفر' : 'Availability'}</th>
                     <th className="px-8 py-4">{isRtl ? 'التوثيق' : 'Verification'}</th>
                     <th className="px-8 py-4 text-right">{isRtl ? 'الإجراءات' : 'Actions'}</th>
                   </tr>
@@ -2641,6 +2688,18 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                         <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${prop.status === 'For Sale' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'}`}>
                           {prop.status === 'For Sale' ? (isRtl ? 'للبيع' : 'For Sale') : (isRtl ? 'للإيجار' : 'For Rent')}
                         </span>
+                      </td>
+                      <td className="px-8 py-5">
+                        <select
+                          value={prop.availability || 'Available'}
+                          disabled={updating === prop.id}
+                          onChange={(e) => handleSetAvailability(prop.id, e.target.value as 'Available' | 'Sold' | 'Reserved')}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 outline-none cursor-pointer"
+                        >
+                          <option value="Available">{isRtl ? 'متاح' : 'Available'}</option>
+                          <option value="Reserved">{isRtl ? 'محجوز' : 'Reserved'}</option>
+                          <option value="Sold">{prop.status === 'For Rent' ? (isRtl ? 'مؤجَّر' : 'Rented') : (isRtl ? 'مباع' : 'Sold')}</option>
+                        </select>
                       </td>
                       <td className="px-8 py-5">
                         <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${
@@ -2858,7 +2917,6 @@ export default function App() {
   const [minPrice, setMinPrice] = useState<number | ''>('');
   const [maxPrice, setMaxPrice] = useState<number | ''>('');
   const [sortBy, setSortBy] = useState<'default' | 'price-asc' | 'price-desc' | 'name-asc' | 'name-desc'>('default');
-  const [viewingProperty, setViewingProperty] = useState<Property | null>(null);
   const [paymentProperty, setPaymentProperty] = useState<Property | null>(null);
   const [aiFilteredIds, setAiFilteredIds] = useState<string[] | null>(null);
   const [isAiSearching, setIsAiSearching] = useState(false);
@@ -2878,9 +2936,14 @@ export default function App() {
   // Hash-based routing
   useEffect(() => {
     const handleHashChange = () => {
-      const hash = window.location.hash.replace('#', '');
-      if (hash) {
-        setCurrentPage(hash as Page);
+      const raw = window.location.hash.replace('#', '');
+      // Property pages carry their id in the hash: #property/<id>
+      const [page, param] = raw.split('/');
+      if (page === 'property' && param) {
+        setSelectedPropertyId(param);
+        setCurrentPage('property');
+      } else if (page) {
+        setCurrentPage(page as Page);
       } else {
         setCurrentPage('home');
       }
@@ -3191,6 +3254,15 @@ export default function App() {
     handleNav('3d');
   };
 
+  // Opens a property's full dedicated page (id encoded in the hash for deep links).
+  const openProperty = (id: string) => {
+    setSelectedPropertyId(id);
+    window.location.hash = `property/${id}`;
+    setCurrentPage('property');
+    setMobileMenuOpen(false);
+    window.scrollTo(0, 0);
+  };
+
   const NavLink = ({ page, label }: { page: Page, label: string }) => (
     <button 
       onClick={() => handleNav(page)} 
@@ -3465,7 +3537,7 @@ export default function App() {
                       onView3D={() => open3D(p.id)} 
                       onToggleFavorite={() => toggleFavorite(p.id)}
                       isFavorited={userFavorites.includes(p.id)}
-                      onClick={() => setViewingProperty(p)} 
+                      onClick={() => openProperty(p.id)}
                       t={t} 
                       isRtl={isRtl} 
                     />
@@ -3557,7 +3629,7 @@ export default function App() {
                       onView3D={() => open3D(p.id)} 
                       onToggleFavorite={() => toggleFavorite(p.id)}
                       isFavorited={userFavorites.includes(p.id)}
-                      onClick={() => setViewingProperty(p)} 
+                      onClick={() => openProperty(p.id)}
                       t={t} 
                       isRtl={isRtl} 
                     />
@@ -3578,6 +3650,33 @@ export default function App() {
         {currentPage === 'verification' && <VerificationPage onCta={() => handleNav('legal')} t={t} isRtl={isRtl} />}
         {currentPage === 'tours' && <Tours3DPage onCta={() => handleNav('3d-experience')} t={t} isRtl={isRtl} />}
         {currentPage === '3d' && selectedPropertyId && <Viewer3D property={properties.find(p => p.id === selectedPropertyId)} onClose={() => { setSelectedPropertyId(null); handleNav('listings'); }} t={t} isRtl={isRtl} />}
+        {currentPage === 'property' && selectedPropertyId && (() => {
+          const prop = properties.find(p => p.id === selectedPropertyId);
+          if (!prop) {
+            return (
+              <div className="max-w-3xl mx-auto px-4 py-24 text-center">
+                {loadingProps ? (
+                  <Loader2 className="w-10 h-10 text-brand-500 animate-spin mx-auto" />
+                ) : (
+                  <>
+                    <Building2 className="w-16 h-16 text-slate-300 dark:text-slate-700 mx-auto mb-4" />
+                    <p className="text-slate-500 dark:text-slate-400 mb-6">{isRtl ? 'العقار غير موجود أو تم حذفه.' : 'This property was not found or has been removed.'}</p>
+                    <Button onClick={() => handleNav('listings')}>{isRtl ? 'تصفح العقارات' : 'Browse Listings'}</Button>
+                  </>
+                )}
+              </div>
+            );
+          }
+          return (
+            <PropertyDetailPage
+              property={prop}
+              onBack={() => handleNav('listings')}
+              onPurchase={(id) => { setPaymentProperty(prop); handleNav('payment'); }}
+              t={t}
+              isRtl={isRtl}
+            />
+          );
+        })()}
         {currentPage === '3d-experience' && (
           <Experience3DPage
             properties={properties}
@@ -3599,6 +3698,7 @@ export default function App() {
             allProperties={properties}
             onToggleFavorite={toggleFavorite}
             open3D={open3D}
+            onOpenProperty={openProperty}
           />
         )}
         {currentPage === 'payment' && paymentProperty && (
@@ -3698,20 +3798,6 @@ export default function App() {
 
       {/* Cookie Consent Modal */}
       <CookieConsent t={t} isRtl={isRtl} onNavigateToLegal={handleNav} />
-
-      {viewingProperty && (
-        <PropertyModal
-          property={viewingProperty}
-          onClose={() => setViewingProperty(null)}
-          onPurchase={(id) => {
-            setViewingProperty(null);
-            setPaymentProperty(viewingProperty);
-            handleNav('payment');
-          }}
-          t={t}
-          isRtl={isRtl}
-        />
-      )}
 
       <footer className="bg-slate-900 dark:bg-black text-slate-400 py-12 border-t border-slate-800 transition-colors duration-500">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-12">

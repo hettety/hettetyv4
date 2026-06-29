@@ -1,4 +1,4 @@
-export type Page = 'home' | 'listings' | '3d-experience' | 'legal' | 'ai-chat' | 'login' | 'register' | 'contact' | '3d' | 'about' | 'buy' | 'verification' | 'tours' | 'terms' | 'privacy' | 'cookie-policy' | 'profile' | 'add-listing' | 'payment' | 'manage-users';
+export type Page = 'home' | 'listings' | '3d-experience' | 'legal' | 'ai-chat' | 'login' | 'register' | 'contact' | '3d' | 'about' | 'buy' | 'verification' | 'tours' | 'terms' | 'privacy' | 'cookie-policy' | 'profile' | 'add-listing' | 'payment' | 'manage-users' | 'property';
 
 export interface Property {
   id: string;
@@ -11,10 +11,12 @@ export interface Property {
   area: number;
   imageUrl: string;
   images?: string[];
+  panoramas?: string[]; // Equirectangular 360° photos for the immersive look-around viewer
   videoUrl?: string;
-  digitalTwinUrl?: string; // Real walkthrough tour — Matterport or Polycam link
-  panoramas?: string[]; // Equirectangular 360° photos for the panorama viewer
+  digitalTwinUrl?: string; // For 3D Digital Twin or Polycam/Matterport walkthrough link
   status: 'For Sale' | 'For Rent';
+  // Listing lifecycle: still on the market, taken, or reserved.
+  availability?: 'Available' | 'Sold' | 'Reserved';
   isVerified: boolean;
   verificationStatus?: 'Pending' | 'Verified' | 'Rejected';
   paymentMethods?: string[];

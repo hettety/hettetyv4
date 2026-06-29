@@ -1,13 +1,20 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
-  CheckCircle, Loader2, PlusCircle, Upload, PlayCircle, Shield, ArrowRight, ArrowLeft, Wand2, FileText, Image as ImageIcon, X, Compass, Box, AlertTriangle
+  CheckCircle, Loader2, PlusCircle, Upload, PlayCircle, Shield, ArrowRight, ArrowLeft, Wand2, FileText, Image as ImageIcon, X, Box, Globe
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { GoogleGenAI } from '@google/genai';
 import { getGeminiApiKey, generateContentResilient, aiErrorMessage } from '../ai';
 import { storage, ref, uploadBytes, getDownloadURL } from '../firebase';
 import { Property } from '../types';
-import { isLikelyTourUrl } from './tourUrl';
+
+// Canonical payment-method values (stored in English) with bilingual labels.
+export const PAYMENT_OPTIONS = [
+  { value: 'Cash', ar: 'كاش', en: 'Cash' },
+  { value: 'Installments', ar: 'تقسيط', en: 'Installments' },
+  { value: 'Bank Transfer', ar: 'تحويل بنكي', en: 'Bank Transfer' },
+  { value: 'Mortgage', ar: 'تمويل عقاري', en: 'Mortgage' },
+];
 
 /** Reads a File as a data URL, promisified so errors stay inside the caller's try/catch. */
 const fileToDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
@@ -16,36 +23,6 @@ const fileToDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
   reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'));
   reader.readAsDataURL(file);
 });
-
-/** Loads an image File/URL just to read its pixel dimensions (for quality checks). */
-const readImageSize = (src: File | string) => new Promise<{ width: number; height: number }>((resolve, reject) => {
-  const img = new Image();
-  const url = typeof src === 'string' ? src : URL.createObjectURL(src);
-  img.onload = () => {
-    const dims = { width: img.naturalWidth, height: img.naturalHeight };
-    if (typeof src !== 'string') URL.revokeObjectURL(url);
-    resolve(dims);
-  };
-  img.onerror = () => {
-    if (typeof src !== 'string') URL.revokeObjectURL(url);
-    reject(new Error('Failed to read image'));
-  };
-  img.src = url;
-});
-
-/**
- * A 360° panorama must be equirectangular — width exactly twice the height —
- * so it wraps the full sphere and the viewer can see every corner. We also want
- * enough resolution that it isn't blurry up close.
- */
-const PANO_MIN_WIDTH = 2000;
-function checkPanorama(width: number, height: number): { ok: boolean; reason?: 'ratio' | 'lowres' } {
-  if (height === 0) return { ok: false, reason: 'ratio' };
-  const ratio = width / height;
-  if (ratio < 1.85 || ratio > 2.15) return { ok: false, reason: 'ratio' };
-  if (width < PANO_MIN_WIDTH) return { ok: false, reason: 'lowres' };
-  return { ok: true };
-}
 
 /**
  * Uploads media to Firebase Storage and returns its public URL.
@@ -104,52 +81,20 @@ const storeImage = async (file: File): Promise<string> => {
   return fileToDataUrl(compressed);
 };
 
-/** Panorama preview tile that self-checks its 360° quality on load and badges it. */
-const PanoThumb: React.FC<{ url: string; isRtl?: boolean; onRemove: () => void }> = ({ url, isRtl, onRemove }) => {
-  const [warn, setWarn] = useState<null | 'ratio' | 'lowres'>(null);
-  return (
-    <div className="relative aspect-video rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm group">
-      <img
-        src={url}
-        className="w-full h-full object-cover"
-        alt="Panorama preview"
-        onLoad={(e) => { const c = checkPanorama(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight); setWarn(c.ok ? null : (c.reason ?? 'ratio')); }}
-      />
-      <button onClick={onRemove} className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-600">
-        <X size={12} /><span className="sr-only">Delete</span>
-      </button>
-      {warn ? (
-        <span
-          className="absolute bottom-2 left-2 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1"
-          title={isRtl ? 'مش بانوراما 360° كاملة — محتاجة صورة بنسبة 2:1 علشان تشوف كل الأركان' : "Not a full 360° — needs a 2:1 equirectangular photo to see every corner"}
-        >
-          <AlertTriangle size={11} /> {warn === 'lowres' ? (isRtl ? 'دقة منخفضة' : 'Low-res') : (isRtl ? 'مش 360°' : 'Not 360°')}
-        </span>
-      ) : (
-        <span className="absolute bottom-2 left-2 bg-green-600 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded flex items-center gap-1">
-          <CheckCircle size={11} /> 360°
-        </span>
-      )}
-    </div>
-  );
-};
-
 export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onAdd: (prop: Omit<Property, 'id'>) => Promise<void>, t: any, isRtl: boolean, isAdmin: boolean, isSuperAdmin: boolean }) => {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '',
     imageUrl: '', videoUrl: '', digitalTwinUrl: '', status: 'For Sale',
+    availability: 'Available' as 'Available' | 'Sold' | 'Reserved',
     registrationNumber: '', courtSignatureValidity: false, isResale: false
   });
+  // Payment methods the buyer can use; at least one is required before publishing.
+  const [paymentMethods, setPaymentMethods] = useState<string[]>(['Cash']);
+  const togglePayment = (m: string) =>
+    setPaymentMethods(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
   const [images, setImages] = useState<string[]>([]);
-  // Mirror of `images` so the base64 cap counts against the latest committed
-  // state, not a stale closure captured when an upload batch started.
-  const imagesRef = useRef<string[]>([]);
-  useEffect(() => { imagesRef.current = images; }, [images]);
-  // 360° equirectangular panoramas (separate from the regular gallery photos).
   const [panoramas, setPanoramas] = useState<string[]>([]);
-  const panoramasRef = useRef<string[]>([]);
-  useEffect(() => { panoramasRef.current = panoramas; }, [panoramas]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -266,7 +211,7 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
     }));
 
     // Enforce the base64 cap *after* the parallel work, keeping the document small.
-    let base64Count = imagesRef.current.filter(isDataUrl).length;
+    let base64Count = images.filter(isDataUrl).length;
     const uploadedUrls: string[] = [];
     let failures = 0;
     let skippedForSize = 0;
@@ -301,73 +246,31 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
     processImageFiles(files);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    processImageFiles(Array.from(e.dataTransfer.files));
-  };
-
-  // 360° panoramas use the same compress → upload pipeline as gallery photos.
-  const processPanoramaFiles = async (files: File[]) => {
-    const imageFiles = files.filter(f => f.type.startsWith('image/'));
-    if (!imageFiles.length) return;
-
-    // Quality gate: a 360° photo must be equirectangular (2:1) and high-res to
-    // see every corner. We warn but still let the agent keep the upload.
-    const checks = await Promise.all(imageFiles.map(async (f) => {
-      try { const { width, height } = await readImageSize(f); return checkPanorama(width, height); }
-      catch { return { ok: false, reason: 'ratio' as const }; }
-    }));
-    const badRatio = checks.filter(c => c.reason === 'ratio').length;
-    const lowRes = checks.filter(c => c.reason === 'lowres').length;
-
+  // 360° equirectangular panoramas, stored separately so the viewer knows to
+  // render them inside a sphere (look-around) rather than as a flat photo.
+  const handlePanoramaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
+    e.target.value = '';
+    if (!files.length) return;
     setUploading(true);
     setUploadProgress(5);
-    let done = 0;
-    const tick = () => { done++; setUploadProgress(5 + Math.round((done / imageFiles.length) * 90)); };
-
-    const results = await Promise.all(imageFiles.map(async (file) => {
-      try { const url = await storeImage(file); tick(); return { url }; }
-      catch (err) { console.error("Panorama upload failed", err); tick(); return { url: null }; }
-    }));
-
-    let base64Count = panoramasRef.current.filter(isDataUrl).length;
-    const uploaded: string[] = [];
+    const urls: string[] = [];
     let failures = 0;
-    let skippedForSize = 0;
-    for (const r of results) {
-      if (!r.url) { failures++; continue; }
-      if (isDataUrl(r.url)) {
-        if (base64Count >= FALLBACK_MAX_IMAGES) { skippedForSize++; continue; }
-        base64Count++;
-      }
-      uploaded.push(r.url);
-    }
-
-    if (uploaded.length) setPanoramas(prev => [...prev, ...uploaded]);
+    let done = 0;
+    await Promise.all(files.map(async (file) => {
+      try { urls.push(await storeImage(file)); }
+      catch (err) { failures++; console.error('Panorama upload failed', err); }
+      done++; setUploadProgress(5 + Math.round((done / files.length) * 90));
+    }));
+    if (urls.length) setPanoramas(prev => [...prev, ...urls]);
     if (failures) alert(isRtl ? `تعذر رفع ${failures} من صور البانوراما` : `${failures} panorama(s) failed to upload`);
-    if (skippedForSize) {
-      alert(isRtl
-        ? `الحد الأقصى ${FALLBACK_MAX_IMAGES} صور بانوراما حاليًا (تم تخطي ${skippedForSize}).`
-        : `Max ${FALLBACK_MAX_IMAGES} panoramas for now (${skippedForSize} skipped).`);
-    }
-    if (badRatio) {
-      alert(isRtl
-        ? `${badRatio} صورة مش بانوراما 360° كاملة (لازم تكون بنسبة 2:1). هتظهر متمططة ومش هتشوف كل أركان الغرفة. استخدم كاميرا 360 أو وضع "بانوراما/Photo Sphere".`
-        : `${badRatio} photo isn't a full 360° panorama (it must be 2:1 / equirectangular). It will look stretched and you won't see every corner. Use a 360 camera or your phone's Panorama / Photo Sphere mode.`);
-    }
-    if (lowRes) {
-      alert(isRtl
-        ? `${lowRes} صورة بانوراما دقتها منخفضة (يُفضّل عرض ${PANO_MIN_WIDTH}px+ علشان متبقاش مش واضحة).`
-        : `${lowRes} panorama is low-resolution (${PANO_MIN_WIDTH}px+ wide recommended so it doesn't look blurry).`);
-    }
     setUploadProgress(100);
     setTimeout(() => setUploading(false), 400);
   };
 
-  const handlePanoramaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    e.target.value = '';
-    processPanoramaFiles(files);
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    processImageFiles(Array.from(e.dataTransfer.files));
   };
 
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -426,6 +329,10 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
       setErrorMsg(isRtl ? 'انتظر لحد ما يخلص رفع الصور/الفيديو.' : 'Please wait until media finishes uploading.');
       return;
     }
+    if (paymentMethods.length === 0) {
+      setErrorMsg(isRtl ? 'اختر طريقة دفع واحدة على الأقل.' : 'Select at least one payment method.');
+      return;
+    }
     setErrorMsg('');
     setSubmitting(true);
     
@@ -442,10 +349,12 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
       area: Number(formData.area),
       imageUrl: formData.imageUrl || images[0] || '',
       images: images,
+      panoramas: panoramas,
       status: formData.status as 'For Sale' | 'For Rent',
+      availability: formData.availability,
       isVerified: (isAdmin || isSuperAdmin),
       verificationStatus: (isAdmin || isSuperAdmin) ? 'Verified' : 'Pending',
-      paymentMethods: ['Cash'],
+      paymentMethods: paymentMethods,
       unitCode,
       publishDate,
       legalDocs: [],
@@ -455,8 +364,7 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
     };
 
     if (formData.videoUrl) newProperty.videoUrl = formData.videoUrl;
-    if (formData.digitalTwinUrl) newProperty.digitalTwinUrl = formData.digitalTwinUrl.trim();
-    if (panoramas.length) newProperty.panoramas = panoramas;
+    if (formData.digitalTwinUrl) newProperty.digitalTwinUrl = formData.digitalTwinUrl;
 
     try {
       await onAdd(newProperty);
@@ -464,8 +372,10 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
       setFormData({
         title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '',
         imageUrl: '', videoUrl: '', digitalTwinUrl: '', status: 'For Sale',
+        availability: 'Available',
         registrationNumber: '', courtSignatureValidity: false, isResale: false
       });
+      setPaymentMethods(['Cash']);
       setImages([]);
       setPanoramas([]);
       setStep(1);
@@ -551,11 +461,11 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
                 <div className="grid grid-cols-3 gap-6">
                     <div>
                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'الغرف' : 'Beds'}</label>
-                        <input required type="number" min="0" value={formData.bedrooms} onChange={e => setFormData({...formData, bedrooms: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
+                        <input required type="number" value={formData.bedrooms} onChange={e => setFormData({...formData, bedrooms: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
                     </div>
                     <div>
                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'الحمامات' : 'Baths'}</label>
-                        <input required type="number" min="0" value={formData.bathrooms} onChange={e => setFormData({...formData, bathrooms: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
+                        <input required type="number" value={formData.bathrooms} onChange={e => setFormData({...formData, bathrooms: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
                     </div>
                     <div>
                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'المساحة (م²)' : 'm²'} <span className="text-red-500">*</span></label>
@@ -570,6 +480,34 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
                          <option value="For Sale">{isRtl ? 'للبيع' : 'For Sale'}</option>
                          <option value="For Rent">{isRtl ? 'للإيجار' : 'For Rent'}</option>
                        </select>
+                    </div>
+                    <div>
+                       <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'حالة التوفر' : 'Availability'}</label>
+                       <select value={formData.availability} onChange={e => setFormData({...formData, availability: e.target.value as 'Available' | 'Sold' | 'Reserved'})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-[right_0.75rem_center] bg-no-repeat text-slate-900 dark:text-white">
+                         <option value="Available">{isRtl ? 'متاح' : 'Available'}</option>
+                         <option value="Reserved">{isRtl ? 'محجوز' : 'Reserved'}</option>
+                         <option value="Sold">{formData.status === 'For Rent' ? (isRtl ? 'مؤجَّر' : 'Rented') : (isRtl ? 'مباع' : 'Sold')}</option>
+                       </select>
+                    </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">{isRtl ? 'طرق الدفع المتاحة' : 'Accepted Payment Methods'} <span className="text-red-500">*</span></label>
+                    <div className="flex flex-wrap gap-3">
+                      {PAYMENT_OPTIONS.map(opt => {
+                        const active = paymentMethods.includes(opt.value);
+                        return (
+                          <button
+                            type="button"
+                            key={opt.value}
+                            onClick={() => togglePayment(opt.value)}
+                            className={`px-5 py-2.5 rounded-xl text-sm font-bold border transition-all flex items-center gap-2 ${active ? 'bg-brand-600 text-white border-brand-600 shadow-md' : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-brand-400'}`}
+                          >
+                            {active && <CheckCircle size={15} />}
+                            {isRtl ? opt.ar : opt.en}
+                          </button>
+                        );
+                      })}
                     </div>
                 </div>
 
@@ -674,72 +612,59 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
                   </div>
                 </div>
 
-                {/* 360° Panorama photos */}
+                {/* 360° panoramas */}
                 <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Compass size={18} className="text-accent-500" />
+                    <div className="flex items-center gap-2">
+                      <Box size={18} className="text-brand-500" />
                       {isRtl ? 'صور بانوراما 360°' : '360° Panorama Photos'}
                     </div>
                   </label>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">{isRtl ? 'صور بانوراما كروية (نسبة 2:1) من كاميرا 360 أو وضع البانوراما — بتتفتح كجولة 360° تفاعلية.' : 'Spherical (equirectangular, 2:1) shots from a 360 camera or panorama mode — opened as an interactive 360° tour.'}</p>
-                  <div
-                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                    onDrop={(e) => { e.preventDefault(); processPanoramaFiles(Array.from(e.dataTransfer.files)); }}
-                    className="relative group border-2 border-dashed rounded-3xl p-6 text-center transition-all bg-slate-50 dark:bg-slate-800/30 border-slate-300 dark:border-slate-700 hover:border-brand-500 hover:bg-white dark:hover:bg-slate-800"
-                  >
-                    <input type="file" multiple accept="image/*" onChange={handlePanoramaUpload} className="hidden" id="pano-upload" disabled={uploading} />
-                    <label htmlFor="pano-upload" className="cursor-pointer block">
-                      <Compass className="text-slate-400 mx-auto mb-3 group-hover:text-brand-500 transition-colors" size={34} />
-                      <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{isRtl ? 'ارفع صور بانوراما 360°' : 'Upload 360° panoramas'}</p>
-                      <p className="text-xs text-slate-500 mt-1">{isRtl ? 'اختياري' : 'Optional'}</p>
-                    </label>
-                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                    {isRtl
+                      ? 'صور بزاوية 360 (من كاميرا 360 أو وضع البانوراما) — هتظهر كجولة تلف جواها 360 درجة.'
+                      : 'Equirectangular 360° shots (from a 360 camera or panorama mode) — shown as a look-around tour.'}
+                  </p>
+                  <input type="file" multiple accept="image/*" onChange={handlePanoramaUpload} className="hidden" id="panorama-upload" disabled={uploading} />
+                  <label htmlFor="panorama-upload" className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-2xl cursor-pointer transition-all bg-slate-50 dark:bg-slate-800/30 border-slate-300 dark:border-slate-700 hover:border-brand-500 hover:bg-white dark:hover:bg-slate-800 group">
+                    <Box className="text-slate-400 mb-2 group-hover:text-brand-500 transition-colors" size={28} />
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{isRtl ? 'انقر لرفع صور 360°' : 'Click to upload 360° photos'}</p>
+                  </label>
                   {panoramas.length > 0 && (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
                       {panoramas.map((img, i) => (
-                        <PanoThumb
-                          key={i}
-                          url={img}
-                          isRtl={isRtl}
-                          onRemove={() => setPanoramas(panoramas.filter((_, idx) => idx !== i))}
-                        />
+                        <div key={i} className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 group">
+                          <img src={img} className="w-full h-full object-cover" alt="Panorama" />
+                          <span className="absolute top-1.5 left-1.5 bg-brand-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded">360°</span>
+                          <button onClick={() => setPanoramas(panoramas.filter((_, idx) => idx !== i))} className="absolute top-1.5 right-1.5 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600">
+                            <X size={11} />
+                          </button>
+                        </div>
                       ))}
                     </div>
                   )}
                 </div>
 
-                {/* Real 3D tour link (Matterport / Polycam) */}
+                {/* Real virtual tour link (Matterport / Polycam / Kuula …) */}
                 <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Box size={18} className="text-accent-500" />
-                      {isRtl ? 'رابط جولة حقيقية (Matterport / Polycam)' : 'Real 3D Tour Link (Matterport / Polycam)'}
+                    <div className="flex items-center gap-2">
+                      <Globe size={18} className="text-accent-500" />
+                      {isRtl ? 'رابط الجولة الافتراضية الحقيقية' : 'Real Virtual Tour Link'}
                     </div>
                   </label>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">{isRtl ? 'الصق رابط جولة Matterport أو Polycam — هيظهر كزر "جولة حقيقية" في صفحة العقار.' : 'Paste a Matterport or Polycam link — it appears as a "Real 3D Tour" button on the listing.'}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                    {isRtl
+                      ? 'صوّر الوحدة بتطبيق Matterport أو Polycam والصق اللينك هنا — هيظهر كجولة كاملة تتمشى جواها.'
+                      : 'Scan the unit with Matterport or Polycam and paste the link — shown as a full walkthrough tour.'}
+                  </p>
                   <input
+                    type="url"
                     value={formData.digitalTwinUrl}
                     onChange={e => setFormData({ ...formData, digitalTwinUrl: e.target.value })}
-                    className={`w-full px-4 py-3 bg-slate-50 border rounded-xl focus:ring-2 outline-none text-slate-900 dark:text-white dark:bg-slate-800 ${
-                      formData.digitalTwinUrl.trim() && !isLikelyTourUrl(formData.digitalTwinUrl)
-                        ? 'border-amber-400 focus:ring-amber-400 dark:border-amber-500/60'
-                        : 'border-slate-200 dark:border-slate-700 focus:ring-brand-500'
-                    }`}
-                    placeholder="https://my.matterport.com/show/?m=..."
+                    placeholder="https://my.matterport.com/show/?m=... | https://poly.cam/capture/..."
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white text-sm"
                   />
-                  {formData.digitalTwinUrl.trim() && !isLikelyTourUrl(formData.digitalTwinUrl) && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5 flex items-center gap-1">
-                      <AlertTriangle size={12} />
-                      {isRtl ? 'الرابط لازم يكون من Matterport أو Polycam علشان الجولة تشتغل.' : "Link should be a Matterport or Polycam URL for the tour to load."}
-                    </p>
-                  )}
-                  {formData.digitalTwinUrl.trim() && isLikelyTourUrl(formData.digitalTwinUrl) && (
-                    <p className="text-xs text-green-600 dark:text-green-400 mt-1.5 flex items-center gap-1">
-                      <CheckCircle size={12} />
-                      {isRtl ? 'تمام — رابط جولة صالح.' : 'Looks good — valid tour link.'}
-                    </p>
-                  )}
                 </div>
             </div>
         )}
