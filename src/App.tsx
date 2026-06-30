@@ -1996,10 +1996,7 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
         setPurchases(purchaseData);
       } catch (err) {
         console.error("Error fetching purchases:", err);
-        const res = await api.getProfile(userEmail);
-        if (res.success && res.data) {
-          setPurchases(res.data.purchases);
-        }
+        setPurchases([]);
       } finally {
         setLoading(false);
       }
@@ -3196,28 +3193,16 @@ export default function App() {
     const fetchProps = async () => {
       setLoadingProps(true);
       try {
+        // Real data only — load every property straight from Firestore.
         const querySnapshot = await getDocs(collection(db, 'properties'));
-        let propsData = querySnapshot.docs.map(doc => ({
+        const propsData = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         })) as Property[];
-        
-        // If no properties in Firestore yet, use mock data as fallback or initial seed
-        if (propsData.length === 0) {
-          const res = await api.getProperties();
-          if (res.success && res.data) setProperties(res.data);
-        } else {
-          const res = await api.getProperties();
-          const mockProps = res.success && res.data ? res.data : [];
-          // Prepend ELAN Sarai and mock props to firestore ones so they are always visible
-          const merged = [...mockProps, ...propsData].filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i);
-          setProperties(merged);
-        }
+        setProperties(propsData);
       } catch (err) {
         console.error("Error fetching properties from Firestore:", err);
-        // Fallback to mock API if Firestore fails
-        const res = await api.getProperties();
-        if (res.success && res.data) setProperties(res.data);
+        setProperties([]);
       } finally {
         setLoadingProps(false);
       }
@@ -3760,13 +3745,9 @@ export default function App() {
                 handleNav('listings');
               } catch (err) {
                 console.error("Error adding property to Firestore:", err);
-                // Fallback to mock API if Firestore fails
-                const res = await api.addProperty(prop);
-                if (res.success) {
-                  const res2 = await api.getProperties();
-                  if (res2.success && res2.data) setProperties(res2.data);
-                  handleNav('listings');
-                }
+                alert(isRtl
+                  ? 'تعذّر حفظ العقار. تأكد إنك مسجّل دخول ومعاك صلاحية، وحاول تاني.'
+                  : 'Could not save the property. Make sure you are signed in with permission, then try again.');
               }
             }} 
             t={t} 
