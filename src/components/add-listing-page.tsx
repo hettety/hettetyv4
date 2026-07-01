@@ -128,6 +128,7 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '',
+    currency: 'EGP' as 'EGP' | 'USD',
     propertyType: 'Apartment', contactPhone: '',
     compound: '', developer: '', deliveryDate: '', finishing: '', floor: '', view: '', furnished: false,
     imageUrl: '', videoUrl: '', digitalTwinUrl: '', status: 'For Sale',
@@ -416,6 +417,7 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
       bathrooms: Number(formData.bathrooms),
       area: Number(formData.area),
       propertyType: formData.propertyType,
+      currency: formData.currency,
       imageUrl: formData.imageUrl || images[0] || '',
       images: images,
       panoramas: panoramas,
@@ -448,6 +450,7 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
       setSuccessMessage(isRtl ? 'تم إضافة العقار بنجاح وتم نشره على المنصة.' : 'Property added successfully and published to the platform.');
       setFormData({
         title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '',
+        currency: 'EGP',
         propertyType: 'Apartment', contactPhone: '',
         compound: '', developer: '', deliveryDate: '', finishing: '', floor: '', view: '', furnished: false,
         imageUrl: '', videoUrl: '', digitalTwinUrl: '', status: 'For Sale',
@@ -532,9 +535,15 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
                         <input required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white" placeholder={isRtl ? 'مثال: شقة 150م بالتجمع الخامس' : 'e.g. Luxury Villa in New Cairo'} />
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'السعر (ج.م)' : 'Price (EGP)'} <span className="text-red-500">*</span></label>
-                        <input required type="text" inputMode="numeric" value={formData.price} onChange={e => { const val = toLatinDigits(e.target.value).replace(/[^0-9]/g, ''); setFormData({...formData, price: val}); }} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white" placeholder="0" />
-                        {formattedPrice && <p className="text-xs font-bold text-brand-600 dark:text-brand-400 mt-1.5">{formattedPrice} {isRtl ? 'جنيه' : 'EGP'}</p>}
+                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'السعر' : 'Price'} <span className="text-red-500">*</span></label>
+                        <div className="flex gap-2">
+                          <input required type="text" inputMode="numeric" value={formData.price} onChange={e => { const val = toLatinDigits(e.target.value).replace(/[^0-9]/g, ''); setFormData({...formData, price: val}); }} className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white" placeholder="0" />
+                          <select value={formData.currency} onChange={e => setFormData({...formData, currency: e.target.value as 'EGP' | 'USD'})} className="px-3 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white font-bold">
+                            <option value="EGP">{isRtl ? 'ج.م' : 'EGP'}</option>
+                            <option value="USD">USD</option>
+                          </select>
+                        </div>
+                        {formattedPrice && <p className="text-xs font-bold text-brand-600 dark:text-brand-400 mt-1.5">{formattedPrice} {formData.currency === 'USD' ? 'USD' : (isRtl ? 'جنيه' : 'EGP')}</p>}
                     </div>
                     <div>
                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'الموقع' : 'Location'} <span className="text-red-500">*</span></label>

@@ -312,7 +312,7 @@ const PropertyCard: React.FC<{
       <div className="flex justify-between items-start mb-2">
         <h3 className="text-lg font-heading font-bold text-slate-900 dark:text-white line-clamp-1">{property.title}</h3>
         <span className="text-brand-600 dark:text-brand-400 font-bold whitespace-nowrap">
-          {property.price.toLocaleString()} EGP
+          {property.price.toLocaleString()} {property.currency || 'EGP'}
         </span>
       </div>
       <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -1628,6 +1628,9 @@ const Viewer3D = ({ property, onClose, isRtl }: { property: Property | undefined
 const PropertyDetailPage = ({ property, onBack, onPurchase, t, isRtl }: { property: Property, onBack: () => void, onPurchase: (id: string) => void, t: any, isRtl: boolean }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [show3D, setShow3D] = useState(false);
+  const [calcDown, setCalcDown] = useState(10); // installment estimate: down payment %
+  const [calcYears, setCalcYears] = useState(5);
+  const [reporting, setReporting] = useState(false);
   const displayImages = (property.images && property.images.length > 0 ? property.images : [property.imageUrl]).filter(Boolean);
   // Unified media carousel so the photos stay reachable even when a video exists.
   const slides: { type: 'video' | 'image'; src: string }[] = [
@@ -1729,6 +1732,29 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
   };
 
   const av = availabilityInfo(property.availability, property.status, isRtl);
+  const mapsQuery = encodeURIComponent([property.compound, property.location].filter(Boolean).join(', '));
+  const mapsUrl = (property.lat && property.lng)
+    ? `https://www.google.com/maps/search/?api=1&query=${property.lat},${property.lng}`
+    : `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`;
+
+  const handleReport = async () => {
+    if (!auth.currentUser) { alert(isRtl ? 'سجّل الدخول الأول عشان تبلّغ.' : 'Please sign in to report a listing.'); return; }
+    const reason = window.prompt(isRtl ? 'سبب البلاغ عن الإعلان:' : 'Reason for reporting this listing:');
+    if (!reason || !reason.trim()) return;
+    setReporting(true);
+    try {
+      await addDoc(collection(db, 'reports'), {
+        propertyId: property.id,
+        userId: auth.currentUser.uid,
+        reason: reason.trim().slice(0, 1000),
+        createdAt: new Date().toISOString(),
+      });
+      alert(isRtl ? 'تم إرسال البلاغ للمراجعة. شكرًا.' : 'Report submitted for review. Thank you.');
+    } catch (err) {
+      console.error('Report failed', err);
+      alert(isRtl ? 'تعذّر إرسال البلاغ.' : 'Could not submit the report.');
+    } finally { setReporting(false); }
+  };
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 animate-fade-in">
@@ -1788,7 +1814,10 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
                 )}
                 <span className={`${av.color} text-white text-[10px] px-2 py-1 rounded-full font-black uppercase tracking-wider`}>{av.label}</span>
               </div>
-              <p className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mb-2 font-medium"><MapPin size={16} className="text-brand-500"/> {property.location}{property.compound ? ` — ${property.compound}` : ''}</p>
+              <p className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mb-1 font-medium flex-wrap">
+                <MapPin size={16} className="text-brand-500"/> {property.location}{property.compound ? ` — ${property.compound}` : ''}
+                <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="text-brand-600 dark:text-brand-400 font-bold hover:underline text-sm">{isRtl ? '· عرض على الخريطة' : '· View on map'}</a>
+              </p>
               {(property.propertyType || property.finishing || property.floor || property.view || property.furnished) && (
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
                   {property.propertyType && <span className="text-xs font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-2.5 py-1 rounded-lg">{property.propertyType}</span>}
@@ -1806,7 +1835,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
               </div>
             </div>
             <div className="text-right bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex sm:flex-col justify-between items-center sm:items-end gap-2 w-full sm:w-auto">
-              <div className="text-2xl font-black text-brand-600 dark:text-brand-400">{property.price.toLocaleString()} EGP</div>
+              <div className="text-2xl font-black text-brand-600 dark:text-brand-400">{property.price.toLocaleString()} {property.currency || 'EGP'}</div>
               <div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">{property.status === 'For Sale' ? (isRtl ? 'للبيع' : 'For Sale') : (isRtl ? 'للإيجار' : 'For Rent')}</div>
             </div>
           </div>
@@ -1893,6 +1922,33 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
             </div>
           </div>
 
+          {property.status === 'For Sale' && (
+            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
+              <h3 className="font-bold text-slate-900 dark:text-white mb-1 flex items-center gap-2"><DollarSign size={18} className="text-brand-500"/> {isRtl ? 'حاسبة التقسيط (تقديرية)' : 'Installment Estimate'}</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">{isRtl ? 'تقدير بأقساط متساوية بدون فوائد — للاسترشاد فقط، مش سعر رسمي.' : 'Rough equal-installment estimate (no interest) — guidance only, not an official quote.'}</p>
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 flex justify-between mb-1"><span>{isRtl ? 'المقدم' : 'Down payment'}</span><span>{calcDown}%</span></label>
+                  <input type="range" min="0" max="50" step="5" value={calcDown} onChange={e => setCalcDown(Number(e.target.value))} className="w-full accent-brand-600" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 flex justify-between mb-1"><span>{isRtl ? 'عدد السنين' : 'Years'}</span><span>{calcYears}</span></label>
+                  <input type="range" min="1" max="15" step="1" value={calcYears} onChange={e => setCalcYears(Number(e.target.value))} className="w-full accent-brand-600" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-center">
+                <div className="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-100 dark:border-slate-800">
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">{isRtl ? 'المقدم' : 'Down payment'}</div>
+                  <div className="font-black text-brand-600 dark:text-brand-400">{Math.round(property.price * calcDown / 100).toLocaleString()} {property.currency || 'EGP'}</div>
+                </div>
+                <div className="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-100 dark:border-slate-800">
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">{isRtl ? 'القسط الشهري' : 'Monthly'}</div>
+                  <div className="font-black text-brand-600 dark:text-brand-400">{Math.round(property.price * (1 - calcDown / 100) / (calcYears * 12)).toLocaleString()} {property.currency || 'EGP'}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {property.contactPhone && (
             <div>
               <h3 className="font-bold text-slate-900 dark:text-white mb-3">{isRtl ? 'تواصل مع البائع' : 'Contact the seller'}</h3>
@@ -1923,6 +1979,10 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
               {isRtl ? 'المتابعة للدفع' : 'Proceed to Payment'}
             </Button>
           )}
+
+          <button onClick={handleReport} disabled={reporting} className="w-full text-center text-xs font-bold text-slate-400 hover:text-red-500 transition-colors py-2 flex items-center justify-center gap-1.5 disabled:opacity-50">
+            <Shield size={13} /> {isRtl ? 'بلّغ عن هذا الإعلان' : 'Report this listing'}
+          </button>
         </div>
 
         {/* AI assistant column (always visible) */}
