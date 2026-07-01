@@ -311,9 +311,8 @@ const PropertyCard: React.FC<{
     <div className="p-6 flex-1 flex flex-col">
       <div className="flex justify-between items-start mb-2">
         <h3 className="text-lg font-heading font-bold text-slate-900 dark:text-white line-clamp-1">{property.title}</h3>
-        <span className="text-brand-600 dark:text-brand-400 font-bold whitespace-nowrap text-right">
+        <span className="text-brand-600 dark:text-brand-400 font-bold whitespace-nowrap">
           {property.price.toLocaleString()} EGP
-          {property.area > 0 && <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500">{Math.round(property.price / property.area).toLocaleString()} {isRtl ? 'ج.م/م²' : 'EGP/m²'}</span>}
         </span>
       </div>
       <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -1807,12 +1806,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
               </div>
             </div>
             <div className="text-right bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex sm:flex-col justify-between items-center sm:items-end gap-2 w-full sm:w-auto">
-              <div>
-                <div className="text-2xl font-black text-brand-600 dark:text-brand-400">{property.price.toLocaleString()} EGP</div>
-                {property.area > 0 && (
-                  <div className="text-[11px] font-bold text-slate-400 dark:text-slate-500 mt-0.5">{Math.round(property.price / property.area).toLocaleString()} {isRtl ? 'ج.م/م²' : 'EGP/m²'}</div>
-                )}
-              </div>
+              <div className="text-2xl font-black text-brand-600 dark:text-brand-400">{property.price.toLocaleString()} EGP</div>
               <div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">{property.status === 'For Sale' ? (isRtl ? 'للبيع' : 'For Sale') : (isRtl ? 'للإيجار' : 'For Rent')}</div>
             </div>
           </div>
