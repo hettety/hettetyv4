@@ -11,14 +11,19 @@ service firebase.storage {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Property images — any authenticated user may upload, but only real images
-    // up to 10MB. (Object names are timestamp+random, so accidental clobbering
-    // of someone else's upload is effectively impossible.)
+    // Property media — any authenticated user may upload:
+    //  • images  (≤ 15MB)
+    //  • videos  (≤ 80MB) — property tour clips
+    //  • PDFs    (≤ 15MB) — legal documents (contract / registry)
+    // Object names are timestamp+random, so clobbering someone else's file is
+    // effectively impossible.
     match /properties/{fileName} {
       allow read: if true;
-      allow create, update: if isAuthenticated()
-                   && request.resource.size < 10 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
+      allow create, update: if isAuthenticated() && (
+                     (request.resource.contentType.matches('image/.*') && request.resource.size < 15 * 1024 * 1024) ||
+                     (request.resource.contentType.matches('video/.*') && request.resource.size < 80 * 1024 * 1024) ||
+                     (request.resource.contentType == 'application/pdf' && request.resource.size < 15 * 1024 * 1024)
+                   );
       allow delete: if isAuthenticated();
     }
 

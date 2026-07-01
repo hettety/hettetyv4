@@ -1628,6 +1628,11 @@ const PropertyDetailPage = ({ property, onBack, onPurchase, t, isRtl }: { proper
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [show3D, setShow3D] = useState(false);
   const displayImages = (property.images && property.images.length > 0 ? property.images : [property.imageUrl]).filter(Boolean);
+  // Unified media carousel so the photos stay reachable even when a video exists.
+  const slides: { type: 'video' | 'image'; src: string }[] = [
+    ...(property.videoUrl ? [{ type: 'video' as const, src: property.videoUrl }] : []),
+    ...displayImages.map((src) => ({ type: 'image' as const, src })),
+  ];
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'model', text: isRtl ? `أهلاً! أنا المساعد الذكي الخاص بهذا العقار (${property.title}). اسألني عن تفاصيل العقار، الأوراق القانونية، حالة إعادة البيع، أو رقم الشهر العقاري.` : `Hello! I'm the AI assistant for this property (${property.title}). Ask me about its details, legal documents, resale status, or registry number.`, timestamp: new Date() }
@@ -1735,10 +1740,10 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
         <div className="lg:col-span-2 space-y-8">
           {/* Gallery */}
           <div className="relative h-72 sm:h-96 group rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-lg">
-            {property.videoUrl && currentImageIndex === 0 ? (
-              <video src={property.videoUrl} className="w-full h-full object-cover" controls playsInline />
+            {slides[currentImageIndex]?.type === 'video' ? (
+              <video src={slides[currentImageIndex].src} className="w-full h-full object-cover" controls playsInline />
             ) : (
-              <img src={displayImages[currentImageIndex]} alt={property.title} className="w-full h-full object-cover" />
+              <img src={slides[currentImageIndex]?.src} alt={property.title} className="w-full h-full object-cover" />
             )}
             {av.taken && (
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10 pointer-events-none">
@@ -1753,16 +1758,16 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
                 <Box size={16} /> {property.panoramas && property.panoramas.length > 0 ? (isRtl ? 'جولة 360°' : '360° Tour') : (isRtl ? 'جولة 3D' : 'View in 3D')}
               </button>
             )}
-            {displayImages.length > 1 && !property.videoUrl && (
+            {slides.length > 1 && (
               <>
-                <button onClick={() => setCurrentImageIndex(i => i === 0 ? displayImages.length - 1 : i - 1)} className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-0 group-hover:opacity-100 z-20">
+                <button onClick={() => setCurrentImageIndex(i => i === 0 ? slides.length - 1 : i - 1)} className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-0 group-hover:opacity-100 z-20">
                   <ChevronLeft size={20} />
                 </button>
-                <button onClick={() => setCurrentImageIndex(i => (i + 1) % displayImages.length)} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-0 group-hover:opacity-100 z-20">
+                <button onClick={() => setCurrentImageIndex(i => (i + 1) % slides.length)} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-0 group-hover:opacity-100 z-20">
                   <ChevronRight size={20} />
                 </button>
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-20">
-                  {displayImages.map((_, idx) => (
+                  {slides.map((_, idx) => (
                     <div key={idx} className={`w-2.5 h-2.5 rounded-full transition-all ${idx === currentImageIndex ? 'bg-white scale-125' : 'bg-white/50 cursor-pointer'}`} onClick={() => setCurrentImageIndex(idx)} />
                   ))}
                 </div>

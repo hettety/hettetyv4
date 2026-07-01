@@ -81,6 +81,28 @@ const storeImage = async (file: File): Promise<string> => {
   return fileToDataUrl(compressed);
 };
 
+/** Stores a legal document (image or PDF) — Storage first, base64 fallback. */
+const storeDocument = async (file: File): Promise<string> => {
+  if (!storageUnavailable) {
+    try { return await uploadToStorage(file, file.name); }
+    catch (err) { console.warn('Storage document upload failed — base64 fallback', err); storageUnavailable = true; }
+  }
+  return fileToDataUrl(file);
+};
+
+/** Converts Arabic-Indic (٠-٩) and Persian (۰-۹) numerals to Latin 0-9. */
+const toLatinDigits = (s: string) =>
+  s.replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660))
+   .replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06F0));
+
+/** True for a recognised virtual-tour link (Matterport / Polycam / Kuula). */
+const isLikelyTourUrl = (raw: string) => {
+  try {
+    const h = new URL((raw || '').trim()).hostname.replace(/^www\./, '');
+    return h.endsWith('matterport.com') || h.endsWith('poly.cam') || h.endsWith('kuula.co');
+  } catch { return false; }
+};
+
 export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onAdd: (prop: Omit<Property, 'id'>) => Promise<void>, t: any, isRtl: boolean, isAdmin: boolean, isSuperAdmin: boolean }) => {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
@@ -95,6 +117,7 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
     setPaymentMethods(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
   const [images, setImages] = useState<string[]>([]);
   const [panoramas, setPanoramas] = useState<string[]>([]);
+  const [legalDocs, setLegalDocs] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -153,6 +176,14 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
     e.target.value = ''; // allow re-selecting the same file
     if (!file) return;
     setExtractingOCR(true);
+    // 1) Persist the document itself so it's never lost (was previously discarded).
+    try {
+      const url = await storeDocument(file);
+      setLegalDocs(prev => [...prev, url]);
+    } catch (docErr) {
+      console.error('Failed to store legal document', docErr);
+    }
+    // 2) OCR the registry number from it.
     try {
       const apiKey = getGeminiApiKey();
       if (!apiKey) throw new Error("No API Key");
@@ -254,16 +285,30 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
     if (!files.length) return;
     setUploading(true);
     setUploadProgress(5);
-    const urls: string[] = [];
+    const results: string[] = [];
     let failures = 0;
     let done = 0;
     await Promise.all(files.map(async (file) => {
-      try { urls.push(await storeImage(file)); }
+      try { results.push(await storeImage(file)); }
       catch (err) { failures++; console.error('Panorama upload failed', err); }
       done++; setUploadProgress(5 + Math.round((done / files.length) * 90));
     }));
+    // Same base64 cap as images so panoramas can't silently blow the 1MB doc limit.
+    let base64Count = [...images, ...panoramas].filter(isDataUrl).length;
+    const urls: string[] = [];
+    let skippedForSize = 0;
+    for (const url of results) {
+      if (isDataUrl(url)) {
+        if (base64Count >= FALLBACK_MAX_IMAGES) { skippedForSize++; continue; }
+        base64Count++;
+      }
+      urls.push(url);
+    }
     if (urls.length) setPanoramas(prev => [...prev, ...urls]);
     if (failures) alert(isRtl ? `تعذر رفع ${failures} من صور البانوراما` : `${failures} panorama(s) failed to upload`);
+    if (skippedForSize) alert(isRtl
+      ? `تم تخطي ${skippedForSize} بانوراما — فعّل خطة Blaze لرفع وسائط أكثر.`
+      : `${skippedForSize} panorama(s) skipped — enable the Firebase Blaze plan for more media.`);
     setUploadProgress(100);
     setTimeout(() => setUploading(false), 400);
   };
@@ -357,7 +402,7 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
       paymentMethods: paymentMethods,
       unitCode,
       publishDate,
-      legalDocs: [],
+      legalDocs: legalDocs,
       registrationNumber: formData.registrationNumber,
       courtSignatureValidity: formData.courtSignatureValidity,
       isResale: formData.isResale
@@ -378,6 +423,7 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
       setPaymentMethods(['Cash']);
       setImages([]);
       setPanoramas([]);
+      setLegalDocs([]);
       setStep(1);
     } catch (err) {
       console.error("Failed to publish property", err);
@@ -449,7 +495,7 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
                     </div>
                     <div>
                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'السعر (ج.م)' : 'Price (EGP)'} <span className="text-red-500">*</span></label>
-                        <input required type="text" inputMode="numeric" value={formData.price} onChange={e => { const val = e.target.value.replace(/[^0-9]/g, ''); setFormData({...formData, price: val}); }} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white" placeholder="0" />
+                        <input required type="text" inputMode="numeric" value={formData.price} onChange={e => { const val = toLatinDigits(e.target.value).replace(/[^0-9]/g, ''); setFormData({...formData, price: val}); }} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white" placeholder="0" />
                         {formattedPrice && <p className="text-xs font-bold text-brand-600 dark:text-brand-400 mt-1.5">{formattedPrice} {isRtl ? 'جنيه' : 'EGP'}</p>}
                     </div>
                     <div>
@@ -461,11 +507,11 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
                 <div className="grid grid-cols-3 gap-6">
                     <div>
                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'الغرف' : 'Beds'}</label>
-                        <input required type="number" value={formData.bedrooms} onChange={e => setFormData({...formData, bedrooms: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
+                        <input required type="number" min="0" value={formData.bedrooms} onChange={e => setFormData({...formData, bedrooms: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
                     </div>
                     <div>
                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'الحمامات' : 'Baths'}</label>
-                        <input required type="number" value={formData.bathrooms} onChange={e => setFormData({...formData, bathrooms: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
+                        <input required type="number" min="0" value={formData.bathrooms} onChange={e => setFormData({...formData, bathrooms: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
                     </div>
                     <div>
                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'المساحة (م²)' : 'm²'} <span className="text-red-500">*</span></label>
@@ -567,7 +613,19 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
                                       <X size={12} />
                                       <span className="sr-only">Delete</span>
                                   </button>
-                                  {i === 0 && <span className="absolute bottom-2 left-2 bg-brand-600 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded shadow">Main</span>}
+                                  {i === 0 ? (
+                                    <span className="absolute bottom-2 left-2 bg-brand-600 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded shadow">{isRtl ? 'الرئيسية' : 'Main'}</span>
+                                  ) : (
+                                    <button
+                                      onClick={() => {
+                                        setImages(prev => { const arr = [...prev]; const [it] = arr.splice(i, 1); arr.unshift(it); return arr; });
+                                        setFormData(prev => ({ ...prev, imageUrl: img }));
+                                      }}
+                                      className="absolute bottom-2 left-2 bg-black/70 hover:bg-brand-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                      {isRtl ? 'اجعلها الرئيسية' : 'Set as cover'}
+                                    </button>
+                                  )}
                               </div>
                           ))}
                       </div>
@@ -663,8 +721,17 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
                     value={formData.digitalTwinUrl}
                     onChange={e => setFormData({ ...formData, digitalTwinUrl: e.target.value })}
                     placeholder="https://my.matterport.com/show/?m=... | https://poly.cam/capture/..."
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white text-sm"
+                    className={`w-full px-4 py-3 bg-slate-50 border rounded-xl focus:ring-2 outline-none transition-all text-slate-900 dark:text-white text-sm dark:bg-slate-800 ${
+                      formData.digitalTwinUrl.trim() && !isLikelyTourUrl(formData.digitalTwinUrl)
+                        ? 'border-amber-400 focus:ring-amber-400 dark:border-amber-500/60'
+                        : 'border-slate-200 dark:border-slate-700 focus:ring-brand-500'
+                    }`}
                   />
+                  {formData.digitalTwinUrl.trim() && !isLikelyTourUrl(formData.digitalTwinUrl) && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5">
+                      {isRtl ? '⚠️ اللينك لازم يكون من Matterport أو Polycam أو Kuula علشان الجولة تشتغل.' : '⚠️ Link should be a Matterport, Polycam or Kuula URL for the tour to load.'}
+                    </p>
+                  )}
                 </div>
             </div>
         )}
@@ -684,6 +751,16 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
                            {isRtl ? 'استخراج ذكي (OCR)' : 'Smart OCR Extract'}
                        </label>
                    </div>
+                   {legalDocs.length > 0 && (
+                     <div className="mt-4 flex flex-wrap gap-2">
+                       {legalDocs.map((_, i) => (
+                         <span key={i} className="inline-flex items-center gap-2 bg-white dark:bg-slate-800 border border-orange-200 dark:border-orange-500/30 text-orange-700 dark:text-orange-300 text-xs font-bold px-3 py-1.5 rounded-lg">
+                           <FileText size={14} /> {isRtl ? `مستند ${i + 1}` : `Document ${i + 1}`}
+                           <button onClick={() => setLegalDocs(prev => prev.filter((_, idx) => idx !== i))} className="hover:text-red-600"><X size={12} /></button>
+                         </span>
+                       ))}
+                     </div>
+                   )}
                 </div>
 
                 <div className="grid md:grid-cols-2 gap-6">
