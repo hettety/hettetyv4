@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { GoogleGenAI, Type } from '@google/genai';
 import { GEMINI_MODEL, GEMINI_FALLBACK_MODEL, getGeminiApiKey, extract3DMarker, withRetry, isOverloadedError, generateContentResilient, aiErrorMessage } from './ai';
-import { AddListingPage, PAYMENT_OPTIONS } from './components/add-listing-page';
+import { AddListingPage, PAYMENT_OPTIONS, PROPERTY_TYPES } from './components/add-listing-page';
 import { INITIAL_ENTITY_DATA, TRANSLATIONS, SUPER_ADMIN_EMAILS } from './constants';
 import { Property, ChatMessage, UserDocument, Page, Notification, ChatSession } from './types';
 import imageCompression from 'browser-image-compression';
@@ -311,12 +311,14 @@ const PropertyCard: React.FC<{
     <div className="p-6 flex-1 flex flex-col">
       <div className="flex justify-between items-start mb-2">
         <h3 className="text-lg font-heading font-bold text-slate-900 dark:text-white line-clamp-1">{property.title}</h3>
-        <span className="text-brand-600 dark:text-brand-400 font-bold whitespace-nowrap">
+        <span className="text-brand-600 dark:text-brand-400 font-bold whitespace-nowrap text-right">
           {property.price.toLocaleString()} EGP
+          {property.area > 0 && <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500">{Math.round(property.price / property.area).toLocaleString()} {isRtl ? 'ج.م/م²' : 'EGP/m²'}</span>}
         </span>
       </div>
-      <div className="flex items-center text-slate-500 dark:text-slate-400 text-sm mb-3">
-        <MapPin size={14} className={isRtl ? "ml-1" : "mr-1"} /> {property.location}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        {property.propertyType && <span className="text-[10px] font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-2 py-0.5 rounded">{property.propertyType}</span>}
+        <span className="flex items-center text-slate-500 dark:text-slate-400 text-sm"><MapPin size={14} className={isRtl ? "ml-1" : "mr-1"} /> {property.location}</span>
       </div>
       {property.unitCode && (
         <div className="text-xs text-slate-400 dark:text-slate-500 mb-3 bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded inline-block w-fit">
@@ -1787,14 +1789,30 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
                 )}
                 <span className={`${av.color} text-white text-[10px] px-2 py-1 rounded-full font-black uppercase tracking-wider`}>{av.label}</span>
               </div>
-              <p className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mb-2 font-medium"><MapPin size={16} className="text-brand-500"/> {property.location}</p>
+              <p className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mb-2 font-medium"><MapPin size={16} className="text-brand-500"/> {property.location}{property.compound ? ` — ${property.compound}` : ''}</p>
+              {(property.propertyType || property.finishing || property.floor || property.view || property.furnished) && (
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  {property.propertyType && <span className="text-xs font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-2.5 py-1 rounded-lg">{property.propertyType}</span>}
+                  {property.finishing && <span className="text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg">{property.finishing}</span>}
+                  {property.floor && <span className="text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg">{isRtl ? 'الدور' : 'Floor'}: {property.floor}</span>}
+                  {property.view && <span className="text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg">{property.view}</span>}
+                  {property.furnished && <span className="text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg">{isRtl ? 'مفروش' : 'Furnished'}</span>}
+                </div>
+              )}
               <div className="flex items-center gap-4 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest flex-wrap">
+                {property.developer && <span className="normal-case tracking-normal">{isRtl ? 'المطوّر:' : 'Developer:'} {property.developer}</span>}
+                {property.deliveryDate && <span className="normal-case tracking-normal">{isRtl ? 'الاستلام:' : 'Delivery:'} {property.deliveryDate}</span>}
                 {property.unitCode && <span>{isRtl ? 'كود الوحدة:' : 'Unit Code:'} {property.unitCode}</span>}
                 {property.publishDate && <span>{isRtl ? 'تاريخ النشر:' : 'Published:'} {property.publishDate}</span>}
               </div>
             </div>
             <div className="text-right bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex sm:flex-col justify-between items-center sm:items-end gap-2 w-full sm:w-auto">
-              <div className="text-2xl font-black text-brand-600 dark:text-brand-400">{property.price.toLocaleString()} EGP</div>
+              <div>
+                <div className="text-2xl font-black text-brand-600 dark:text-brand-400">{property.price.toLocaleString()} EGP</div>
+                {property.area > 0 && (
+                  <div className="text-[11px] font-bold text-slate-400 dark:text-slate-500 mt-0.5">{Math.round(property.price / property.area).toLocaleString()} {isRtl ? 'ج.م/م²' : 'EGP/m²'}</div>
+                )}
+              </div>
               <div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">{property.status === 'For Sale' ? (isRtl ? 'للبيع' : 'For Sale') : (isRtl ? 'للإيجار' : 'For Rent')}</div>
             </div>
           </div>
@@ -1880,6 +1898,27 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
               )}
             </div>
           </div>
+
+          {property.contactPhone && (
+            <div>
+              <h3 className="font-bold text-slate-900 dark:text-white mb-3">{isRtl ? 'تواصل مع البائع' : 'Contact the seller'}</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <a
+                  href={`https://wa.me/${(property.contactPhone || '').replace(/\D/g, '')}?text=${encodeURIComponent(isRtl ? `مرحبًا، مهتم بالعقار ${property.unitCode || property.title}` : `Hi, I'm interested in ${property.unitCode || property.title}`)}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 py-3.5 rounded-xl bg-green-500 hover:bg-green-600 text-white font-bold transition-colors shadow-md"
+                >
+                  <MessageSquare size={18} /> {isRtl ? 'واتساب' : 'WhatsApp'}
+                </a>
+                <a
+                  href={`tel:${property.contactPhone}`}
+                  className="flex items-center justify-center gap-2 py-3.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold transition-colors shadow-md"
+                >
+                  <Phone size={18} /> {isRtl ? 'اتصال' : 'Call'}
+                </a>
+              </div>
+            </div>
+          )}
 
           {av.taken ? (
             <div className="w-full py-4 text-lg text-center font-bold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
@@ -2918,7 +2957,8 @@ export default function App() {
   const [listingSearchQuery, setListingSearchQuery] = useState('');
   const [minPrice, setMinPrice] = useState<number | ''>('');
   const [maxPrice, setMaxPrice] = useState<number | ''>('');
-  const [sortBy, setSortBy] = useState<'default' | 'price-asc' | 'price-desc' | 'name-asc' | 'name-desc'>('default');
+  const [sortBy, setSortBy] = useState<'default' | 'newest' | 'price-asc' | 'price-desc' | 'name-asc' | 'name-desc'>('default');
+  const [typeFilter, setTypeFilter] = useState('all');
   const [paymentProperty, setPaymentProperty] = useState<Property | null>(null);
   const [aiFilteredIds, setAiFilteredIds] = useState<string[] | null>(null);
   const [isAiSearching, setIsAiSearching] = useState(false);
@@ -3175,15 +3215,22 @@ export default function App() {
   let filteredProperties = properties.filter(p => {
     const matchesPrice = (minPrice === '' || p.price >= Number(minPrice)) &&
                          (maxPrice === '' || p.price <= Number(maxPrice));
-    
+    const matchesType = typeFilter === 'all' || p.propertyType === typeFilter;
+
     if (aiFilteredIds !== null) {
-      return aiFilteredIds.includes(p.id) && matchesPrice;
+      return aiFilteredIds.includes(p.id) && matchesPrice && matchesType;
     }
-    return (p.title.toLowerCase().includes(listingSearchQuery.toLowerCase()) ||
-      p.location.toLowerCase().includes(listingSearchQuery.toLowerCase())) && matchesPrice;
+    const q = listingSearchQuery.toLowerCase();
+    const matchesSearch = p.title.toLowerCase().includes(q) ||
+      p.location.toLowerCase().includes(q) ||
+      (p.compound || '').toLowerCase().includes(q) ||
+      (p.developer || '').toLowerCase().includes(q);
+    return matchesSearch && matchesPrice && matchesType;
   });
 
-  if (sortBy === 'price-asc') {
+  if (sortBy === 'newest') {
+    filteredProperties.sort((a, b) => (b.publishDate || '').localeCompare(a.publishDate || ''));
+  } else if (sortBy === 'price-asc') {
     filteredProperties.sort((a, b) => a.price - b.price);
   } else if (sortBy === 'price-desc') {
     filteredProperties.sort((a, b) => b.price - a.price);
@@ -3596,12 +3643,21 @@ export default function App() {
                      className={`w-full py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-brand-500 outline-none text-black dark:text-white ${isRtl ? 'pr-10 pl-4' : 'pl-10 pr-4'}`} 
                    />
                  </div>
-                 <select 
+                 <select
+                   value={typeFilter}
+                   onChange={(e) => setTypeFilter(e.target.value)}
+                   className="py-2.5 px-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-brand-500 outline-none text-black dark:text-white flex-1 sm:flex-none sm:min-w-[150px]"
+                 >
+                   <option value="all">{isRtl ? 'كل الأنواع' : 'All Types'}</option>
+                   {PROPERTY_TYPES.map(o => <option key={o.value} value={o.value}>{isRtl ? o.ar : o.en}</option>)}
+                 </select>
+                 <select
                    value={sortBy}
                    onChange={(e) => setSortBy(e.target.value as any)}
                    className="py-2.5 px-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-brand-500 outline-none text-black dark:text-white flex-1 sm:flex-none sm:min-w-[180px]"
                  >
                    <option value="default">{isRtl ? 'الترتيب الافتراضي' : 'Default Sort'}</option>
+                   <option value="newest">{isRtl ? 'الأحدث' : 'Newest'}</option>
                    <option value="price-asc">{isRtl ? 'السعر: من الأقل للأعلى' : 'Price: Low to High'}</option>
                    <option value="price-desc">{isRtl ? 'السعر: من الأعلى للأقل' : 'Price: High to Low'}</option>
                    <option value="name-asc">{isRtl ? 'الاسم: أ إلى ي' : 'Name: A to Z'}</option>

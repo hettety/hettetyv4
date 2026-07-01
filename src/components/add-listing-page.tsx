@@ -16,6 +16,27 @@ export const PAYMENT_OPTIONS = [
   { value: 'Mortgage', ar: 'تمويل عقاري', en: 'Mortgage' },
 ];
 
+export const PROPERTY_TYPES = [
+  { value: 'Apartment', ar: 'شقة', en: 'Apartment' },
+  { value: 'Villa', ar: 'فيلا', en: 'Villa' },
+  { value: 'Duplex', ar: 'دوبلكس', en: 'Duplex' },
+  { value: 'Penthouse', ar: 'بنتهاوس', en: 'Penthouse' },
+  { value: 'Studio', ar: 'استوديو', en: 'Studio' },
+  { value: 'Townhouse', ar: 'تاون هاوس', en: 'Townhouse' },
+  { value: 'Chalet', ar: 'شاليه', en: 'Chalet' },
+  { value: 'Office', ar: 'مكتب إداري', en: 'Office' },
+  { value: 'Retail', ar: 'محل تجاري', en: 'Retail' },
+  { value: 'Land', ar: 'أرض', en: 'Land' },
+];
+
+export const FINISHING_OPTIONS = [
+  { value: '', ar: 'غير محدد', en: 'Unspecified' },
+  { value: 'Not Finished', ar: 'على المحارة', en: 'Not Finished' },
+  { value: 'Semi Finished', ar: 'نص تشطيب', en: 'Semi Finished' },
+  { value: 'Finished', ar: 'تشطيب كامل', en: 'Finished' },
+  { value: 'Fully Finished', ar: 'سوبر لوكس', en: 'Super Lux' },
+];
+
 /** Reads a File as a data URL, promisified so errors stay inside the caller's try/catch. */
 const fileToDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
   const reader = new FileReader();
@@ -107,6 +128,8 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '',
+    propertyType: 'Apartment', contactPhone: '',
+    compound: '', developer: '', deliveryDate: '', finishing: '', floor: '', view: '', furnished: false,
     imageUrl: '', videoUrl: '', digitalTwinUrl: '', status: 'For Sale',
     availability: 'Available' as 'Available' | 'Sold' | 'Reserved',
     registrationNumber: '', courtSignatureValidity: false, isResale: false
@@ -392,6 +415,7 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
       bedrooms: Number(formData.bedrooms),
       bathrooms: Number(formData.bathrooms),
       area: Number(formData.area),
+      propertyType: formData.propertyType,
       imageUrl: formData.imageUrl || images[0] || '',
       images: images,
       panoramas: panoramas,
@@ -410,12 +434,22 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
 
     if (formData.videoUrl) newProperty.videoUrl = formData.videoUrl;
     if (formData.digitalTwinUrl) newProperty.digitalTwinUrl = formData.digitalTwinUrl;
+    if (formData.contactPhone.trim()) newProperty.contactPhone = formData.contactPhone.trim();
+    if (formData.compound.trim()) newProperty.compound = formData.compound.trim();
+    if (formData.developer.trim()) newProperty.developer = formData.developer.trim();
+    if (formData.deliveryDate.trim()) newProperty.deliveryDate = formData.deliveryDate.trim();
+    if (formData.finishing) newProperty.finishing = formData.finishing;
+    if (formData.floor.trim()) newProperty.floor = formData.floor.trim();
+    if (formData.view.trim()) newProperty.view = formData.view.trim();
+    if (formData.furnished) newProperty.furnished = true;
 
     try {
       await onAdd(newProperty);
       setSuccessMessage(isRtl ? 'تم إضافة العقار بنجاح وتم نشره على المنصة.' : 'Property added successfully and published to the platform.');
       setFormData({
         title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '',
+        propertyType: 'Apartment', contactPhone: '',
+        compound: '', developer: '', deliveryDate: '', finishing: '', floor: '', view: '', furnished: false,
         imageUrl: '', videoUrl: '', digitalTwinUrl: '', status: 'For Sale',
         availability: 'Available',
         registrationNumber: '', courtSignatureValidity: false, isResale: false
@@ -453,6 +487,10 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
     { id: 2, title: isRtl ? 'الوسائط' : 'Media', icon: ImageIcon },
     { id: 3, title: isRtl ? 'الوثائق القانونية' : 'Legal Docs', icon: Shield }
   ];
+
+  const labelCls = "block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2";
+  const inputCls = "w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white";
+  const selectCls = inputCls + " appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-[right_0.75rem_center] bg-no-repeat";
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12 animate-fade-in transition-colors duration-500">
@@ -535,6 +573,57 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
                          <option value="Sold">{formData.status === 'For Rent' ? (isRtl ? 'مؤجَّر' : 'Rented') : (isRtl ? 'مباع' : 'Sold')}</option>
                        </select>
                     </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-6">
+                    <div>
+                       <label className={labelCls}>{isRtl ? 'نوع العقار' : 'Property Type'}</label>
+                       <select value={formData.propertyType} onChange={e => setFormData({...formData, propertyType: e.target.value})} className={selectCls}>
+                         {PROPERTY_TYPES.map(o => <option key={o.value} value={o.value}>{isRtl ? o.ar : o.en}</option>)}
+                       </select>
+                    </div>
+                    <div>
+                       <label className={labelCls}>{isRtl ? 'رقم التواصل (اتصال + واتساب)' : 'Contact Phone (call + WhatsApp)'}</label>
+                       <input type="tel" value={formData.contactPhone} onChange={e => setFormData({...formData, contactPhone: toLatinDigits(e.target.value)})} className={inputCls} placeholder="+20 1XX XXX XXXX" dir="ltr" />
+                    </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">{isRtl ? 'تفاصيل إضافية (اختياري)' : 'Extra details (optional)'}</p>
+                    <div className="grid md:grid-cols-2 gap-6 mb-6">
+                      <div>
+                        <label className={labelCls}>{isRtl ? 'الكمبوند / المشروع' : 'Compound / Project'}</label>
+                        <input value={formData.compound} onChange={e => setFormData({...formData, compound: e.target.value})} className={inputCls} placeholder={isRtl ? 'مثال: ماونتن فيو iCity' : 'e.g. Mountain View iCity'} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>{isRtl ? 'المطوّر' : 'Developer'}</label>
+                        <input value={formData.developer} onChange={e => setFormData({...formData, developer: e.target.value})} className={inputCls} placeholder={isRtl ? 'مثال: ماونتن فيو' : 'e.g. Mountain View'} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div>
+                        <label className={labelCls}>{isRtl ? 'الاستلام' : 'Delivery'}</label>
+                        <input value={formData.deliveryDate} onChange={e => setFormData({...formData, deliveryDate: e.target.value})} className={inputCls} placeholder={isRtl ? 'جاهز / 2027' : 'Ready / 2027'} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>{isRtl ? 'التشطيب' : 'Finishing'}</label>
+                        <select value={formData.finishing} onChange={e => setFormData({...formData, finishing: e.target.value})} className={selectCls}>
+                          {FINISHING_OPTIONS.map(o => <option key={o.value} value={o.value}>{isRtl ? o.ar : o.en}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className={labelCls}>{isRtl ? 'الدور' : 'Floor'}</label>
+                        <input value={formData.floor} onChange={e => setFormData({...formData, floor: e.target.value})} className={inputCls} placeholder={isRtl ? 'أرضي / 3' : 'Ground / 3'} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>{isRtl ? 'الفيو' : 'View'}</label>
+                        <input value={formData.view} onChange={e => setFormData({...formData, view: e.target.value})} className={inputCls} placeholder={isRtl ? 'حديقة / بحر' : 'Garden / Sea'} />
+                      </div>
+                    </div>
+                    <label className="flex items-center gap-3 cursor-pointer mt-4 w-fit">
+                      <input type="checkbox" checked={formData.furnished} onChange={e => setFormData({...formData, furnished: e.target.checked})} className="w-5 h-5 rounded text-brand-600 focus:ring-brand-500 border-slate-300" />
+                      <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{isRtl ? 'مفروش' : 'Furnished'}</span>
+                    </label>
                 </div>
 
                 <div className="pt-4 border-t border-slate-100 dark:border-slate-800">

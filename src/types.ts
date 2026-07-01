@@ -9,6 +9,15 @@ export interface Property {
   bedrooms: number;
   bathrooms: number;
   area: number;
+  propertyType?: string;   // Apartment / Villa / Duplex / Chalet / Studio / Townhouse / Penthouse / Office / Retail / Land
+  compound?: string;       // Project / compound name (Egyptian primary market)
+  developer?: string;      // Developer / company
+  deliveryDate?: string;   // Handover date, or "Ready"
+  finishing?: string;      // Not Finished / Semi Finished / Finished / Fully Finished
+  floor?: string;          // Floor number / "Ground" / "Roof"
+  view?: string;           // Garden / Sea / Pool / Street ...
+  furnished?: boolean;     // Mainly relevant for rentals
+  contactPhone?: string;   // Seller/agent phone — powers call + WhatsApp lead buttons
   imageUrl: string;
   images?: string[];
   panoramas?: string[]; // Equirectangular 360° photos for the immersive look-around viewer
