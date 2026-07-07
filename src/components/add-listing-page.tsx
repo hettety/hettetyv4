@@ -148,6 +148,7 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
   const [successMessage, setSuccessMessage] = useState('');
   const [generatingDesc, setGeneratingDesc] = useState(false);
   const [extractingOCR, setExtractingOCR] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   // The four fields the property can't be saved without (Firestore rules also
@@ -192,6 +193,75 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
       alert(aiErrorMessage(e, isRtl));
     } finally {
       setGeneratingDesc(false);
+    }
+  };
+
+  // AI brochure import: read a project PDF/flyer and auto-fill the form.
+  const handleBrochureImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setImporting(true);
+    try {
+      const apiKey = getGeminiApiKey();
+      if (!apiKey) throw new Error('No API Key');
+      const base64 = (await fileToDataUrl(file)).split(',')[1];
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `You are a real-estate data extractor. Read this property brochure/flyer (it may be Arabic, English or Franco) and extract ONE listing as JSON.
+If it lists multiple unit types, pick the entry/smallest unit as the base, and summarise ALL unit types (with their areas, starting prices and payment plans) inside "description".
+Return ONLY valid JSON (no markdown), omitting any key you can't find:
+{
+ "title": string,
+ "propertyType": one of ["Apartment","Villa","Duplex","Penthouse","Studio","Townhouse","Chalet","Office","Retail","Land"],
+ "price": number (starting price, digits only),
+ "currency": "EGP" or "USD",
+ "area": number (m², smallest if a range),
+ "bedrooms": number,
+ "bathrooms": number,
+ "location": string (area/city),
+ "compound": string (project name),
+ "developer": string,
+ "deliveryDate": string,
+ "finishing": one of ["","Not Finished","Semi Finished","Finished","Fully Finished"],
+ "floor": string,
+ "view": string,
+ "paymentMethods": array subset of ["Cash","Installments","Bank Transfer","Mortgage"],
+ "description": string (rich — every unit type with areas & starting prices, the payment plans, amenities, EOI/maintenance, in the brochure's own language)
+}`;
+      const response = await generateContentResilient(ai, {
+        contents: [{ role: 'user', parts: [ { text: prompt }, { inlineData: { data: base64, mimeType: file.type } } ] }],
+        config: { responseMimeType: 'application/json' },
+      });
+      const raw = (response.text || '').trim().replace(/^```json\s*/i, '').replace(/```$/, '').trim();
+      const data = JSON.parse(raw);
+      setFormData(prev => ({
+        ...prev,
+        title: data.title || prev.title,
+        propertyType: PROPERTY_TYPES.some(p => p.value === data.propertyType) ? data.propertyType : prev.propertyType,
+        price: data.price != null ? String(data.price).replace(/[^0-9]/g, '') : prev.price,
+        currency: data.currency === 'USD' ? 'USD' : (data.currency === 'EGP' ? 'EGP' : prev.currency),
+        area: data.area != null ? String(data.area) : prev.area,
+        bedrooms: data.bedrooms != null ? String(data.bedrooms) : prev.bedrooms,
+        bathrooms: data.bathrooms != null ? String(data.bathrooms) : prev.bathrooms,
+        location: data.location || prev.location,
+        compound: data.compound || prev.compound,
+        developer: data.developer || prev.developer,
+        deliveryDate: data.deliveryDate || prev.deliveryDate,
+        finishing: FINISHING_OPTIONS.some(f => f.value === data.finishing) ? data.finishing : prev.finishing,
+        floor: data.floor || prev.floor,
+        view: data.view || prev.view,
+        description: data.description || prev.description,
+      }));
+      if (Array.isArray(data.paymentMethods)) {
+        const valid = data.paymentMethods.filter((m: string) => PAYMENT_OPTIONS.some(p => p.value === m));
+        if (valid.length) setPaymentMethods(valid);
+      }
+      alert(isRtl ? 'تم استخراج البيانات من البروشور ✅ راجعها وعدّل أي حاجة قبل النشر.' : 'Extracted from the brochure ✅ review and edit anything before publishing.');
+    } catch (err) {
+      console.error('Brochure import failed', err);
+      alert(aiErrorMessage(err, isRtl));
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -529,6 +599,21 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
       <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl min-h-[400px]">
         {step === 1 && (
             <div className="space-y-6 animate-fade-in">
+                <div className="bg-gradient-to-br from-brand-50 to-accent-50 dark:from-brand-900/20 dark:to-accent-900/10 border border-brand-200 dark:border-brand-800 rounded-2xl p-5">
+                  <div className="flex items-start gap-3">
+                    <Wand2 className="text-brand-600 dark:text-brand-400 shrink-0 mt-0.5" size={22} />
+                    <div className="flex-1">
+                      <h3 className="font-bold text-slate-900 dark:text-white">{isRtl ? '✨ استيراد ذكي من بروشور' : '✨ AI Import from Brochure'}</h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">{isRtl ? 'ارفع بروشور المشروع (PDF أو صورة) والذكاء الاصطناعي هيقرا كل حاجة ويملأ البيانات تلقائيًا — راجعها وعدّل قبل النشر.' : 'Upload the project brochure (PDF or image) and AI reads everything and auto-fills the fields — review before publishing.'}</p>
+                      <input type="file" accept="application/pdf,image/*" onChange={handleBrochureImport} className="hidden" id="brochure-import" disabled={importing} />
+                      <label htmlFor="brochure-import" className={`inline-flex mt-3 items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-colors ${importing ? 'bg-slate-200 dark:bg-slate-700 text-slate-500 cursor-wait' : 'bg-brand-600 hover:bg-brand-700 text-white cursor-pointer'}`}>
+                        {importing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                        {importing ? (isRtl ? 'جاري القراءة والاستخراج...' : 'Reading & extracting...') : (isRtl ? 'ارفع بروشور' : 'Upload brochure')}
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="grid md:grid-cols-2 gap-6">
                     <div className="col-span-1 md:col-span-2">
                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'عنوان العقار' : 'Property Title'} <span className="text-red-500">*</span></label>
