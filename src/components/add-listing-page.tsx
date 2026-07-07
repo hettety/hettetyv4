@@ -29,6 +29,25 @@ export const PROPERTY_TYPES = [
   { value: 'Land', ar: 'أرض', en: 'Land' },
 ];
 
+export const AMENITIES = [
+  { value: 'Clubhouse', ar: 'كلوب هاوس', en: 'Clubhouse' },
+  { value: 'Swimming Pools', ar: 'حمامات سباحة', en: 'Swimming Pools' },
+  { value: 'Gym', ar: 'جيم', en: 'Gym' },
+  { value: 'Lagoons', ar: 'لاجونز', en: 'Lagoons' },
+  { value: 'Landscape', ar: 'لاندسكيب', en: 'Landscape' },
+  { value: 'Security', ar: 'أمن 24 ساعة', en: '24/7 Security' },
+  { value: 'Underground Garage', ar: 'جراج تحت الأرض', en: 'Underground Garage' },
+  { value: 'EV Chargers', ar: 'شواحن سيارات كهربائية', en: 'EV Chargers' },
+  { value: 'Kids Area', ar: 'منطقة أطفال', en: 'Kids Area' },
+  { value: 'Commercial Area', ar: 'منطقة تجارية', en: 'Commercial Area' },
+  { value: 'Mosque', ar: 'مسجد', en: 'Mosque' },
+  { value: 'Hotel', ar: 'فندق', en: 'Hotel' },
+  { value: 'Jogging Track', ar: 'مسار جري', en: 'Jogging Track' },
+  { value: 'Cycling Track', ar: 'مسار دراجات', en: 'Cycling Track' },
+  { value: 'Sports Fields', ar: 'ملاعب رياضية', en: 'Sports Fields' },
+  { value: 'Medical Center', ar: 'مركز طبي', en: 'Medical Center' },
+];
+
 export const FINISHING_OPTIONS = [
   { value: '', ar: 'غير محدد', en: 'Unspecified' },
   { value: 'Not Finished', ar: 'على المحارة', en: 'Not Finished' },
@@ -127,7 +146,7 @@ const isLikelyTourUrl = (raw: string) => {
 export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onAdd: (prop: Omit<Property, 'id'>) => Promise<void>, t: any, isRtl: boolean, isAdmin: boolean, isSuperAdmin: boolean }) => {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
-    title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '',
+    title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '', areaTo: '',
     currency: 'EGP' as 'EGP' | 'USD',
     propertyType: 'Apartment', contactPhone: '',
     compound: '', developer: '', deliveryDate: '', finishing: '', floor: '', view: '', furnished: false,
@@ -142,6 +161,9 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
   const [images, setImages] = useState<string[]>([]);
   const [panoramas, setPanoramas] = useState<string[]>([]);
   const [legalDocs, setLegalDocs] = useState<string[]>([]);
+  const [amenities, setAmenities] = useState<string[]>([]);
+  const toggleAmenity = (v: string) => setAmenities(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]);
+  const [paymentPlans, setPaymentPlans] = useState<{ downPayment: string; years: string; note: string }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -216,6 +238,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
  "price": number (starting price, digits only),
  "currency": "EGP" or "USD",
  "area": number (m², smallest if a range),
+ "areaTo": number (largest m² if a range),
  "bedrooms": number,
  "bathrooms": number,
  "location": string (area/city),
@@ -226,7 +249,9 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
  "floor": string,
  "view": string,
  "paymentMethods": array subset of ["Cash","Installments","Bank Transfer","Mortgage"],
- "description": string (rich — every unit type with areas & starting prices, the payment plans, amenities, EOI/maintenance, in the brochure's own language)
+ "amenities": array of strings, each EXACTLY one of ["Clubhouse","Swimming Pools","Gym","Lagoons","Landscape","Security","Underground Garage","EV Chargers","Kids Area","Commercial Area","Mosque","Hotel","Jogging Track","Cycling Track","Sports Fields","Medical Center"],
+ "paymentPlans": array of objects {"downPayment": number (percent), "years": number, "note": string},
+ "description": string (rich — every unit type with areas & starting prices, EOI/maintenance and any details not captured above, in the brochure's own language)
 }`;
       const response = await generateContentResilient(ai, {
         contents: [{ role: 'user', parts: [ { text: prompt }, { inlineData: { data: base64, mimeType: file.type } } ] }],
@@ -241,6 +266,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
         price: data.price != null ? String(data.price).replace(/[^0-9]/g, '') : prev.price,
         currency: data.currency === 'USD' ? 'USD' : (data.currency === 'EGP' ? 'EGP' : prev.currency),
         area: data.area != null ? String(data.area) : prev.area,
+        areaTo: data.areaTo != null ? String(data.areaTo) : prev.areaTo,
         bedrooms: data.bedrooms != null ? String(data.bedrooms) : prev.bedrooms,
         bathrooms: data.bathrooms != null ? String(data.bathrooms) : prev.bathrooms,
         location: data.location || prev.location,
@@ -255,6 +281,17 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
       if (Array.isArray(data.paymentMethods)) {
         const valid = data.paymentMethods.filter((m: string) => PAYMENT_OPTIONS.some(p => p.value === m));
         if (valid.length) setPaymentMethods(valid);
+      }
+      if (Array.isArray(data.amenities)) {
+        const valid = data.amenities.filter((a: string) => AMENITIES.some(x => x.value === a));
+        if (valid.length) setAmenities(valid);
+      }
+      if (Array.isArray(data.paymentPlans)) {
+        const plans = data.paymentPlans
+          .filter((p: any) => p && (p.downPayment != null || p.years != null || p.note))
+          .slice(0, 10)
+          .map((p: any) => ({ downPayment: p.downPayment != null ? String(p.downPayment) : '', years: p.years != null ? String(p.years) : '', note: typeof p.note === 'string' ? p.note : '' }));
+        if (plans.length) setPaymentPlans(plans);
       }
       alert(isRtl ? 'تم استخراج البيانات من البروشور ✅ راجعها وعدّل أي حاجة قبل النشر.' : 'Extracted from the brochure ✅ review and edit anything before publishing.');
     } catch (err) {
@@ -514,12 +551,18 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
     if (formData.floor.trim()) newProperty.floor = formData.floor.trim();
     if (formData.view.trim()) newProperty.view = formData.view.trim();
     if (formData.furnished) newProperty.furnished = true;
+    if (formData.areaTo && Number(formData.areaTo) > 0) newProperty.areaTo = Number(formData.areaTo);
+    if (amenities.length) newProperty.amenities = amenities;
+    const cleanPlans = paymentPlans
+      .filter(p => p.downPayment || p.years || p.note.trim())
+      .map(p => ({ downPayment: Number(p.downPayment) || 0, years: Number(p.years) || 0, note: p.note.trim() }));
+    if (cleanPlans.length) newProperty.paymentPlans = cleanPlans;
 
     try {
       await onAdd(newProperty);
       setSuccessMessage(isRtl ? 'تم إضافة العقار بنجاح وتم نشره على المنصة.' : 'Property added successfully and published to the platform.');
       setFormData({
-        title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '',
+        title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '', areaTo: '',
         currency: 'EGP',
         propertyType: 'Apartment', contactPhone: '',
         compound: '', developer: '', deliveryDate: '', finishing: '', floor: '', view: '', furnished: false,
@@ -531,6 +574,8 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
       setImages([]);
       setPanoramas([]);
       setLegalDocs([]);
+      setAmenities([]);
+      setPaymentPlans([]);
       setStep(1);
     } catch (err) {
       console.error("Failed to publish property", err);
@@ -636,7 +681,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                     </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                     <div>
                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'الغرف' : 'Beds'}</label>
                         <input required type="number" min="0" value={formData.bedrooms} onChange={e => setFormData({...formData, bedrooms: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
@@ -646,8 +691,12 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                         <input required type="number" min="0" value={formData.bathrooms} onChange={e => setFormData({...formData, bathrooms: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'المساحة (م²)' : 'm²'} <span className="text-red-500">*</span></label>
+                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'المساحة من (م²)' : 'Area from (m²)'} <span className="text-red-500">*</span></label>
                         <input required type="number" min="1" value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'إلى (اختياري)' : 'to (optional)'}</label>
+                        <input type="number" min="0" value={formData.areaTo} onChange={e => setFormData({...formData, areaTo: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" placeholder={isRtl ? 'للمشاريع' : 'for projects'} />
                     </div>
                 </div>
 
@@ -718,6 +767,20 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                       <input type="checkbox" checked={formData.furnished} onChange={e => setFormData({...formData, furnished: e.target.checked})} className="w-5 h-5 rounded text-brand-600 focus:ring-brand-500 border-slate-300" />
                       <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{isRtl ? 'مفروش' : 'Furnished'}</span>
                     </label>
+
+                    <div className="mt-6">
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'المميزات والخدمات' : 'Amenities'}</label>
+                      <div className="flex flex-wrap gap-2">
+                        {AMENITIES.map(a => {
+                          const on = amenities.includes(a.value);
+                          return (
+                            <button type="button" key={a.value} onClick={() => toggleAmenity(a.value)} className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${on ? 'bg-brand-600 text-white border-brand-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-brand-400'}`}>
+                              {on && '✓ '}{isRtl ? a.ar : a.en}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                 </div>
 
                 <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
@@ -737,6 +800,30 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                           </button>
                         );
                       })}
+                    </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex justify-between items-center mb-3">
+                      <label className="text-sm font-bold text-slate-700 dark:text-slate-300">{isRtl ? 'خطط السداد (اختياري)' : 'Payment Plans (optional)'}</label>
+                      <button type="button" onClick={() => setPaymentPlans(prev => [...prev, { downPayment: '', years: '', note: '' }])} className="text-xs bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-3 py-1 rounded-lg font-bold flex items-center gap-1"><PlusCircle size={14} /> {isRtl ? 'أضف خطة' : 'Add plan'}</button>
+                    </div>
+                    {paymentPlans.length === 0 && <p className="text-xs text-slate-400 dark:text-slate-500">{isRtl ? 'مثال: 10% مقدم وتقسيط على 8 سنين مع خصم 10%.' : 'e.g. 10% down, 8 years, 10% discount.'}</p>}
+                    <div className="space-y-3">
+                      {paymentPlans.map((pl, i) => (
+                        <div key={i} className="flex flex-wrap items-center gap-2 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl">
+                          <div className="flex items-center gap-1">
+                            <input type="number" min="0" max="100" value={pl.downPayment} onChange={e => setPaymentPlans(prev => prev.map((p, idx) => idx === i ? { ...p, downPayment: e.target.value } : p))} className="w-16 px-2 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-center text-slate-900 dark:text-white" placeholder="10" />
+                            <span className="text-sm text-slate-500">% {isRtl ? 'مقدم' : 'down'}</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <input type="number" min="0" value={pl.years} onChange={e => setPaymentPlans(prev => prev.map((p, idx) => idx === i ? { ...p, years: e.target.value } : p))} className="w-16 px-2 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-center text-slate-900 dark:text-white" placeholder="8" />
+                            <span className="text-sm text-slate-500">{isRtl ? 'سنة' : 'yrs'}</span>
+                          </div>
+                          <input value={pl.note} onChange={e => setPaymentPlans(prev => prev.map((p, idx) => idx === i ? { ...p, note: e.target.value } : p))} className="flex-1 min-w-[120px] px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm" placeholder={isRtl ? 'ملاحظة (مثال: خصم 10%)' : 'note (e.g. 10% discount)'} />
+                          <button type="button" onClick={() => setPaymentPlans(prev => prev.filter((_, idx) => idx !== i))} className="text-red-500 hover:text-red-600 p-1"><X size={16} /></button>
+                        </div>
+                      ))}
                     </div>
                 </div>
 

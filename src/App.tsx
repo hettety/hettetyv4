@@ -344,7 +344,7 @@ const PropertyCard: React.FC<{
         </div>
         <div className="flex flex-col items-center text-slate-600">
           <Maximize size={20} className="mb-1 text-brand-400" />
-          <span className="text-xs font-medium">{property.area} m²</span>
+          <span className="text-xs font-medium">{property.area}{property.areaTo ? `–${property.areaTo}` : ''} m²</span>
         </div>
       </div>
     </div>
@@ -1854,7 +1854,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
             </div>
             <div className="flex flex-col items-center p-4 bg-slate-50 dark:bg-slate-800 rounded-xl">
               <Maximize className="text-brand-500 dark:text-brand-400 mb-2"/>
-              <span className="font-bold text-slate-900 dark:text-white">{property.area} m²</span>
+              <span className="font-bold text-slate-900 dark:text-white">{property.area}{property.areaTo ? `–${property.areaTo}` : ''} m²</span>
               <span className="text-xs text-slate-500 dark:text-slate-400">{isRtl ? 'المساحة' : 'Area'}</span>
             </div>
           </div>
@@ -1908,6 +1908,39 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
               </div>
             </div>
           </div>
+
+          {/* Amenities */}
+          {property.amenities && property.amenities.length > 0 && (
+            <div>
+              <h3 className="font-bold text-slate-900 dark:text-white mb-3">{isRtl ? 'المميزات والخدمات' : 'Amenities'}</h3>
+              <div className="flex flex-wrap gap-2">
+                {property.amenities.map(a => (
+                  <span key={a} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium border border-slate-100 dark:border-slate-700">
+                    <CheckCircle size={14} className="text-brand-500" /> {a}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Structured payment plans */}
+          {property.paymentPlans && property.paymentPlans.length > 0 && (
+            <div>
+              <h3 className="font-bold text-slate-900 dark:text-white mb-3">{isRtl ? 'خطط السداد' : 'Payment Plans'}</h3>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {property.paymentPlans.map((pl, i) => (
+                  <div key={i} className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 border border-slate-100 dark:border-slate-700">
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      {pl.downPayment ? <span className="text-lg font-black text-brand-600 dark:text-brand-400">{pl.downPayment}%</span> : null}
+                      <span className="text-sm text-slate-500 dark:text-slate-400">{isRtl ? 'مقدم' : 'down'}</span>
+                      {pl.years ? <span className="text-sm font-bold text-slate-700 dark:text-slate-300">· {pl.years} {isRtl ? 'سنة' : 'yrs'}</span> : null}
+                    </div>
+                    {pl.note && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{pl.note}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Payment methods */}
           <div>

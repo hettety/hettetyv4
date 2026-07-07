@@ -18,6 +18,9 @@ export interface Property {
   view?: string;           // Garden / Sea / Pool / Street ...
   furnished?: boolean;     // Mainly relevant for rentals
   contactPhone?: string;   // Seller/agent phone — powers call + WhatsApp lead buttons
+  amenities?: string[];    // Clubhouse, Pools, Gym, Security, Lagoons, Garage ...
+  areaTo?: number;         // Upper bound when a unit type spans an area range (area = from)
+  paymentPlans?: { downPayment?: number; years?: number; note?: string }[]; // Structured installment plans
   currency?: 'EGP' | 'USD'; // Currency the price is quoted in (label only, no conversion)
   lat?: number;            // Optional geolocation for the map
   lng?: number;
