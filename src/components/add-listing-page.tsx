@@ -143,7 +143,7 @@ const isLikelyTourUrl = (raw: string) => {
   } catch { return false; }
 };
 
-export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onAdd: (prop: Omit<Property, 'id'>) => Promise<void>, t: any, isRtl: boolean, isAdmin: boolean, isSuperAdmin: boolean }) => {
+export const AddListingPage = ({ onAdd, onAddMany, t, isRtl, isAdmin, isSuperAdmin }: { onAdd: (prop: Omit<Property, 'id'>) => Promise<void>, onAddMany?: (props: Omit<Property, 'id'>[]) => Promise<void>, t: any, isRtl: boolean, isAdmin: boolean, isSuperAdmin: boolean }) => {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '', areaTo: '',
@@ -164,6 +164,8 @@ export const AddListingPage = ({ onAdd, t, isRtl, isAdmin, isSuperAdmin }: { onA
   const [amenities, setAmenities] = useState<string[]>([]);
   const toggleAmenity = (v: string) => setAmenities(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]);
   const [paymentPlans, setPaymentPlans] = useState<{ downPayment: string; years: string; note: string }[]>([]);
+  // Developer projects: one brochure → several unit types → one listing per type.
+  const [unitVariants, setUnitVariants] = useState<{ title: string; propertyType: string; bedrooms: string; bathrooms: string; area: string; areaTo: string; price: string }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -251,7 +253,8 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
  "paymentMethods": array subset of ["Cash","Installments","Bank Transfer","Mortgage"],
  "amenities": array of strings, each EXACTLY one of ["Clubhouse","Swimming Pools","Gym","Lagoons","Landscape","Security","Underground Garage","EV Chargers","Kids Area","Commercial Area","Mosque","Hotel","Jogging Track","Cycling Track","Sports Fields","Medical Center"],
  "paymentPlans": array of objects {"downPayment": number (percent), "years": number, "note": string},
- "description": string (rich — every unit type with areas & starting prices, EOI/maintenance and any details not captured above, in the brochure's own language)
+ "units": array — INCLUDE ONLY IF the brochure lists MULTIPLE unit types; one object per unit type: {"title": string (e.g. "1 Bedroom"), "propertyType": one of the propertyType values above, "bedrooms": number, "bathrooms": number, "area": number (from), "areaTo": number (to), "price": number (starting price)},
+ "description": string (rich — EOI/maintenance, project story and any details not captured above, in the brochure's own language)
 }`;
       const response = await generateContentResilient(ai, {
         contents: [{ role: 'user', parts: [ { text: prompt }, { inlineData: { data: base64, mimeType: file.type } } ] }],
@@ -293,7 +296,27 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
           .map((p: any) => ({ downPayment: p.downPayment != null ? String(p.downPayment) : '', years: p.years != null ? String(p.years) : '', note: typeof p.note === 'string' ? p.note : '' }));
         if (plans.length) setPaymentPlans(plans);
       }
-      alert(isRtl ? 'تم استخراج البيانات من البروشور ✅ راجعها وعدّل أي حاجة قبل النشر.' : 'Extracted from the brochure ✅ review and edit anything before publishing.');
+      let unitCount = 0;
+      if (Array.isArray(data.units) && data.units.length > 1) {
+        const variants = data.units.slice(0, 20).map((u: any) => ({
+          title: typeof u.title === 'string' ? u.title : '',
+          propertyType: PROPERTY_TYPES.some(p => p.value === u.propertyType) ? u.propertyType : (PROPERTY_TYPES.some(p => p.value === data.propertyType) ? data.propertyType : 'Apartment'),
+          bedrooms: u.bedrooms != null ? String(u.bedrooms) : '',
+          bathrooms: u.bathrooms != null ? String(u.bathrooms) : '',
+          area: u.area != null ? String(u.area) : '',
+          areaTo: u.areaTo != null ? String(u.areaTo) : '',
+          price: u.price != null ? String(u.price).replace(/[^0-9]/g, '') : '',
+        }));
+        setUnitVariants(variants);
+        unitCount = variants.length;
+      }
+      alert(isRtl
+        ? (unitCount > 1
+            ? `تم استخراج المشروع و${unitCount} أنواع وحدات ✅ راجعها — هيتنشر إعلان لكل نوع.`
+            : 'تم استخراج البيانات من البروشور ✅ راجعها وعدّل أي حاجة قبل النشر.')
+        : (unitCount > 1
+            ? `Extracted the project and ${unitCount} unit types ✅ review — one listing will be published per type.`
+            : 'Extracted from the brochure ✅ review and edit anything before publishing.'));
     } catch (err) {
       console.error('Brochure import failed', err);
       alert(aiErrorMessage(err, isRtl));
@@ -559,8 +582,26 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
     if (cleanPlans.length) newProperty.paymentPlans = cleanPlans;
 
     try {
-      await onAdd(newProperty);
-      setSuccessMessage(isRtl ? 'تم إضافة العقار بنجاح وتم نشره على المنصة.' : 'Property added successfully and published to the platform.');
+      if (unitVariants.length > 0 && onAddMany) {
+        // One listing per unit type, all sharing the project-level data.
+        const list = unitVariants.map((v) => {
+          const p: any = { ...newProperty };
+          p.title = v.title.trim() ? `${newProperty.title} — ${v.title.trim()}` : newProperty.title;
+          if (v.propertyType) p.propertyType = v.propertyType;
+          if (v.bedrooms !== '') p.bedrooms = Number(v.bedrooms);
+          if (v.bathrooms !== '') p.bathrooms = Number(v.bathrooms);
+          if (v.area !== '') p.area = Number(v.area);
+          if (v.areaTo !== '' && Number(v.areaTo) > 0) p.areaTo = Number(v.areaTo); else delete p.areaTo;
+          if (v.price !== '') p.price = Number(v.price);
+          p.unitCode = `HET-${Math.floor(10000 + Math.random() * 90000)}`;
+          return p as Omit<Property, 'id'>;
+        });
+        await onAddMany(list);
+        setSuccessMessage(isRtl ? `تم نشر ${list.length} وحدات من المشروع بنجاح.` : `Published ${list.length} project units successfully.`);
+      } else {
+        await onAdd(newProperty);
+        setSuccessMessage(isRtl ? 'تم إضافة العقار بنجاح وتم نشره على المنصة.' : 'Property added successfully and published to the platform.');
+      }
       setFormData({
         title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '', areaTo: '',
         currency: 'EGP',
@@ -576,6 +617,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
       setLegalDocs([]);
       setAmenities([]);
       setPaymentPlans([]);
+      setUnitVariants([]);
       setStep(1);
     } catch (err) {
       console.error("Failed to publish property", err);
@@ -699,6 +741,36 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                         <input type="number" min="0" value={formData.areaTo} onChange={e => setFormData({...formData, areaTo: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" placeholder={isRtl ? 'للمشاريع' : 'for projects'} />
                     </div>
                 </div>
+
+                {/* Multi-unit projects: one listing per unit type */}
+                {unitVariants.length > 0 && (
+                  <div className="bg-brand-50/60 dark:bg-brand-900/10 border border-brand-200 dark:border-brand-800 rounded-2xl p-5">
+                    <div className="flex justify-between items-start mb-3 gap-3">
+                      <div>
+                        <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2"><Box size={18} className="text-brand-500" /> {isRtl ? `أنواع الوحدات (${unitVariants.length})` : `Unit Types (${unitVariants.length})`}</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{isRtl ? 'هيتنشر إعلان منفصل لكل نوع — بنفس بيانات المشروع والصور والأمنيتيز وخطط السداد.' : 'One listing per type will be published — sharing the project data, media, amenities & payment plans.'}</p>
+                      </div>
+                      <button type="button" onClick={() => setUnitVariants(prev => [...prev, { title: '', propertyType: 'Apartment', bedrooms: '', bathrooms: '', area: '', areaTo: '', price: '' }])} className="shrink-0 text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg font-bold flex items-center gap-1"><PlusCircle size={14} /> {isRtl ? 'أضف' : 'Add'}</button>
+                    </div>
+                    <div className="space-y-2">
+                      {unitVariants.map((v, i) => (
+                        <div key={i} className="grid grid-cols-2 md:grid-cols-6 gap-2 items-center bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
+                          <input value={v.title} onChange={e => setUnitVariants(prev => prev.map((x, idx) => idx === i ? { ...x, title: e.target.value } : x))} placeholder={isRtl ? 'الاسم' : 'Label'} className="px-2 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white" />
+                          <select value={v.propertyType} onChange={e => setUnitVariants(prev => prev.map((x, idx) => idx === i ? { ...x, propertyType: e.target.value } : x))} className="px-2 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white">
+                            {PROPERTY_TYPES.map(o => <option key={o.value} value={o.value}>{isRtl ? o.ar : o.en}</option>)}
+                          </select>
+                          <input type="number" value={v.bedrooms} onChange={e => setUnitVariants(prev => prev.map((x, idx) => idx === i ? { ...x, bedrooms: e.target.value } : x))} placeholder={isRtl ? 'غرف' : 'Beds'} className="px-2 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white" />
+                          <div className="flex gap-1">
+                            <input type="number" value={v.area} onChange={e => setUnitVariants(prev => prev.map((x, idx) => idx === i ? { ...x, area: e.target.value } : x))} placeholder={isRtl ? 'م²' : 'm²'} className="w-full min-w-0 px-2 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white" />
+                            <input type="number" value={v.areaTo} onChange={e => setUnitVariants(prev => prev.map((x, idx) => idx === i ? { ...x, areaTo: e.target.value } : x))} placeholder={isRtl ? 'إلى' : 'to'} className="w-full min-w-0 px-2 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white" />
+                          </div>
+                          <input type="text" inputMode="numeric" value={v.price} onChange={e => setUnitVariants(prev => prev.map((x, idx) => idx === i ? { ...x, price: toLatinDigits(e.target.value).replace(/[^0-9]/g, '') } : x))} placeholder={isRtl ? 'السعر' : 'Price'} className="px-2 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white" />
+                          <button type="button" onClick={() => setUnitVariants(prev => prev.filter((_, idx) => idx !== i))} className="text-red-500 hover:text-red-600 justify-self-end p-1"><X size={16} /></button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid md:grid-cols-2 gap-6">
                     <div>

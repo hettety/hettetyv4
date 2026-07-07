@@ -3897,9 +3897,24 @@ export default function App() {
                   ? 'تعذّر حفظ العقار. تأكد إنك مسجّل دخول ومعاك صلاحية، وحاول تاني.'
                   : 'Could not save the property. Make sure you are signed in with permission, then try again.');
               }
-            }} 
-            t={t} 
-            isRtl={isRtl} 
+            }}
+            onAddMany={async (props) => {
+              try {
+                const uid = auth.currentUser?.uid || 'anonymous';
+                await Promise.all(props.map(p => addDoc(collection(db, 'properties'), { ...p, authorUid: uid })));
+                const querySnapshot = await getDocs(collection(db, 'properties'));
+                const propsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Property[];
+                setProperties(propsData);
+                handleNav('listings');
+              } catch (err) {
+                console.error("Error adding project units to Firestore:", err);
+                alert(isRtl
+                  ? 'تعذّر حفظ وحدات المشروع. تأكد إنك مسجّل دخول ومعاك صلاحية، وحاول تاني.'
+                  : 'Could not save the project units. Make sure you are signed in with permission, then try again.');
+              }
+            }}
+            t={t}
+            isRtl={isRtl}
           />
         )}
         
