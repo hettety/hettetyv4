@@ -234,5 +234,18 @@ service cloud.firestore {
                     && request.resource.data.userId == request.auth.uid
                     && request.resource.data.reason is string && request.resource.data.reason.size() < 1000;
     }
+
+    // Property reviews — public to read; signed-in users post one; author or admin deletes.
+    match /reviews/{reviewId} {
+      allow read, list: if true;
+      allow create: if isAuthenticated()
+                    && request.resource.data.keys().hasOnly(['propertyId', 'userId', 'userName', 'rating', 'comment', 'createdAt'])
+                    && request.resource.data.propertyId is string
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.rating is number
+                    && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
+                    && request.resource.data.comment is string && request.resource.data.comment.size() < 1000;
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+    }
   }
 }

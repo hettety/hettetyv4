@@ -13,7 +13,7 @@ import {
   DollarSign, BedDouble, Bath, Maximize, Loader2,
   Check, FileCheck, Key, RefreshCw,
   User, ArrowLeft, Phone, Target, CreditCard, PlusCircle, Edit2, Save, LogOut, Shield, Trash2, Bell, Lock as LockIcon,
-  Plus, History, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, MessageSquare, Sun, Moon, Heart
+  Plus, History, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, MessageSquare, Sun, Moon, Heart, Star
 } from 'lucide-react';
 import { GoogleGenAI, Type } from '@google/genai';
 import { GEMINI_MODEL, GEMINI_FALLBACK_MODEL, getGeminiApiKey, extract3DMarker, withRetry, isOverloadedError, generateContentResilient, aiErrorMessage } from './ai';
@@ -1631,6 +1631,10 @@ const PropertyDetailPage = ({ property, onBack, onPurchase, t, isRtl }: { proper
   const [calcDown, setCalcDown] = useState(10); // installment estimate: down payment %
   const [calcYears, setCalcYears] = useState(5);
   const [reporting, setReporting] = useState(false);
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
   const displayImages = (property.images && property.images.length > 0 ? property.images : [property.imageUrl]).filter(Boolean);
   // Unified media carousel so the photos stay reachable even when a video exists.
   const slides: { type: 'video' | 'image'; src: string }[] = [
@@ -1731,11 +1735,70 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
     }
   };
 
+  // Per-listing SEO structured data (helps this unit earn rich results).
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.type = 'application/ld+json';
+    script.id = 'listing-jsonld';
+    script.text = JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'Residence',
+      name: property.title,
+      description: property.description || property.title,
+      image: property.imageUrl || (property.images && property.images[0]) || undefined,
+      address: { '@type': 'PostalAddress', addressLocality: property.location, addressCountry: 'EG' },
+      numberOfRooms: property.bedrooms,
+      floorSize: { '@type': 'QuantitativeValue', value: property.area, unitCode: 'MTK' },
+      offers: {
+        '@type': 'Offer',
+        price: property.price,
+        priceCurrency: property.currency || 'EGP',
+        availability: property.availability === 'Sold' ? 'https://schema.org/SoldOut' : 'https://schema.org/InStock',
+      },
+    });
+    document.head.appendChild(script);
+    return () => { const el = document.getElementById('listing-jsonld'); if (el) el.remove(); };
+  }, [property]);
+
   const av = availabilityInfo(property.availability, property.status, isRtl);
   const mapsQuery = encodeURIComponent([property.compound, property.location].filter(Boolean).join(', '));
   const mapsUrl = (property.lat && property.lng)
     ? `https://www.google.com/maps/search/?api=1&query=${property.lat},${property.lng}`
     : `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`;
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const snap = await getDocs(query(collection(db, 'reviews'), where('propertyId', '==', property.id)));
+        setReviews(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (e) { console.error('reviews load failed', e); }
+    })();
+  }, [property.id]);
+
+  const avgRating = reviews.length ? reviews.reduce((s, r) => s + (r.rating || 0), 0) / reviews.length : 0;
+
+  const submitReview = async () => {
+    if (!auth.currentUser) { alert(isRtl ? 'سجّل الدخول عشان تقيّم.' : 'Sign in to review.'); return; }
+    if (!reviewComment.trim()) return;
+    setSubmittingReview(true);
+    try {
+      const rev = {
+        propertyId: property.id,
+        userId: auth.currentUser.uid,
+        userName: auth.currentUser.displayName || (auth.currentUser.email || '').split('@')[0] || 'User',
+        rating: reviewRating,
+        comment: reviewComment.trim().slice(0, 1000),
+        createdAt: new Date().toISOString(),
+      };
+      const ref = await addDoc(collection(db, 'reviews'), rev);
+      setReviews(prev => [{ id: ref.id, ...rev }, ...prev]);
+      setReviewComment('');
+      setReviewRating(5);
+    } catch (e) {
+      console.error('review failed', e);
+      alert(isRtl ? 'تعذّر إرسال التقييم.' : 'Could not submit the review.');
+    } finally { setSubmittingReview(false); }
+  };
 
   const handleReport = async () => {
     if (!auth.currentUser) { alert(isRtl ? 'سجّل الدخول الأول عشان تبلّغ.' : 'Please sign in to report a listing.'); return; }
@@ -1865,6 +1928,25 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
               <p className="text-slate-600 dark:text-slate-300 whitespace-pre-wrap leading-relaxed text-sm">{property.description}</p>
             </div>
           )}
+
+          {/* Location map */}
+          <div>
+            <h3 className="font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><MapPin size={18} className="text-brand-500" /> {isRtl ? 'الموقع على الخريطة' : 'Location'}</h3>
+            <div className="relative w-full rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-lg" style={{ aspectRatio: '16 / 9' }}>
+              <iframe
+                title={isRtl ? 'خريطة الموقع' : 'Location map'}
+                className="absolute inset-0 w-full h-full"
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+                src={(property.lat && property.lng)
+                  ? `https://maps.google.com/maps?q=${property.lat},${property.lng}&z=14&output=embed`
+                  : `https://maps.google.com/maps?q=${mapsQuery}&z=13&output=embed`}
+              />
+            </div>
+            <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 mt-2 text-sm font-bold text-brand-600 dark:text-brand-400 hover:underline">
+              {isRtl ? 'افتح في خرائط جوجل' : 'Open in Google Maps'} <ArrowRight size={14} className={isRtl ? 'rotate-180' : ''} />
+            </a>
+          </div>
 
           {/* Real virtual tour (Matterport / Polycam / Kuula …) */}
           {property.digitalTwinUrl && (
@@ -2012,6 +2094,37 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
               {isRtl ? 'المتابعة للدفع' : 'Proceed to Payment'}
             </Button>
           )}
+
+          {/* Reviews */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <h3 className="font-bold text-slate-900 dark:text-white">{isRtl ? 'التقييمات' : 'Reviews'}</h3>
+              {reviews.length > 0 && (
+                <span className="flex items-center gap-1 text-sm font-bold text-amber-500"><Star size={16} fill="currentColor" /> {avgRating.toFixed(1)} <span className="text-slate-400 font-normal">({reviews.length})</span></span>
+              )}
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-4 mb-4 border border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-1 mb-2">
+                {[1, 2, 3, 4, 5].map(n => (
+                  <button key={n} type="button" onClick={() => setReviewRating(n)} className="p-0.5"><Star size={22} className={n <= reviewRating ? 'text-amber-500' : 'text-slate-300 dark:text-slate-600'} fill={n <= reviewRating ? 'currentColor' : 'none'} /></button>
+                ))}
+              </div>
+              <textarea value={reviewComment} onChange={e => setReviewComment(e.target.value)} rows={2} placeholder={isRtl ? 'اكتب تقييمك...' : 'Write your review...'} className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm outline-none focus:ring-2 focus:ring-brand-500" />
+              <button onClick={submitReview} disabled={submittingReview || !reviewComment.trim()} className="mt-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-bold">{isRtl ? 'إرسال التقييم' : 'Submit review'}</button>
+            </div>
+            <div className="space-y-3">
+              {reviews.map(r => (
+                <div key={r.id} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-sm text-slate-900 dark:text-white">{r.userName}</span>
+                    <span className="flex items-center gap-0.5">{Array.from({ length: 5 }).map((_, i) => <Star key={i} size={13} fill={i < r.rating ? 'currentColor' : 'none'} className={i < r.rating ? 'text-amber-500' : 'text-slate-300 dark:text-slate-600'} />)}</span>
+                  </div>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 mt-1 whitespace-pre-wrap">{r.comment}</p>
+                </div>
+              ))}
+              {reviews.length === 0 && <p className="text-sm text-slate-400">{isRtl ? 'مفيش تقييمات لسه — كن أول واحد.' : 'No reviews yet — be the first.'}</p>}
+            </div>
+          </div>
 
           <button onClick={handleReport} disabled={reporting} className="w-full text-center text-xs font-bold text-slate-400 hover:text-red-500 transition-colors py-2 flex items-center justify-center gap-1.5 disabled:opacity-50">
             <Shield size={13} /> {isRtl ? 'بلّغ عن هذا الإعلان' : 'Report this listing'}
