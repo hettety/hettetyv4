@@ -2593,8 +2593,9 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
   const [users, setUsers] = useState<any[]>([]);
   const [allProperties, setAllProperties] = useState<Property[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
+  const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'stats' | 'properties' | 'verifications' | 'purchases' | 'users'>('stats');
+  const [activeTab, setActiveTab] = useState<'stats' | 'properties' | 'verifications' | 'purchases' | 'users' | 'reports'>('stats');
   const [updating, setUpdating] = useState<string | null>(null);
 
   useEffect(() => {
@@ -2610,14 +2611,16 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
           return [] as any[];
         }
       };
-      const [usersList, propsList, purchasesList] = await Promise.all([
+      const [usersList, propsList, purchasesList, reportsList] = await Promise.all([
         safeGet('users'),
         safeGet('properties'),
         safeGet('purchases'),
+        safeGet('reports'),
       ]);
       setUsers(usersList);
       setAllProperties(propsList as Property[]);
       setPurchases(purchasesList);
+      setReports(reportsList.sort((a: any, b: any) => (b.createdAt || '').localeCompare(a.createdAt || '')));
       setLoading(false);
     };
     fetchData();
@@ -2631,6 +2634,13 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
 
   const propertyTitle = (id: string) => allProperties.find(p => p.id === id)?.title || `#${id.slice(0, 8)}`;
   const purchaserEmail = (uid: string) => users.find(u => u.id === uid)?.email || `#${uid.slice(0, 8)}`;
+
+  const handleDeleteReport = async (id: string) => {
+    setUpdating(id);
+    try { await deleteDoc(doc(db, 'reports', id)); setReports(prev => prev.filter(r => r.id !== id)); }
+    catch (e) { console.error('delete report failed', e); }
+    finally { setUpdating(null); }
+  };
 
   // Firestore stores dates as ISO strings or Timestamps depending on writer
   const toDate = (v: any): Date | null => {
@@ -2783,6 +2793,7 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
             { id: 'properties', label: isRtl ? 'العقارات' : 'Properties', icon: <Building2 size={16} /> },
             { id: 'verifications', label: isRtl ? 'التوثيقات' : 'Verifications', icon: <Shield size={16} />, badge: pendingProperties.length },
             { id: 'purchases', label: isRtl ? 'طلبات الشراء' : 'Purchases', icon: <CreditCard size={16} />, badge: openPurchases.length },
+            { id: 'reports', label: isRtl ? 'البلاغات' : 'Reports', icon: <Shield size={16} />, badge: reports.length },
             ...(isSuperAdmin ? [{ id: 'users', label: isRtl ? 'المستخدمين' : 'Users', icon: <Users size={16} /> }] : []),
           ].map(tab => (
             <button
@@ -3062,6 +3073,30 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'reports' && (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xl animate-scale-up p-6">
+          <h3 className="font-bold text-slate-900 dark:text-white mb-4">{isRtl ? 'بلاغات على الإعلانات' : 'Listing Reports'} ({reports.length})</h3>
+          {reports.length === 0 ? (
+            <p className="text-slate-400 text-sm">{isRtl ? 'مفيش بلاغات.' : 'No reports.'}</p>
+          ) : (
+            <div className="space-y-3">
+              {reports.map(r => (
+                <div key={r.id} className="flex items-start justify-between gap-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-100 dark:border-slate-800">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-slate-900 dark:text-white text-sm">{propertyTitle(r.propertyId)}</div>
+                    <p className="text-sm text-slate-600 dark:text-slate-300 mt-1 whitespace-pre-wrap">{r.reason}</p>
+                    <div className="text-[11px] text-slate-400 mt-1">{purchaserEmail(r.userId)} · {(r.createdAt || '').slice(0, 10)}</div>
+                  </div>
+                  <button onClick={() => handleDeleteReport(r.id)} disabled={updating === r.id} className="shrink-0 text-red-500 hover:text-red-600 p-2 disabled:opacity-50" title={isRtl ? 'حذف البلاغ' : 'Dismiss report'}>
+                    {updating === r.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>
