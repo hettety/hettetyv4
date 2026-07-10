@@ -269,15 +269,17 @@ const Logo: React.FC<{ color?: string; className?: string }> = ({ color = "curre
   );
 };
 
-const PropertyCard: React.FC<{ 
-  property: Property; 
-  onView3D: () => void; 
+const PropertyCard: React.FC<{
+  property: Property;
+  onView3D: () => void;
   onToggleFavorite?: () => void;
   isFavorited?: boolean;
-  onClick?: () => void; 
-  t: any; 
-  isRtl: boolean 
-}> = ({ property, onView3D, onToggleFavorite, isFavorited, onClick, t, isRtl }) => (
+  onToggleCompare?: () => void;
+  isComparing?: boolean;
+  onClick?: () => void;
+  t: any;
+  isRtl: boolean
+}> = ({ property, onView3D, onToggleFavorite, isFavorited, onToggleCompare, isComparing, onClick, t, isRtl }) => (
   <div onClick={onClick} className={`group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl dark:shadow-none transition-all duration-300 overflow-hidden flex flex-col h-full animate-fade-in ${onClick ? 'cursor-pointer' : ''}`}>
     <div className="relative h-64 overflow-hidden">
       <img src={property.imageUrl} alt={property.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
@@ -306,6 +308,11 @@ const PropertyCard: React.FC<{
         <button onClick={(e) => { e.stopPropagation(); onView3D(); }} className="bg-white/20 hover:bg-white text-white hover:text-brand-900 backdrop-blur border border-white/50 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 cursor-pointer">
           <Box size={16} /> {t.prop_view_3d}
         </button>
+        {onToggleCompare && (
+          <button onClick={(e) => { e.stopPropagation(); onToggleCompare(); }} className={`backdrop-blur border px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${isComparing ? 'bg-brand-600 text-white border-brand-600' : 'bg-white/20 hover:bg-white text-white hover:text-brand-900 border-white/50'}`}>
+            {isComparing ? <Check size={16} /> : <Plus size={16} />} {isRtl ? 'قارن' : 'Compare'}
+          </button>
+        )}
       </div>
     </div>
     <div className="p-6 flex-1 flex flex-col">
@@ -3159,12 +3166,24 @@ export default function App() {
   const [maxPrice, setMaxPrice] = useState<number | ''>('');
   const [sortBy, setSortBy] = useState<'default' | 'newest' | 'price-asc' | 'price-desc' | 'name-asc' | 'name-desc'>('default');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [savedSearches, setSavedSearches] = useState<any[]>(() => { try { return JSON.parse(localStorage.getItem('hettety_saved_searches') || '[]'); } catch { return []; } });
+  const saveCurrentSearch = () => {
+    const s = { id: `${minPrice}-${maxPrice}-${typeFilter}-${sortBy}-${listingSearchQuery}`.slice(0, 60) || 'search', q: listingSearchQuery, minPrice, maxPrice, typeFilter, sortBy };
+    const next = [s, ...savedSearches.filter(x => x.id !== s.id)].slice(0, 10);
+    setSavedSearches(next);
+    localStorage.setItem('hettety_saved_searches', JSON.stringify(next));
+  };
+  const applySavedSearch = (s: any) => { setListingSearchQuery(s.q || ''); setMinPrice(s.minPrice ?? ''); setMaxPrice(s.maxPrice ?? ''); setTypeFilter(s.typeFilter || 'all'); setSortBy(s.sortBy || 'default'); };
+  const removeSavedSearch = (id: string) => { const next = savedSearches.filter(x => x.id !== id); setSavedSearches(next); localStorage.setItem('hettety_saved_searches', JSON.stringify(next)); };
   const [paymentProperty, setPaymentProperty] = useState<Property | null>(null);
   const [aiFilteredIds, setAiFilteredIds] = useState<string[] | null>(null);
   const [isAiSearching, setIsAiSearching] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const [userFavorites, setUserFavorites] = useState<string[]>([]);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [showCompare, setShowCompare] = useState(false);
+  const toggleCompare = (id: string) => setCompareIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : (prev.length >= 4 ? prev : [...prev, id]));
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -3774,9 +3793,11 @@ export default function App() {
                       onView3D={() => open3D(p.id)} 
                       onToggleFavorite={() => toggleFavorite(p.id)}
                       isFavorited={userFavorites.includes(p.id)}
+                      onToggleCompare={() => toggleCompare(p.id)}
+                      isComparing={compareIds.includes(p.id)}
                       onClick={() => openProperty(p.id)}
-                      t={t} 
-                      isRtl={isRtl} 
+                      t={t}
+                      isRtl={isRtl}
                     />
                   ))
                 }
@@ -3863,10 +3884,23 @@ export default function App() {
                    <option value="name-asc">{isRtl ? 'الاسم: أ إلى ي' : 'Name: A to Z'}</option>
                    <option value="name-desc">{isRtl ? 'الاسم: ي إلى أ' : 'Name: Z to A'}</option>
                  </select>
+                 <button onClick={saveCurrentSearch} className="py-2.5 px-4 rounded-lg border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300 font-bold text-sm flex items-center gap-1.5 hover:bg-brand-100 dark:hover:bg-brand-900/40 transition-colors">
+                   <Save size={15} /> {isRtl ? 'احفظ البحث' : 'Save search'}
+                 </button>
                </div>
             </div>
+            {savedSearches.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-6 -mt-2">
+                {savedSearches.map(s => (
+                  <span key={s.id} className="inline-flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold px-3 py-1.5 rounded-full">
+                    <button onClick={() => applySavedSearch(s)} className="hover:text-brand-600 dark:hover:text-brand-400">{s.q || (s.typeFilter !== 'all' ? s.typeFilter : (isRtl ? 'بحث محفوظ' : 'Saved search'))}</button>
+                    <button onClick={() => removeSavedSearch(s.id)} className="text-slate-400 hover:text-red-500"><X size={12} /></button>
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-               {loadingProps 
+               {loadingProps
                   ? [1,2,3,4,5,6].map(i => <div key={i} className="h-96 bg-slate-200 rounded-2xl animate-pulse"></div>)
                   : filteredProperties.map(p => (
                     <PropertyCard 
@@ -4052,6 +4086,67 @@ export default function App() {
            </div>
         )}
       </main>
+
+      {/* Compare bar */}
+      {compareIds.length > 0 && !showCompare && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white rounded-2xl shadow-2xl border border-white/10 px-4 py-3 flex items-center gap-4 animate-fade-in">
+          <span className="text-sm font-bold">{isRtl ? `مقارنة ${compareIds.length}` : `Compare ${compareIds.length}`}</span>
+          <button onClick={() => setShowCompare(true)} disabled={compareIds.length < 2} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-sm font-bold px-4 py-1.5 rounded-lg">{isRtl ? 'قارن الآن' : 'Compare now'}</button>
+          <button onClick={() => setCompareIds([])} className="text-white/60 hover:text-white"><X size={18} /></button>
+        </div>
+      )}
+
+      {/* Compare modal */}
+      {showCompare && (
+        <div className="fixed inset-0 z-[75] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowCompare(false)}>
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-white dark:bg-slate-900 z-10">
+              <h3 className="font-black text-lg text-slate-900 dark:text-white">{isRtl ? 'مقارنة العقارات' : 'Compare Properties'}</h3>
+              <button onClick={() => setShowCompare(false)} className="text-slate-400 hover:text-slate-700 dark:hover:text-white"><X /></button>
+            </div>
+            <div className="overflow-x-auto">
+              {(() => {
+                const items = compareIds.map(id => properties.find(p => p.id === id)).filter(Boolean) as Property[];
+                const rows: [string, (p: Property) => React.ReactNode][] = [
+                  [isRtl ? 'السعر' : 'Price', p => `${p.price.toLocaleString()} ${p.currency || 'EGP'}`],
+                  [isRtl ? 'النوع' : 'Type', p => p.propertyType || '—'],
+                  [isRtl ? 'الموقع' : 'Location', p => p.location],
+                  [isRtl ? 'الغرف' : 'Beds', p => p.bedrooms],
+                  [isRtl ? 'الحمامات' : 'Baths', p => p.bathrooms],
+                  [isRtl ? 'المساحة' : 'Area', p => `${p.area}${p.areaTo ? `–${p.areaTo}` : ''} m²`],
+                  [isRtl ? 'التشطيب' : 'Finishing', p => p.finishing || '—'],
+                  [isRtl ? 'الاستلام' : 'Delivery', p => p.deliveryDate || '—'],
+                  [isRtl ? 'الحالة' : 'Status', p => p.status === 'For Sale' ? (isRtl ? 'للبيع' : 'For Sale') : (isRtl ? 'للإيجار' : 'For Rent')],
+                ];
+                return (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr>
+                        <th className="p-3"></th>
+                        {items.map(p => (
+                          <th key={p.id} className="p-3 min-w-[160px]">
+                            <img src={p.imageUrl} alt={p.title} className="w-full h-24 object-cover rounded-xl mb-2" />
+                            <div className="font-bold text-slate-900 dark:text-white text-xs line-clamp-2">{p.title}</div>
+                            <button onClick={() => toggleCompare(p.id)} className="text-red-500 text-[11px] mt-1">{isRtl ? 'إزالة' : 'Remove'}</button>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(([label, fn], ri) => (
+                        <tr key={ri} className={ri % 2 ? 'bg-slate-50 dark:bg-slate-800/40' : ''}>
+                          <td className="p-3 font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap">{label}</td>
+                          {items.map(p => <td key={p.id} className="p-3 text-center font-medium text-slate-800 dark:text-slate-200">{fn(p)}</td>)}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Cookie Consent Modal */}
       <CookieConsent t={t} isRtl={isRtl} onNavigateToLegal={handleNav} />
