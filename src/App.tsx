@@ -3201,6 +3201,7 @@ export default function App() {
   const [maxPrice, setMaxPrice] = useState<number | ''>('');
   const [sortBy, setSortBy] = useState<'default' | 'newest' | 'price-asc' | 'price-desc' | 'name-asc' | 'name-desc'>('default');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [listingView, setListingView] = useState<'units' | 'projects'>('units');
   const [savedSearches, setSavedSearches] = useState<any[]>(() => { try { return JSON.parse(localStorage.getItem('hettety_saved_searches') || '[]'); } catch { return []; } });
   const saveCurrentSearch = () => {
     const s = { id: `${minPrice}-${maxPrice}-${typeFilter}-${sortBy}-${listingSearchQuery}`.slice(0, 60) || 'search', q: listingSearchQuery, minPrice, maxPrice, typeFilter, sortBy };
@@ -3934,23 +3935,68 @@ export default function App() {
                 ))}
               </div>
             )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-               {loadingProps
+            {/* View toggle: individual units vs grouped projects */}
+            <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-fit mb-6">
+              {(['units', 'projects'] as const).map(v => (
+                <button key={v} onClick={() => setListingView(v)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${listingView === v ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+                  {v === 'units' ? (isRtl ? 'الوحدات' : 'Units') : (isRtl ? 'المشاريع' : 'Projects')}
+                </button>
+              ))}
+            </div>
+
+            {listingView === 'projects' ? (
+              (() => {
+                const groups = new Map<string, Property[]>();
+                filteredProperties.forEach(p => { const k = p.compound || (isRtl ? 'وحدات فردية' : 'Individual units'); if (!groups.has(k)) groups.set(k, []); groups.get(k)!.push(p); });
+                const projects = [...groups.entries()];
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {projects.map(([name, units]) => {
+                      const prices = units.map(u => u.price).filter(Boolean);
+                      const min = prices.length ? Math.min(...prices) : 0;
+                      const max = prices.length ? Math.max(...prices) : 0;
+                      const cur = units[0].currency || 'EGP';
+                      return (
+                        <div key={name} onClick={() => { setListingView('units'); setListingSearchQuery(name); setAiFilteredIds(null); }} className="group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl transition-all overflow-hidden cursor-pointer animate-fade-in">
+                          <div className="relative h-56 overflow-hidden">
+                            <img src={units[0].imageUrl} alt={name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
+                              <h3 className="text-white font-heading font-black text-lg line-clamp-1">{name}</h3>
+                              {units[0].developer && <p className="text-white/70 text-xs">{units[0].developer}</p>}
+                            </div>
+                            <span className="absolute top-4 right-4 bg-brand-600 text-white text-xs font-bold px-3 py-1 rounded-full">{units.length} {isRtl ? 'وحدة' : 'units'}</span>
+                          </div>
+                          <div className="p-5">
+                            <p className="flex items-center text-slate-500 dark:text-slate-400 text-sm mb-2"><MapPin size={14} className={isRtl ? 'ml-1' : 'mr-1'} /> {units[0].location}</p>
+                            <div className="font-bold text-brand-600 dark:text-brand-400">{min === max ? min.toLocaleString() : `${min.toLocaleString()} – ${max.toLocaleString()}`} {cur}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+                {loadingProps
                   ? [1,2,3,4,5,6].map(i => <div key={i} className="h-96 bg-slate-200 rounded-2xl animate-pulse"></div>)
                   : filteredProperties.map(p => (
-                    <PropertyCard 
-                      key={p.id} 
-                      property={p} 
-                      onView3D={() => open3D(p.id)} 
+                    <PropertyCard
+                      key={p.id}
+                      property={p}
+                      onView3D={() => open3D(p.id)}
                       onToggleFavorite={() => toggleFavorite(p.id)}
                       isFavorited={userFavorites.includes(p.id)}
+                      onToggleCompare={() => toggleCompare(p.id)}
+                      isComparing={compareIds.includes(p.id)}
                       onClick={() => openProperty(p.id)}
-                      t={t} 
-                      isRtl={isRtl} 
+                      t={t}
+                      isRtl={isRtl}
                     />
                   ))
-               }
-            </div>
+                }
+              </div>
+            )}
           </div>
         )}
 
