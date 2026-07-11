@@ -47,6 +47,26 @@ const Loading3DFallback = () => (
   </div>
 );
 
+/** Exports an array of objects to a downloaded CSV file. */
+const downloadCsv = (filename: string, rows: Record<string, any>[]) => {
+  if (!rows.length) return;
+  const headerSet = new Set<string>();
+  rows.forEach(r => Object.keys(r).forEach(k => headerSet.add(k)));
+  const headers: string[] = Array.from(headerSet);
+  const esc = (v: any) => {
+    const s = v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [headers.join(','), ...rows.map(r => headers.map(h => esc(r[h])).join(','))].join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
 /** Localized label for a stored (English) payment-method value. */
 const paymentLabel = (value: string, isRtl: boolean) => {
   const opt = PAYMENT_OPTIONS.find(o => o.value === value);
@@ -2902,11 +2922,16 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
 
       {activeTab === 'properties' && (
         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xl animate-scale-up">
-          <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+          <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between">
             <h2 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
               <Building2 className="text-brand-600 dark:text-brand-400" />
               {isRtl ? `كل العقارات (${allProperties.length})` : `All Properties (${allProperties.length})`}
             </h2>
+            {allProperties.length > 0 && (
+              <button onClick={() => downloadCsv('properties.csv', allProperties.map(p => ({ id: p.id, title: p.title, type: p.propertyType, price: p.price, currency: p.currency || 'EGP', location: p.location, compound: p.compound, developer: p.developer, bedrooms: p.bedrooms, bathrooms: p.bathrooms, area: p.area, status: p.status, availability: p.availability, verification: p.verificationStatus, unitCode: p.unitCode, publishDate: p.publishDate })))} className="text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-700">
+                <Upload size={14} className="rotate-180" /> {isRtl ? 'تصدير CSV' : 'Export CSV'}
+              </button>
+            )}
           </div>
           {allProperties.length === 0 ? (
             <div className="p-20 text-center text-slate-400 dark:text-slate-600">
@@ -3080,7 +3105,14 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
 
       {activeTab === 'reports' && (
         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xl animate-scale-up p-6">
-          <h3 className="font-bold text-slate-900 dark:text-white mb-4">{isRtl ? 'بلاغات على الإعلانات' : 'Listing Reports'} ({reports.length})</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-slate-900 dark:text-white">{isRtl ? 'بلاغات على الإعلانات' : 'Listing Reports'} ({reports.length})</h3>
+            {reports.length > 0 && (
+              <button onClick={() => downloadCsv('reports.csv', reports.map(r => ({ property: propertyTitle(r.propertyId), reason: r.reason, reporter: purchaserEmail(r.userId), date: r.createdAt })))} className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 hover:bg-slate-200 dark:hover:bg-slate-700">
+                <Upload size={14} className="rotate-180" /> {isRtl ? 'تصدير CSV' : 'Export CSV'}
+              </button>
+            )}
+          </div>
           {reports.length === 0 ? (
             <p className="text-slate-400 text-sm">{isRtl ? 'مفيش بلاغات.' : 'No reports.'}</p>
           ) : (
@@ -3104,6 +3136,11 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
 
       {activeTab === 'users' && isSuperAdmin && (
         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xl animate-scale-up">
+           <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-end">
+             <button onClick={() => downloadCsv('users.csv', users.map(u => ({ id: u.id, name: u.name, email: u.email, phone: u.phone, role: u.role, createdAt: u.createdAt, lastLoginAt: u.lastLoginAt })))} className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 hover:bg-slate-200 dark:hover:bg-slate-700">
+               <Upload size={14} className="rotate-180" /> {isRtl ? 'تصدير CSV' : 'Export CSV'}
+             </button>
+           </div>
            <div className="overflow-x-auto">
              <table className="w-full text-left border-collapse">
                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-black uppercase tracking-widest">
@@ -3211,6 +3248,23 @@ export default function App() {
   };
   const applySavedSearch = (s: any) => { setListingSearchQuery(s.q || ''); setMinPrice(s.minPrice ?? ''); setMaxPrice(s.maxPrice ?? ''); setTypeFilter(s.typeFilter || 'all'); setSortBy(s.sortBy || 'default'); };
   const removeSavedSearch = (id: string) => { const next = savedSearches.filter(x => x.id !== id); setSavedSearches(next); localStorage.setItem('hettety_saved_searches', JSON.stringify(next)); };
+  const subscribeAlert = async () => {
+    if (!auth.currentUser) { alert(isRtl ? 'سجّل الدخول عشان تفعّل التنبيهات.' : 'Sign in to enable email alerts.'); return; }
+    const email = auth.currentUser.email || window.prompt(isRtl ? 'إيميلك لاستقبال التنبيهات:' : 'Your email for alerts:') || '';
+    if (!/.+@.+\..+/.test(email)) { alert(isRtl ? 'إيميل غير صحيح.' : 'Invalid email.'); return; }
+    try {
+      await addDoc(collection(db, 'alertSubscriptions'), {
+        userId: auth.currentUser.uid,
+        email,
+        q: listingSearchQuery,
+        minPrice: minPrice === '' ? null : minPrice,
+        maxPrice: maxPrice === '' ? null : maxPrice,
+        typeFilter,
+        createdAt: new Date().toISOString(),
+      });
+      alert(isRtl ? 'تم تفعيل التنبيهات ✅ هيوصلك إيميل لما يظهر عقار مطابق.' : "Alerts enabled ✅ you'll get an email when a matching listing appears.");
+    } catch (e) { console.error('alert subscribe failed', e); alert(isRtl ? 'تعذّر تفعيل التنبيهات.' : 'Could not enable alerts.'); }
+  };
   const [paymentProperty, setPaymentProperty] = useState<Property | null>(null);
   const [aiFilteredIds, setAiFilteredIds] = useState<string[] | null>(null);
   const [isAiSearching, setIsAiSearching] = useState(false);
@@ -3922,6 +3976,9 @@ export default function App() {
                  </select>
                  <button onClick={saveCurrentSearch} className="py-2.5 px-4 rounded-lg border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300 font-bold text-sm flex items-center gap-1.5 hover:bg-brand-100 dark:hover:bg-brand-900/40 transition-colors">
                    <Save size={15} /> {isRtl ? 'احفظ البحث' : 'Save search'}
+                 </button>
+                 <button onClick={subscribeAlert} className="py-2.5 px-4 rounded-lg border border-accent-200 dark:border-accent-800 bg-accent-50 dark:bg-accent-900/20 text-accent-700 dark:text-accent-300 font-bold text-sm flex items-center gap-1.5 hover:bg-accent-100 dark:hover:bg-accent-900/40 transition-colors">
+                   <Bell size={15} /> {isRtl ? 'نبّهني بالإيميل' : 'Email alert'}
                  </button>
                </div>
             </div>

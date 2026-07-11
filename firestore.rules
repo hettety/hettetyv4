@@ -235,6 +235,14 @@ service cloud.firestore {
                     && request.resource.data.reason is string && request.resource.data.reason.size() < 1000;
     }
 
+    // Saved-search email alerts — a signed-in user subscribes; admins/functions read.
+    match /alertSubscriptions/{subId} {
+      allow read, list, delete: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated()
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.email is string && request.resource.data.email.size() < 200;
+    }
+
     // Property reviews — public to read; signed-in users post one; author or admin deletes.
     match /reviews/{reviewId} {
       allow read, list: if true;
