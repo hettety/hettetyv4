@@ -3648,6 +3648,7 @@ export default function App() {
             <div className="hidden lg:flex items-center gap-8 xl:gap-12">
               <NavLink page="home" label={t.nav_home} />
               <NavLink page="listings" label={t.nav_listings} />
+              <NavLink page="yalla-sahel" label={isRtl ? '🌊 يلا ساحل' : '🌊 Yalla Sahel'} />
               <NavLink page="3d-experience" label={isRtl ? 'جولات 3D' : '3D Tours'} />
               <NavLink page="legal" label={t.nav_trust} />
               {isAdmin && <NavLink page="manage-users" label={isRtl ? 'لوحة التحكم' : 'Dashboard'} />}
@@ -4067,6 +4068,59 @@ export default function App() {
         {currentPage === 'buy' && <BuyPropertyPage onCta={() => handleNav('listings')} t={t} isRtl={isRtl} />}
         {currentPage === 'verification' && <VerificationPage onCta={() => handleNav('legal')} t={t} isRtl={isRtl} />}
         {currentPage === 'tours' && <Tours3DPage onCta={() => handleNav('3d-experience')} t={t} isRtl={isRtl} />}
+
+        {currentPage === 'yalla-sahel' && (() => {
+          const coastalKeywords = /ساحل|sahel|north coast|الساحل|مارينا|marina|marassi|مراسي|راس الحكمة|ras el|hacienda|هاسيندا|العلمين|alamein|بورتو|porto|جايا|جاردينيا|سيدي عبد|فوكا|fouka/i;
+          const sahelUnits = properties.filter(p => p.propertyType === 'Chalet' || coastalKeywords.test(p.location || '') || coastalKeywords.test(p.compound || ''));
+          return (
+            <div className="animate-fade-in">
+              <div className="relative overflow-hidden bg-gradient-to-br from-cyan-500 via-blue-500 to-brand-700 text-white">
+                <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(circle at 20% 30%, white 1.5px, transparent 1.5px)', backgroundSize: '42px 42px' }} />
+                <div className="relative max-w-6xl mx-auto px-4 py-20 text-center">
+                  <div className="text-6xl mb-4">🌊</div>
+                  <h1 className="text-4xl md:text-6xl font-heading font-black mb-4">{isRtl ? 'يلا ساحل' : 'Yalla Sahel'}</h1>
+                  <p className="text-lg md:text-2xl font-bold text-white/90 max-w-3xl mx-auto mb-3">{isRtl ? 'شاليهات الساحل الشمالي — تلف جواها 3D قبل ما تحجز.' : 'North Coast chalets — walk through them in 3D before you book.'}</p>
+                  <p className="text-white/80 max-w-2xl mx-auto mb-8">{isRtl ? 'لا نصب، لا صور مخدوعة. معاينة حقيقية، حجز أسرع، وثقة كاملة.' : 'No scams, no misleading photos. Real 3D preview, faster booking, full trust.'}</p>
+                  <div className="flex flex-wrap gap-3 justify-center">
+                    <button onClick={() => document.getElementById('sahel-units')?.scrollIntoView({ behavior: 'smooth' })} className="bg-white text-brand-700 font-black px-8 py-3.5 rounded-full shadow-lg hover:scale-105 transition-transform">{isRtl ? 'شوف الشاليهات المتاحة' : 'Browse chalets'}</button>
+                    <button onClick={() => handleNav('add-listing')} className="bg-white/20 backdrop-blur border border-white/40 text-white font-bold px-8 py-3.5 rounded-full hover:bg-white/30 transition-colors">{isRtl ? 'عندك شاليه؟ أجّره معانا' : 'List your chalet'}</button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="max-w-6xl mx-auto px-4 py-12 grid sm:grid-cols-3 gap-6">
+                {[
+                  { icon: '🏠', ti: isRtl ? 'معاينة 3D' : '3D Preview', d: isRtl ? 'لف جوه الشاليه وشوف الفيو قبل الحجز' : 'Walk inside and see the view before booking' },
+                  { icon: '⚡', ti: isRtl ? 'حجز أسرع' : 'Faster booking', d: isRtl ? 'تواصل واتساب/اتصال مباشر مع المالك' : 'Direct WhatsApp/call with the owner' },
+                  { icon: '⭐', ti: isRtl ? 'تقييمات حقيقية' : 'Real reviews', d: isRtl ? 'آراء ناس سكنت فعلاً' : 'Ratings from real guests' },
+                ].map((c, i) => (
+                  <div key={i} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-6 text-center shadow-sm">
+                    <div className="text-4xl mb-3">{c.icon}</div>
+                    <h3 className="font-bold text-slate-900 dark:text-white mb-1">{c.ti}</h3>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">{c.d}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div id="sahel-units" className="max-w-7xl mx-auto px-4 pb-16">
+                <h2 className="text-2xl md:text-3xl font-heading font-black text-slate-900 dark:text-white mb-6">{isRtl ? `شاليهات متاحة (${sahelUnits.length})` : `Available chalets (${sahelUnits.length})`}</h2>
+                {sahelUnits.length === 0 ? (
+                  <div className="text-center py-16 text-slate-400">
+                    <div className="text-5xl mb-3">🏖️</div>
+                    <p className="font-bold">{isRtl ? 'مفيش شاليهات مضافة لسه — كن أول مالك!' : 'No chalets yet — be the first owner!'}</p>
+                    <button onClick={() => handleNav('add-listing')} className="mt-4 bg-brand-600 text-white px-6 py-2.5 rounded-full font-bold">{isRtl ? 'أضف شاليهك' : 'Add your chalet'}</button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {sahelUnits.map(p => (
+                      <PropertyCard key={p.id} property={p} onView3D={() => open3D(p.id)} onToggleFavorite={() => toggleFavorite(p.id)} isFavorited={userFavorites.includes(p.id)} onToggleCompare={() => toggleCompare(p.id)} isComparing={compareIds.includes(p.id)} onClick={() => openProperty(p.id)} t={t} isRtl={isRtl} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
         {currentPage === '3d' && selectedPropertyId && <Viewer3D property={properties.find(p => p.id === selectedPropertyId)} onClose={() => { setSelectedPropertyId(null); handleNav('listings'); }} t={t} isRtl={isRtl} />}
         {currentPage === 'property' && selectedPropertyId && (() => {
           const prop = properties.find(p => p.id === selectedPropertyId);
