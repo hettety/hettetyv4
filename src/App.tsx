@@ -67,6 +67,16 @@ const downloadCsv = (filename: string, rows: Record<string, any>[]) => {
   URL.revokeObjectURL(url);
 };
 
+/** Suffix appended to a price for rental periods (e.g. "/night"). */
+const pricePeriodSuffix = (period: string | undefined, isRtl: boolean) => {
+  switch (period) {
+    case 'night': return isRtl ? ' / ليلة' : ' / night';
+    case 'week': return isRtl ? ' / أسبوع' : ' / week';
+    case 'month': return isRtl ? ' / شهر' : ' / month';
+    default: return '';
+  }
+};
+
 /** Localized label for a stored (English) payment-method value. */
 const paymentLabel = (value: string, isRtl: boolean) => {
   const opt = PAYMENT_OPTIONS.find(o => o.value === value);
@@ -339,7 +349,7 @@ const PropertyCard: React.FC<{
       <div className="flex justify-between items-start mb-2">
         <h3 className="text-lg font-heading font-bold text-slate-900 dark:text-white line-clamp-1">{property.title}</h3>
         <span className="text-brand-600 dark:text-brand-400 font-bold whitespace-nowrap">
-          {property.price.toLocaleString()} {property.currency || 'EGP'}
+          {property.price.toLocaleString()} {property.currency || 'EGP'}<span className="text-[10px] text-slate-400 font-medium">{pricePeriodSuffix(property.pricePeriod, isRtl)}</span>
         </span>
       </div>
       <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -1908,13 +1918,15 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
                 <MapPin size={16} className="text-brand-500"/> {property.location}{property.compound ? ` — ${property.compound}` : ''}
                 <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="text-brand-600 dark:text-brand-400 font-bold hover:underline text-sm">{isRtl ? '· عرض على الخريطة' : '· View on map'}</a>
               </p>
-              {(property.propertyType || property.finishing || property.floor || property.view || property.furnished) && (
+              {(property.propertyType || property.finishing || property.floor || property.view || property.furnished || property.guests || property.village) && (
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
                   {property.propertyType && <span className="text-xs font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-2.5 py-1 rounded-lg">{property.propertyType}</span>}
                   {property.finishing && <span className="text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg">{property.finishing}</span>}
                   {property.floor && <span className="text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg">{isRtl ? 'الدور' : 'Floor'}: {property.floor}</span>}
                   {property.view && <span className="text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg">{property.view}</span>}
                   {property.furnished && <span className="text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg">{isRtl ? 'مفروش' : 'Furnished'}</span>}
+                  {property.guests ? <span className="text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg">{isRtl ? `${property.guests} أفراد` : `Sleeps ${property.guests}`}</span> : null}
+                  {property.village && <span className="text-xs font-bold bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-300 px-2.5 py-1 rounded-lg">🌊 {property.village}</span>}
                 </div>
               )}
               <div className="flex items-center gap-4 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest flex-wrap">
@@ -1925,7 +1937,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
               </div>
             </div>
             <div className="text-right bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex sm:flex-col justify-between items-center sm:items-end gap-2 w-full sm:w-auto">
-              <div className="text-2xl font-black text-brand-600 dark:text-brand-400">{property.price.toLocaleString()} {property.currency || 'EGP'}</div>
+              <div className="text-2xl font-black text-brand-600 dark:text-brand-400">{property.price.toLocaleString()} {property.currency || 'EGP'}<span className="text-xs text-slate-400 font-bold">{pricePeriodSuffix(property.pricePeriod, isRtl)}</span></div>
               <div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">{property.status === 'For Sale' ? (isRtl ? 'للبيع' : 'For Sale') : (isRtl ? 'للإيجار' : 'For Rent')}</div>
             </div>
           </div>
@@ -3273,6 +3285,8 @@ export default function App() {
   const [userFavorites, setUserFavorites] = useState<string[]>([]);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [showCompare, setShowCompare] = useState(false);
+  const [sahelVillage, setSahelVillage] = useState('all');
+  const [sahelGuests, setSahelGuests] = useState(0);
   const toggleCompare = (id: string) => setCompareIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : (prev.length >= 4 ? prev : [...prev, id]));
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
@@ -4071,7 +4085,12 @@ export default function App() {
 
         {currentPage === 'yalla-sahel' && (() => {
           const coastalKeywords = /ساحل|sahel|north coast|الساحل|مارينا|marina|marassi|مراسي|راس الحكمة|ras el|hacienda|هاسيندا|العلمين|alamein|بورتو|porto|جايا|جاردينيا|سيدي عبد|فوكا|fouka/i;
-          const sahelUnits = properties.filter(p => p.propertyType === 'Chalet' || coastalKeywords.test(p.location || '') || coastalKeywords.test(p.compound || ''));
+          const allSahel = properties.filter(p => p.propertyType === 'Chalet' || coastalKeywords.test(p.location || '') || coastalKeywords.test(p.compound || '') || !!p.village);
+          const villages = Array.from(new Set(allSahel.map(p => p.village).filter(Boolean))) as string[];
+          const sahelUnits = allSahel.filter(p =>
+            (sahelVillage === 'all' || p.village === sahelVillage) &&
+            (sahelGuests === 0 || (p.guests || 0) >= sahelGuests)
+          );
           return (
             <div className="animate-fade-in">
               <div className="relative overflow-hidden bg-gradient-to-br from-cyan-500 via-blue-500 to-brand-700 text-white">
@@ -4103,7 +4122,19 @@ export default function App() {
               </div>
 
               <div id="sahel-units" className="max-w-7xl mx-auto px-4 pb-16">
-                <h2 className="text-2xl md:text-3xl font-heading font-black text-slate-900 dark:text-white mb-6">{isRtl ? `شاليهات متاحة (${sahelUnits.length})` : `Available chalets (${sahelUnits.length})`}</h2>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                  <h2 className="text-2xl md:text-3xl font-heading font-black text-slate-900 dark:text-white">{isRtl ? `شاليهات متاحة (${sahelUnits.length})` : `Available chalets (${sahelUnits.length})`}</h2>
+                  <div className="flex gap-3 flex-wrap">
+                    <select value={sahelVillage} onChange={e => setSahelVillage(e.target.value)} className="py-2 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-800 dark:text-white outline-none">
+                      <option value="all">{isRtl ? 'كل القرى' : 'All villages'}</option>
+                      {villages.map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                    <select value={sahelGuests} onChange={e => setSahelGuests(Number(e.target.value))} className="py-2 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-800 dark:text-white outline-none">
+                      <option value={0}>{isRtl ? 'أي عدد أفراد' : 'Any guests'}</option>
+                      {[2, 4, 6, 8, 10].map(n => <option key={n} value={n}>{isRtl ? `${n}+ أفراد` : `${n}+ guests`}</option>)}
+                    </select>
+                  </div>
+                </div>
                 {sahelUnits.length === 0 ? (
                   <div className="text-center py-16 text-slate-400">
                     <div className="text-5xl mb-3">🏖️</div>

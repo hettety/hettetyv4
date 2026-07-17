@@ -22,6 +22,9 @@ export interface Property {
   areaTo?: number;         // Upper bound when a unit type spans an area range (area = from)
   paymentPlans?: { downPayment?: number; years?: number; note?: string }[]; // Structured installment plans
   currency?: 'EGP' | 'USD'; // Currency the price is quoted in (label only, no conversion)
+  pricePeriod?: 'total' | 'night' | 'week' | 'month'; // How the price is quoted (rentals)
+  guests?: number;         // Max guests the unit sleeps (coastal rentals)
+  village?: string;        // Coastal village / resort (Marassi, Hacienda, Marina ...)
   lat?: number;            // Optional geolocation for the map
   lng?: number;
   imageUrl: string;

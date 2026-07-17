@@ -148,6 +148,8 @@ export const AddListingPage = ({ onAdd, onAddMany, t, isRtl, isAdmin, isSuperAdm
   const [formData, setFormData] = useState({
     title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '', areaTo: '',
     currency: 'EGP' as 'EGP' | 'USD',
+    pricePeriod: 'total' as 'total' | 'night' | 'week' | 'month',
+    guests: '', village: '',
     propertyType: 'Apartment', contactPhone: '',
     compound: '', developer: '', deliveryDate: '', finishing: '', floor: '', view: '', furnished: false,
     imageUrl: '', videoUrl: '', digitalTwinUrl: '', status: 'For Sale',
@@ -250,6 +252,9 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
  "finishing": one of ["","Not Finished","Semi Finished","Finished","Fully Finished"],
  "floor": string,
  "view": string,
+ "guests": number (max guests the unit sleeps — for chalets/rentals),
+ "village": string (coastal village/resort name if any),
+ "pricePeriod": one of ["total","night","week","month"] (how the price is quoted; use "total" for a sale, "night"/"week" for rentals),
  "paymentMethods": array subset of ["Cash","Installments","Bank Transfer","Mortgage"],
  "amenities": array of strings, each EXACTLY one of ["Clubhouse","Swimming Pools","Gym","Lagoons","Landscape","Security","Underground Garage","EV Chargers","Kids Area","Commercial Area","Mosque","Hotel","Jogging Track","Cycling Track","Sports Fields","Medical Center"],
  "paymentPlans": array of objects {"downPayment": number (percent), "years": number, "note": string},
@@ -279,6 +284,9 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
         finishing: FINISHING_OPTIONS.some(f => f.value === data.finishing) ? data.finishing : prev.finishing,
         floor: data.floor || prev.floor,
         view: data.view || prev.view,
+        guests: data.guests != null ? String(data.guests) : prev.guests,
+        village: data.village || prev.village,
+        pricePeriod: ['total', 'night', 'week', 'month'].includes(data.pricePeriod) ? data.pricePeriod : prev.pricePeriod,
         description: data.description || prev.description,
       }));
       if (Array.isArray(data.paymentMethods)) {
@@ -575,6 +583,9 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
     if (formData.view.trim()) newProperty.view = formData.view.trim();
     if (formData.furnished) newProperty.furnished = true;
     if (formData.areaTo && Number(formData.areaTo) > 0) newProperty.areaTo = Number(formData.areaTo);
+    if (formData.pricePeriod !== 'total') newProperty.pricePeriod = formData.pricePeriod;
+    if (formData.guests && Number(formData.guests) > 0) newProperty.guests = Number(formData.guests);
+    if (formData.village.trim()) newProperty.village = formData.village.trim();
     if (amenities.length) newProperty.amenities = amenities;
     const cleanPlans = paymentPlans
       .filter(p => p.downPayment || p.years || p.note.trim())
@@ -605,6 +616,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
       setFormData({
         title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '', areaTo: '',
         currency: 'EGP',
+        pricePeriod: 'total', guests: '', village: '',
         propertyType: 'Apartment', contactPhone: '',
         compound: '', developer: '', deliveryDate: '', finishing: '', floor: '', view: '', furnished: false,
         imageUrl: '', videoUrl: '', digitalTwinUrl: '', status: 'For Sale',
@@ -833,6 +845,25 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                       <div>
                         <label className={labelCls}>{isRtl ? 'الفيو' : 'View'}</label>
                         <input value={formData.view} onChange={e => setFormData({...formData, view: e.target.value})} className={inputCls} placeholder={isRtl ? 'حديقة / بحر' : 'Garden / Sea'} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+                      <div>
+                        <label className={labelCls}>{isRtl ? 'نظام السعر' : 'Price basis'}</label>
+                        <select value={formData.pricePeriod} onChange={e => setFormData({...formData, pricePeriod: e.target.value as any})} className={selectCls}>
+                          <option value="total">{isRtl ? 'إجمالي' : 'Total'}</option>
+                          <option value="night">{isRtl ? 'لليلة' : 'Per night'}</option>
+                          <option value="week">{isRtl ? 'للأسبوع' : 'Per week'}</option>
+                          <option value="month">{isRtl ? 'للشهر' : 'Per month'}</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className={labelCls}>{isRtl ? 'عدد الأفراد' : 'Sleeps (guests)'}</label>
+                        <input type="number" min="0" value={formData.guests} onChange={e => setFormData({...formData, guests: e.target.value})} className={inputCls} placeholder={isRtl ? 'مثال: 6' : 'e.g. 6'} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>{isRtl ? 'القرية / المنتجع' : 'Village / Resort'}</label>
+                        <input value={formData.village} onChange={e => setFormData({...formData, village: e.target.value})} className={inputCls} placeholder={isRtl ? 'مثال: مراسي، هاسيندا' : 'e.g. Marassi, Hacienda'} />
                       </div>
                     </div>
                     <label className="flex items-center gap-3 cursor-pointer mt-4 w-fit">
