@@ -40,11 +40,17 @@ function matches(sub, p) {
   return true;
 }
 
+/** Escape user text before putting it in email HTML / headers. */
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const oneLine = (s) => String(s == null ? '' : s).replace(/[\r\n]+/g, ' ').slice(0, 150);
+
 exports.newListingAlerts = onDocumentCreated(
   { document: 'properties/{id}', database: 'ai-studio-7dc9cb2d-ccba-48fa-8d31-f2b7a4759743' },
   async (event) => {
     const p = event.data && event.data.data();
     if (!p) return;
+    // Never alert about unverified / unmoderated listings.
+    if (!p.isVerified || p.verificationStatus !== 'Verified') return;
 
     const subsSnap = await db.collection('alertSubscriptions').get();
     const mail = transporter();
@@ -53,18 +59,18 @@ exports.newListingAlerts = onDocumentCreated(
     subsSnap.forEach((doc) => {
       const sub = doc.data();
       if (!sub.email || !matches(sub, p)) return;
-      const price = `${Number(p.price).toLocaleString()} ${p.currency || 'EGP'}`;
+      const price = `${Number(p.price).toLocaleString()} ${esc(p.currency || 'EGP')}`;
       jobs.push(
         mail.sendMail({
           from: process.env.SMTP_FROM || 'HETTETY <no-reply@hettety.com>',
           to: sub.email,
-          subject: `عقار جديد مطابق لبحثك: ${p.title}`,
+          subject: `عقار جديد مطابق لبحثك: ${oneLine(p.title)}`,
           html: `
             <div style="font-family:sans-serif">
-              <h2>${p.title}</h2>
-              <p>${p.location || ''}${p.compound ? ' — ' + p.compound : ''}</p>
-              <p><strong>${price}</strong> · ${p.bedrooms || 0} beds · ${p.area || ''} m²</p>
-              <p>${p.description || ''}</p>
+              <h2>${esc(p.title)}</h2>
+              <p>${esc(p.location || '')}${p.compound ? ' — ' + esc(p.compound) : ''}</p>
+              <p><strong>${price}</strong> · ${Number(p.bedrooms) || 0} beds · ${esc(p.area || '')} m²</p>
+              <p>${esc(String(p.description || '').slice(0, 600))}</p>
               <a href="https://hettetyv4.vercel.app" style="background:#1b2c4d;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">شوف العقار</a>
             </div>`,
         }).catch((e) => console.error('mail failed for', sub.email, e))
@@ -72,6 +78,6 @@ exports.newListingAlerts = onDocumentCreated(
     });
 
     await Promise.all(jobs);
-    console.log(`newListingAlerts: processed ${jobs.length} matching subscribers for "${p.title}".`);
+    console.log(`newListingAlerts: processed ${jobs.length} matching subscribers for "${oneLine(p.title)}".`);
   }
 );

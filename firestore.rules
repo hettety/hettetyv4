@@ -242,7 +242,10 @@ service cloud.firestore {
     match /alertSubscriptions/{subId} {
       allow read, list, delete: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isAuthenticated()
+                    && request.resource.data.keys().hasOnly(['userId', 'email', 'q', 'minPrice', 'maxPrice', 'typeFilter', 'createdAt'])
                     && request.resource.data.userId == request.auth.uid
+                    // Only your own verified account email — can't sign the platform up to spam a stranger.
+                    && request.resource.data.email == request.auth.token.email
                     && request.resource.data.email is string && request.resource.data.email.size() < 200;
     }
 

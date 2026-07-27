@@ -19,12 +19,17 @@ service firebase.storage {
     // effectively impossible.
     match /properties/{fileName} {
       allow read: if true;
-      allow create, update: if isAuthenticated() && (
+      // Create only (no overwrite of an existing object), typed and size-capped.
+      // Object names are timestamp+random so accidental collisions are impossible.
+      allow create: if isAuthenticated() && (
                      (request.resource.contentType.matches('image/.*') && request.resource.size < 15 * 1024 * 1024) ||
                      (request.resource.contentType.matches('video/.*') && request.resource.size < 80 * 1024 * 1024) ||
                      (request.resource.contentType == 'application/pdf' && request.resource.size < 15 * 1024 * 1024)
                    );
-      allow delete: if isAuthenticated();
+      // No client can overwrite or delete — stops any signed-in user wiping the
+      // shared prefix. The app never deletes Storage objects from the client;
+      // cleanup is done via the Admin SDK / console.
+      allow update, delete: if false;
     }
 
     // Match user documents

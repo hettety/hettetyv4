@@ -99,6 +99,9 @@ const isDataUrl = (s: string) => s.startsWith('data:');
 // ~110KB of base64 per image; capped so the property document (which also
 // duplicates the first image in imageUrl) stays under Firestore's 1MB limit.
 const FALLBACK_MAX_IMAGES = 6;
+// Firestore's isValidProperty caps images[] and panoramas[] at 20 each — exceeding
+// it rejects the whole listing, so the UI must never let it happen.
+const MAX_MEDIA_ITEMS = 20;
 const FALLBACK_VIDEO_LIMIT = 500 * 1024;
 
 // Storage hosts the file when available, so we can afford much better quality
@@ -266,28 +269,40 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
         config: { responseMimeType: 'application/json' },
       });
       const raw = (response.text || '').trim().replace(/^```json\s*/i, '').replace(/```$/, '').trim();
-      const data = JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      // Drop prototype-polluting keys and coerce values defensively — a brochure is
+      // untrusted input, and a NaN / over-long value would be rejected by the
+      // security rules and lose the whole submission.
+      const data: any = {};
+      for (const k of Object.keys(parsed || {})) {
+        if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+        data[k] = parsed[k];
+      }
+      /** Finite number as string, else '' (so it never becomes NaN downstream). */
+      const num = (v: any) => { const n = Number(v); return Number.isFinite(n) ? String(n) : ''; };
+      /** Trimmed string capped below the matching Firestore rule limit. */
+      const str = (v: any, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
       setFormData(prev => ({
         ...prev,
-        title: data.title || prev.title,
+        title: str(data.title, 199) || prev.title,
         propertyType: PROPERTY_TYPES.some(p => p.value === data.propertyType) ? data.propertyType : prev.propertyType,
-        price: data.price != null ? String(data.price).replace(/[^0-9]/g, '') : prev.price,
+        price: data.price != null && num(data.price) ? num(data.price).replace(/[^0-9]/g, '') : prev.price,
         currency: data.currency === 'USD' ? 'USD' : (data.currency === 'EGP' ? 'EGP' : prev.currency),
-        area: data.area != null ? String(data.area) : prev.area,
-        areaTo: data.areaTo != null ? String(data.areaTo) : prev.areaTo,
-        bedrooms: data.bedrooms != null ? String(data.bedrooms) : prev.bedrooms,
-        bathrooms: data.bathrooms != null ? String(data.bathrooms) : prev.bathrooms,
-        location: data.location || prev.location,
-        compound: data.compound || prev.compound,
-        developer: data.developer || prev.developer,
-        deliveryDate: data.deliveryDate || prev.deliveryDate,
+        area: num(data.area) || prev.area,
+        areaTo: num(data.areaTo) || prev.areaTo,
+        bedrooms: num(data.bedrooms) || prev.bedrooms,
+        bathrooms: num(data.bathrooms) || prev.bathrooms,
+        location: str(data.location, 199) || prev.location,
+        compound: str(data.compound, 119) || prev.compound,
+        developer: str(data.developer, 119) || prev.developer,
+        deliveryDate: str(data.deliveryDate, 49) || prev.deliveryDate,
         finishing: FINISHING_OPTIONS.some(f => f.value === data.finishing) ? data.finishing : prev.finishing,
-        floor: data.floor || prev.floor,
-        view: data.view || prev.view,
-        guests: data.guests != null ? String(data.guests) : prev.guests,
-        village: data.village || prev.village,
+        floor: str(data.floor, 29) || prev.floor,
+        view: str(data.view, 59) || prev.view,
+        guests: num(data.guests) || prev.guests,
+        village: str(data.village, 119) || prev.village,
         pricePeriod: ['total', 'night', 'week', 'month'].includes(data.pricePeriod) ? data.pricePeriod : prev.pricePeriod,
-        description: data.description || prev.description,
+        description: str(data.description, 49999) || prev.description,
       }));
       if (Array.isArray(data.paymentMethods)) {
         const valid = data.paymentMethods.filter((m: string) => PAYMENT_OPTIONS.some(p => p.value === m));
@@ -362,7 +377,9 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
       });
       const extracted = response.text?.trim();
       if(extracted && !extracted.includes('NOT_FOUND')) {
-        setFormData(prev => ({ ...prev, registrationNumber: extracted }));
+        // Cap below the Firestore rule limit (< 100) so a long OCR result can't
+        // make the whole listing save fail.
+        setFormData(prev => ({ ...prev, registrationNumber: extracted.slice(0, 99) }));
         alert(isRtl ? 'تم استخراج رقم الشهر العقاري بنجاح' : 'Registry Number extracted successfully');
       } else {
         alert(isRtl ? 'لم يتم العثور على رقم الشهر العقاري' : 'Registry Number not found');
@@ -405,15 +422,20 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
 
     // Enforce the base64 cap *after* the parallel work, keeping the document small.
     let base64Count = images.filter(isDataUrl).length;
+    // Hard cap on total photos — the Firestore rule allows at most 20 and would
+    // otherwise reject the ENTIRE listing on save.
+    let total = images.length;
     const uploadedUrls: string[] = [];
     let failures = 0;
     let skippedForSize = 0;
     for (const r of results) {
       if (!r.url) { failures++; continue; }
+      if (total >= MAX_MEDIA_ITEMS) { skippedForSize++; continue; }
       if (isDataUrl(r.url)) {
         if (base64Count >= FALLBACK_MAX_IMAGES) { skippedForSize++; continue; }
         base64Count++;
       }
+      total++;
       uploadedUrls.push(r.url);
     }
 
@@ -457,13 +479,17 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
     }));
     // Same base64 cap as images so panoramas can't silently blow the 1MB doc limit.
     let base64Count = [...images, ...panoramas].filter(isDataUrl).length;
+    // And the same hard 20-item cap the Firestore rule enforces on panoramas[].
+    let total = panoramas.length;
     const urls: string[] = [];
     let skippedForSize = 0;
     for (const url of results) {
+      if (total >= MAX_MEDIA_ITEMS) { skippedForSize++; continue; }
       if (isDataUrl(url)) {
         if (base64Count >= FALLBACK_MAX_IMAGES) { skippedForSize++; continue; }
         base64Count++;
       }
+      total++;
       urls.push(url);
     }
     if (urls.length) setPanoramas(prev => [...prev, ...urls]);

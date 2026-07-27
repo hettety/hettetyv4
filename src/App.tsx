@@ -24,7 +24,7 @@ import imageCompression from 'browser-image-compression';
 import { api } from './mockApi';
 import { 
   auth, db, storage, googleProvider, signInWithPopup, signOut, onAuthStateChanged,
-  doc, getDoc, setDoc, collection, getDocs, query, where, onSnapshot,
+  doc, getDoc, setDoc, collection, getDocs, query, where, onSnapshot, writeBatch,
   addDoc, updateDoc, deleteDoc,
   ref, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject,
   handleFirestoreError, OperationType
@@ -65,6 +65,18 @@ const downloadCsv = (filename: string, rows: Record<string, any>[]) => {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+};
+
+/** Returns the URL only if it's a safe https Matterport/Polycam/Kuula tour link, else null.
+ *  Prevents a malicious lister storing a javascript:/data: URL that would execute in the iframe. */
+const safeTourUrl = (raw: string | undefined): string | null => {
+  if (!raw) return null;
+  try {
+    const u = new URL(raw.trim());
+    const host = u.hostname.replace(/^www\./, '');
+    const ok = u.protocol === 'https:' && (host === 'matterport.com' || host.endsWith('.matterport.com') || host === 'poly.cam' || host.endsWith('.poly.cam') || host === 'kuula.co' || host.endsWith('.kuula.co'));
+    return ok ? u.href : null;
+  } catch { return null; }
 };
 
 /** Suffix appended to a price for rental periods (e.g. "/night"). */
@@ -334,7 +346,8 @@ const PropertyCard: React.FC<{
           <Heart size={18} fill={isFavorited ? 'currentColor' : 'none'} />
         </button>
       )}
-      <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex justify-between items-end">
+      {/* Always visible on touch screens (no hover there); hover-reveal from sm up. */}
+      <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/70 to-transparent opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex justify-between items-end">
         <button onClick={(e) => { e.stopPropagation(); onView3D(); }} className="bg-white/20 hover:bg-white text-white hover:text-brand-900 backdrop-blur border border-white/50 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 cursor-pointer">
           <Box size={16} /> {t.prop_view_3d}
         </button>
@@ -1824,7 +1837,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
         userId: auth.currentUser.uid,
         userName: auth.currentUser.displayName || (auth.currentUser.email || '').split('@')[0] || 'User',
         rating: reviewRating,
-        comment: reviewComment.trim().slice(0, 1000),
+        comment: reviewComment.trim().slice(0, 999),
         createdAt: new Date().toISOString(),
       };
       const ref = await addDoc(collection(db, 'reviews'), rev);
@@ -1846,7 +1859,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
       await addDoc(collection(db, 'reports'), {
         propertyId: property.id,
         userId: auth.currentUser.uid,
-        reason: reason.trim().slice(0, 1000),
+        reason: reason.trim().slice(0, 999),
         createdAt: new Date().toISOString(),
       });
       alert(isRtl ? 'تم إرسال البلاغ للمراجعة. شكرًا.' : 'Report submitted for review. Thank you.');
@@ -1887,11 +1900,12 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
             )}
             {slides.length > 1 && (
               <>
-                <button onClick={() => setCurrentImageIndex(i => i === 0 ? slides.length - 1 : i - 1)} className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-0 group-hover:opacity-100 z-20">
-                  <ChevronLeft size={20} />
+                {/* Previous: sits on the start edge and points backwards in both directions. */}
+                <button aria-label={isRtl ? 'الصورة السابقة' : 'Previous image'} onClick={() => setCurrentImageIndex(i => i === 0 ? slides.length - 1 : i - 1)} className={`absolute ${isRtl ? 'right-4' : 'left-4'} top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100 z-20`}>
+                  {isRtl ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
                 </button>
-                <button onClick={() => setCurrentImageIndex(i => (i + 1) % slides.length)} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-0 group-hover:opacity-100 z-20">
-                  <ChevronRight size={20} />
+                <button aria-label={isRtl ? 'الصورة التالية' : 'Next image'} onClick={() => setCurrentImageIndex(i => (i + 1) % slides.length)} className={`absolute ${isRtl ? 'left-4' : 'right-4'} top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100 z-20`}>
+                  {isRtl ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
                 </button>
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-20">
                   {slides.map((_, idx) => (
@@ -1987,21 +2001,22 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
             </a>
           </div>
 
-          {/* Real virtual tour (Matterport / Polycam / Kuula …) */}
-          {property.digitalTwinUrl && (
+          {/* Real virtual tour (Matterport / Polycam / Kuula …) — only if the URL is a safe allowlisted https link */}
+          {safeTourUrl(property.digitalTwinUrl) && (
             <div>
               <h3 className="font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><Box size={18} className="text-brand-500" /> {isRtl ? 'الجولة الافتراضية الحقيقية' : 'Real Virtual Tour'}</h3>
               <div className="relative w-full rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-lg bg-slate-100 dark:bg-slate-800" style={{ aspectRatio: '16 / 10' }}>
                 <iframe
-                  src={property.digitalTwinUrl}
+                  src={safeTourUrl(property.digitalTwinUrl)!}
                   title={isRtl ? 'جولة افتراضية' : 'Virtual Tour'}
                   className="absolute inset-0 w-full h-full"
+                  sandbox="allow-scripts allow-same-origin allow-popups"
                   allow="xr-spatial-tracking; gyroscope; accelerometer; fullscreen"
                   allowFullScreen
                   loading="lazy"
                 />
               </div>
-              <a href={property.digitalTwinUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 mt-2 text-sm font-bold text-brand-600 dark:text-brand-400 hover:underline">
+              <a href={safeTourUrl(property.digitalTwinUrl)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 mt-2 text-sm font-bold text-brand-600 dark:text-brand-400 hover:underline">
                 {isRtl ? 'افتح الجولة في نافذة كاملة' : 'Open tour in full window'} <ArrowRight size={14} className={isRtl ? 'rotate-180' : ''} />
               </a>
             </div>
@@ -3258,12 +3273,13 @@ export default function App() {
     setSavedSearches(next);
     localStorage.setItem('hettety_saved_searches', JSON.stringify(next));
   };
-  const applySavedSearch = (s: any) => { setListingSearchQuery(s.q || ''); setMinPrice(s.minPrice ?? ''); setMaxPrice(s.maxPrice ?? ''); setTypeFilter(s.typeFilter || 'all'); setSortBy(s.sortBy || 'default'); };
+  const applySavedSearch = (s: any) => { setListingSearchQuery(s.q || ''); setMinPrice(s.minPrice ?? ''); setMaxPrice(s.maxPrice ?? ''); setTypeFilter(s.typeFilter || 'all'); setSortBy(s.sortBy || 'default'); setAiFilteredIds(null); };
   const removeSavedSearch = (id: string) => { const next = savedSearches.filter(x => x.id !== id); setSavedSearches(next); localStorage.setItem('hettety_saved_searches', JSON.stringify(next)); };
   const subscribeAlert = async () => {
     if (!auth.currentUser) { alert(isRtl ? 'سجّل الدخول عشان تفعّل التنبيهات.' : 'Sign in to enable email alerts.'); return; }
-    const email = auth.currentUser.email || window.prompt(isRtl ? 'إيميلك لاستقبال التنبيهات:' : 'Your email for alerts:') || '';
-    if (!/.+@.+\..+/.test(email)) { alert(isRtl ? 'إيميل غير صحيح.' : 'Invalid email.'); return; }
+    // Must be the account's own verified email (the security rule enforces this).
+    const email = auth.currentUser.email || '';
+    if (!/.+@.+\..+/.test(email)) { alert(isRtl ? 'حسابك ملوش إيميل. سجّل دخول بإيميل عشان تفعّل التنبيهات.' : 'Your account has no email. Sign in with an email to enable alerts.'); return; }
     try {
       await addDoc(collection(db, 'alertSubscriptions'), {
         userId: auth.currentUser.uid,
@@ -4172,6 +4188,7 @@ export default function App() {
           }
           return (
             <PropertyDetailPage
+              key={prop.id}
               property={prop}
               onBack={() => handleNav('listings')}
               onPurchase={(id) => { setPaymentProperty(prop); handleNav('payment'); }}
@@ -4262,25 +4279,27 @@ export default function App() {
                 setProperties(propsData);
                 handleNav('listings');
               } catch (err) {
+                // Re-throw so AddListingPage's own catch keeps the form intact and
+                // never shows the "Published" success screen on a failed save.
                 console.error("Error adding property to Firestore:", err);
-                alert(isRtl
-                  ? 'تعذّر حفظ العقار. تأكد إنك مسجّل دخول ومعاك صلاحية، وحاول تاني.'
-                  : 'Could not save the property. Make sure you are signed in with permission, then try again.');
+                throw err;
               }
             }}
             onAddMany={async (props) => {
+              // Atomic: either every project unit is saved or none — avoids orphan
+              // units and duplicate-on-retry when a partial write fails.
+              const uid = auth.currentUser?.uid || 'anonymous';
+              const batch = writeBatch(db);
+              props.forEach(p => batch.set(doc(collection(db, 'properties')), { ...p, authorUid: uid }));
               try {
-                const uid = auth.currentUser?.uid || 'anonymous';
-                await Promise.all(props.map(p => addDoc(collection(db, 'properties'), { ...p, authorUid: uid })));
+                await batch.commit();
                 const querySnapshot = await getDocs(collection(db, 'properties'));
-                const propsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Property[];
+                const propsData = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Property[];
                 setProperties(propsData);
                 handleNav('listings');
               } catch (err) {
                 console.error("Error adding project units to Firestore:", err);
-                alert(isRtl
-                  ? 'تعذّر حفظ وحدات المشروع. تأكد إنك مسجّل دخول ومعاك صلاحية، وحاول تاني.'
-                  : 'Could not save the project units. Make sure you are signed in with permission, then try again.');
+                throw err;
               }
             }}
             t={t}
