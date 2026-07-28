@@ -366,6 +366,7 @@ const PropertyCard: React.FC<{
         </span>
       </div>
       <div className="flex items-center gap-2 mb-3 flex-wrap">
+        {property.yallaSahel && <span className="text-[10px] font-bold bg-cyan-50 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 px-2 py-0.5 rounded">🌊 {isRtl ? 'يلا ساحل' : 'Yalla Sahel'}</span>}
         {property.propertyType && <span className="text-[10px] font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-2 py-0.5 rounded">{property.propertyType}</span>}
         <span className="flex items-center text-slate-500 dark:text-slate-400 text-sm"><MapPin size={14} className={isRtl ? "ml-1" : "mr-1"} /> {property.location}</span>
       </div>
@@ -3303,6 +3304,9 @@ export default function App() {
   const [showCompare, setShowCompare] = useState(false);
   const [sahelVillage, setSahelVillage] = useState('all');
   const [sahelGuests, setSahelGuests] = useState(0);
+  // When true, the Add Listing form opens with the "Yalla Sahel" toggle pre-checked
+  // (set by the CTAs on the Yalla Sahel page).
+  const [prefillSahel, setPrefillSahel] = useState(false);
   const toggleCompare = (id: string) => setCompareIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : (prev.length >= 4 ? prev : [...prev, id]));
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
@@ -4101,7 +4105,9 @@ export default function App() {
 
         {currentPage === 'yalla-sahel' && (() => {
           const coastalKeywords = /ساحل|sahel|north coast|الساحل|مارينا|marina|marassi|مراسي|راس الحكمة|ras el|hacienda|هاسيندا|العلمين|alamein|بورتو|porto|جايا|جاردينيا|سيدي عبد|فوكا|fouka/i;
-          const allSahel = properties.filter(p => p.propertyType === 'Chalet' || coastalKeywords.test(p.location || '') || coastalKeywords.test(p.compound || '') || !!p.village);
+          // Explicitly flagged units always belong here; the keyword/type heuristics
+          // just catch coastal listings added before the flag existed.
+          const allSahel = properties.filter(p => p.yallaSahel === true || p.propertyType === 'Chalet' || coastalKeywords.test(p.location || '') || coastalKeywords.test(p.compound || '') || !!p.village);
           const villages = Array.from(new Set(allSahel.map(p => p.village).filter(Boolean))) as string[];
           const sahelUnits = allSahel.filter(p =>
             (sahelVillage === 'all' || p.village === sahelVillage) &&
@@ -4118,7 +4124,7 @@ export default function App() {
                   <p className="text-white/80 max-w-2xl mx-auto mb-8">{isRtl ? 'لا نصب، لا صور مخدوعة. معاينة حقيقية، حجز أسرع، وثقة كاملة.' : 'No scams, no misleading photos. Real 3D preview, faster booking, full trust.'}</p>
                   <div className="flex flex-wrap gap-3 justify-center">
                     <button onClick={() => document.getElementById('sahel-units')?.scrollIntoView({ behavior: 'smooth' })} className="bg-white text-brand-700 font-black px-8 py-3.5 rounded-full shadow-lg hover:scale-105 transition-transform">{isRtl ? 'شوف الشاليهات المتاحة' : 'Browse chalets'}</button>
-                    <button onClick={() => handleNav('add-listing')} className="bg-white/20 backdrop-blur border border-white/40 text-white font-bold px-8 py-3.5 rounded-full hover:bg-white/30 transition-colors">{isRtl ? 'عندك شاليه؟ أجّره معانا' : 'List your chalet'}</button>
+                    <button onClick={() => { setPrefillSahel(true); handleNav('add-listing'); }} className="bg-white/20 backdrop-blur border border-white/40 text-white font-bold px-8 py-3.5 rounded-full hover:bg-white/30 transition-colors">{isRtl ? 'عندك شاليه؟ أجّره معانا' : 'List your chalet'}</button>
                   </div>
                 </div>
               </div>
@@ -4155,7 +4161,7 @@ export default function App() {
                   <div className="text-center py-16 text-slate-400">
                     <div className="text-5xl mb-3">🏖️</div>
                     <p className="font-bold">{isRtl ? 'مفيش شاليهات مضافة لسه — كن أول مالك!' : 'No chalets yet — be the first owner!'}</p>
-                    <button onClick={() => handleNav('add-listing')} className="mt-4 bg-brand-600 text-white px-6 py-2.5 rounded-full font-bold">{isRtl ? 'أضف شاليهك' : 'Add your chalet'}</button>
+                    <button onClick={() => { setPrefillSahel(true); handleNav('add-listing'); }} className="mt-4 bg-brand-600 text-white px-6 py-2.5 rounded-full font-bold">{isRtl ? 'أضف شاليهك' : 'Add your chalet'}</button>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -4261,9 +4267,10 @@ export default function App() {
           />
         )}
         {currentPage === 'add-listing' && (
-          <AddListingPage 
+          <AddListingPage
             isAdmin={isAdmin}
             isSuperAdmin={isSuperAdmin}
+            defaultYallaSahel={prefillSahel}
             onAdd={async (prop) => {
               try {
                 await addDoc(collection(db, 'properties'), {

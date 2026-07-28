@@ -146,14 +146,14 @@ const isLikelyTourUrl = (raw: string) => {
   } catch { return false; }
 };
 
-export const AddListingPage = ({ onAdd, onAddMany, t, isRtl, isAdmin, isSuperAdmin }: { onAdd: (prop: Omit<Property, 'id'>) => Promise<void>, onAddMany?: (props: Omit<Property, 'id'>[]) => Promise<void>, t: any, isRtl: boolean, isAdmin: boolean, isSuperAdmin: boolean }) => {
+export const AddListingPage = ({ onAdd, onAddMany, t, isRtl, isAdmin, isSuperAdmin, defaultYallaSahel = false }: { onAdd: (prop: Omit<Property, 'id'>) => Promise<void>, onAddMany?: (props: Omit<Property, 'id'>[]) => Promise<void>, t: any, isRtl: boolean, isAdmin: boolean, isSuperAdmin: boolean, defaultYallaSahel?: boolean }) => {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '', areaTo: '',
     currency: 'EGP' as 'EGP' | 'USD',
     pricePeriod: 'total' as 'total' | 'night' | 'week' | 'month',
-    guests: '', village: '',
-    propertyType: 'Apartment', contactPhone: '',
+    guests: '', village: '', yallaSahel: defaultYallaSahel,
+    propertyType: defaultYallaSahel ? 'Chalet' : 'Apartment', contactPhone: '',
     compound: '', developer: '', deliveryDate: '', finishing: '', floor: '', view: '', furnished: false,
     imageUrl: '', videoUrl: '', digitalTwinUrl: '', status: 'For Sale',
     availability: 'Available' as 'Available' | 'Sold' | 'Reserved',
@@ -612,6 +612,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
     if (formData.pricePeriod !== 'total') newProperty.pricePeriod = formData.pricePeriod;
     if (formData.guests && Number(formData.guests) > 0) newProperty.guests = Number(formData.guests);
     if (formData.village.trim()) newProperty.village = formData.village.trim();
+    if (formData.yallaSahel) newProperty.yallaSahel = true;
     if (amenities.length) newProperty.amenities = amenities;
     const cleanPlans = paymentPlans
       .filter(p => p.downPayment || p.years || p.note.trim())
@@ -642,8 +643,9 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
       setFormData({
         title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '', areaTo: '',
         currency: 'EGP',
-        pricePeriod: 'total', guests: '', village: '',
-        propertyType: 'Apartment', contactPhone: '',
+        // Keep the Yalla Sahel mode so an owner can add several chalets in a row.
+        pricePeriod: 'total', guests: '', village: '', yallaSahel: formData.yallaSahel,
+        propertyType: formData.yallaSahel ? 'Chalet' : 'Apartment', contactPhone: '',
         compound: '', developer: '', deliveryDate: '', finishing: '', floor: '', view: '', furnished: false,
         imageUrl: '', videoUrl: '', digitalTwinUrl: '', status: 'For Sale',
         availability: 'Available',
@@ -737,6 +739,26 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                       </label>
                     </div>
                   </div>
+                </div>
+
+                {/* Explicit destination: regular listing vs the Yalla Sahel coastal programme */}
+                <div className={`rounded-2xl border p-4 transition-colors ${formData.yallaSahel ? 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-300 dark:border-cyan-700' : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700'}`}>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.yallaSahel}
+                      onChange={e => setFormData({ ...formData, yallaSahel: e.target.checked, propertyType: e.target.checked && formData.propertyType === 'Apartment' ? 'Chalet' : formData.propertyType })}
+                      className="w-5 h-5 mt-0.5 rounded text-cyan-600 focus:ring-cyan-500 border-slate-300 shrink-0"
+                    />
+                    <span>
+                      <span className="block font-bold text-slate-900 dark:text-white">🌊 {isRtl ? 'أضف العقار لـ «يلا ساحل»' : 'List this under “Yalla Sahel”'}</span>
+                      <span className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        {isRtl
+                          ? 'للشاليهات ووحدات الساحل — هيظهر في صفحة «يلا ساحل» بجانب العقارات العادية. سيب الخانة فاضية للعقارات العادية.'
+                          : 'For coastal chalets & summer rentals — it will appear on the Yalla Sahel page as well as in normal listings. Leave unchecked for regular properties.'}
+                      </span>
+                    </span>
+                  </label>
                 </div>
 
                 <div className="grid md:grid-cols-2 gap-6">

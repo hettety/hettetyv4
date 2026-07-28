@@ -25,6 +25,7 @@ export interface Property {
   pricePeriod?: 'total' | 'night' | 'week' | 'month'; // How the price is quoted (rentals)
   guests?: number;         // Max guests the unit sleeps (coastal rentals)
   village?: string;        // Coastal village / resort (Marassi, Hacienda, Marina ...)
+  yallaSahel?: boolean;    // Explicitly listed under the "Yalla Sahel" coastal programme
   lat?: number;            // Optional geolocation for the map
   lng?: number;
   imageUrl: string;
