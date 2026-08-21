@@ -15,6 +15,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { X, ChevronLeft, ChevronRight, Box, RotateCcw, Move3d, Layers } from 'lucide-react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 /** Loads a texture imperatively so a failed image degrades gracefully instead of crashing the canvas. */
 function useImageTexture(url: string) {
@@ -117,7 +118,7 @@ const PanoramaSphere = ({ url }: { url: string }) => {
 
 const PanoramaScene = ({ url }: { url: string }) => {
   const { camera } = useThree();
-  useEffect(() => { camera.position.set(0, 0, 0.1); }, [url, camera]);
+  useEffect(() => { camera?.position?.set?.(0, 0, 0.1); }, [url, camera]);
   return (
     <>
       <PanoramaSphere key={url} url={url} />
@@ -129,7 +130,7 @@ const PanoramaScene = ({ url }: { url: string }) => {
 const Scene = ({ url, autoRotate }: { url: string; autoRotate: boolean }) => {
   const { camera } = useThree();
   useEffect(() => {
-    camera.position.set(0, 0, 4);
+    camera?.position?.set?.(0, 0, 4);
   }, [url, camera]);
 
   return (
@@ -171,6 +172,8 @@ const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, panoramas, 
   const [index, setIndex] = useState(0);
   const [autoRotate, setAutoRotate] = useState(true);
 
+  const containerRef = useFocusTrap<HTMLDivElement>(true, onClose);
+
   const next = () => { setIndex((i) => (i + 1) % list.length); setAutoRotate(true); };
   const prev = () => { setIndex((i) => (i === 0 ? list.length - 1 : i - 1)); setAutoRotate(true); };
 
@@ -178,7 +181,6 @@ const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, panoramas, 
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
       if (e.key === 'ArrowRight') next();
       if (e.key === 'ArrowLeft') prev();
     };
@@ -189,10 +191,24 @@ const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, panoramas, 
 
   if (validImages.length === 0 && validPanoramas.length === 0) {
     return (
-      <div className="fixed inset-0 z-[70] bg-black flex flex-col items-center justify-center text-center p-6">
-        <Box className="w-16 h-16 text-brand-500 mb-4 opacity-50" />
-        <p className="text-slate-300 mb-6">{isRtl ? 'لا توجد صور متاحة لهذا العقار لعرضها بتقنية ثلاثية الأبعاد.' : 'No images are available for this property to display in 3D.'}</p>
-        <button onClick={onClose} className="bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-full border border-white/20 transition-colors cursor-pointer">
+      <div
+        ref={containerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={isRtl ? 'عرض العقار ثلاثي الأبعاد' : '3D Property Tour Viewer'}
+        className="fixed inset-0 z-[70] bg-black flex flex-col items-center justify-center text-center p-6"
+        dir={isRtl ? 'rtl' : 'ltr'}
+      >
+        <Box className="w-16 h-16 text-brand-500 mb-4 opacity-50" aria-hidden="true" />
+        <p className="text-slate-300 mb-6">
+          {isRtl ? 'لا توجد صور متاحة لهذا العقار لعرضها بتقنية ثلاثية الأبعاد.' : 'No images are available for this property to display in 3D.'}
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={isRtl ? 'رجوع وإغلاق المعاينة' : 'Back and close viewer'}
+          className="min-w-[48px] min-h-[48px] bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-full border border-white/20 transition-colors cursor-pointer flex items-center justify-center font-medium focus:outline-none focus:ring-2 focus:ring-brand-400"
+        >
           {isRtl ? 'رجوع' : 'Back'}
         </button>
       </div>
@@ -200,24 +216,57 @@ const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, panoramas, 
   }
 
   return (
-    <div className="fixed inset-0 z-[70] bg-black flex flex-col animate-fade-in" dir="ltr">
+    <div
+      ref={containerRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={isRtl ? 'عرض العقار ثلاثي الأبعاد' : '3D Property Tour Viewer'}
+      className="fixed inset-0 z-[70] bg-black flex flex-col animate-fade-in"
+      dir={isRtl ? 'rtl' : 'ltr'}
+    >
       {/* Toolbar */}
-      <div className="absolute top-0 w-full p-4 flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none">
+      <div className="absolute top-0 w-full p-4 landscape:p-2 flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none">
         <div className="text-white pointer-events-auto">
-          <h3 className="font-bold text-lg flex items-center gap-2"><Box size={20} className="text-accent-500" /> {mode === 'pano' ? (isRtl ? 'جولة 360°' : '360° Tour') : (isRtl ? 'عرض ثلاثي الأبعاد' : '3D Depth View')}</h3>
-          {title && <p className="text-sm text-white/70">{title}</p>}
+          <h3 className="font-bold text-base sm:text-lg flex items-center gap-2">
+            <Box size={20} className="text-accent-500" aria-hidden="true" />
+            {mode === 'pano' ? (isRtl ? 'جولة 360°' : '360° Tour') : (isRtl ? 'عرض ثلاثي الأبعاد' : '3D Depth View')}
+          </h3>
+          {title && <p className="text-xs sm:text-sm text-white/80">{title}</p>}
         </div>
-        <button onClick={onClose} aria-label="Close 3D viewer" className="pointer-events-auto bg-white/10 hover:bg-white/20 p-2 rounded-full text-white backdrop-blur cursor-pointer transition-colors"><X /></button>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={isRtl ? 'إغلاق العرض ثلاثي الأبعاد' : 'Close 3D viewer'}
+          className="pointer-events-auto min-w-[48px] min-h-[48px] bg-white/10 hover:bg-white/20 p-3 rounded-full text-white backdrop-blur cursor-pointer transition-colors flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-brand-400"
+        >
+          <X size={22} aria-hidden="true" />
+        </button>
       </div>
 
       {/* Mode switch (only when both panoramas and photos exist) */}
       {validPanoramas.length > 0 && validImages.length > 0 && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-10 flex bg-white/10 backdrop-blur border border-white/20 rounded-full p-1">
-          <button onClick={() => switchMode('pano')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors flex items-center gap-1.5 ${mode === 'pano' ? 'bg-brand-600 text-white' : 'text-white/70 hover:text-white'}`}>
-            <Box size={13} /> {isRtl ? 'جولة 360°' : '360° Tour'}
+        <div className="absolute top-20 landscape:top-14 left-1/2 -translate-x-1/2 z-10 flex bg-white/10 backdrop-blur border border-white/20 rounded-full p-1 shadow-lg">
+          <button
+            type="button"
+            onClick={() => switchMode('pano')}
+            aria-pressed={mode === 'pano'}
+            aria-label={isRtl ? 'التبديل إلى جولة 360°' : 'Switch to 360° Tour'}
+            className={`min-h-[40px] px-4 py-2 rounded-full text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-400 ${
+              mode === 'pano' ? 'bg-brand-600 text-white' : 'text-white/80 hover:text-white'
+            }`}
+          >
+            <Box size={14} aria-hidden="true" /> {isRtl ? 'جولة 360°' : '360° Tour'}
           </button>
-          <button onClick={() => switchMode('depth')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors flex items-center gap-1.5 ${mode === 'depth' ? 'bg-brand-600 text-white' : 'text-white/70 hover:text-white'}`}>
-            <Layers size={13} /> {isRtl ? 'صور بعمق' : 'Depth Photos'}
+          <button
+            type="button"
+            onClick={() => switchMode('depth')}
+            aria-pressed={mode === 'depth'}
+            aria-label={isRtl ? 'التبديل إلى صور بعمق' : 'Switch to Depth Photos'}
+            className={`min-h-[40px] px-4 py-2 rounded-full text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-400 ${
+              mode === 'depth' ? 'bg-brand-600 text-white' : 'text-white/80 hover:text-white'
+            }`}
+          >
+            <Layers size={14} aria-hidden="true" /> {isRtl ? 'صور بعمق' : 'Depth Photos'}
           </button>
         </div>
       )}
@@ -242,34 +291,51 @@ const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, panoramas, 
       )}
 
       {/* Bottom controls */}
-      <div className="absolute bottom-0 w-full p-6 flex items-center justify-center gap-4 bg-gradient-to-t from-black/80 to-transparent z-10">
+      <div className="absolute bottom-0 w-full p-4 sm:p-6 landscape:p-2 flex items-center justify-center gap-4 bg-gradient-to-t from-black/80 to-transparent z-10">
         {list.length > 1 && (
-          <button onClick={prev} aria-label="Previous" className="bg-white/10 hover:bg-white/25 p-3 rounded-full text-white backdrop-blur border border-white/20 transition-colors cursor-pointer">
-            <ChevronLeft size={22} />
+          <button
+            type="button"
+            onClick={prev}
+            aria-label={isRtl ? 'الصورة السابقة' : 'Previous image'}
+            className="min-w-[48px] min-h-[48px] bg-white/10 hover:bg-white/25 p-3 rounded-full text-white backdrop-blur border border-white/20 transition-colors cursor-pointer flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-brand-400"
+          >
+            <ChevronLeft size={22} aria-hidden="true" />
           </button>
         )}
-        <div className="text-white/80 text-sm font-bold tracking-widest min-w-[64px] text-center select-none">
+        <div className="text-white text-sm font-bold tracking-widest min-w-[64px] text-center select-none" aria-live="polite">
           {index + 1} / {list.length}
         </div>
         {list.length > 1 && (
-          <button onClick={next} aria-label="Next" className="bg-white/10 hover:bg-white/25 p-3 rounded-full text-white backdrop-blur border border-white/20 transition-colors cursor-pointer">
-            <ChevronRight size={22} />
+          <button
+            type="button"
+            onClick={next}
+            aria-label={isRtl ? 'الصورة التالية' : 'Next image'}
+            className="min-w-[48px] min-h-[48px] bg-white/10 hover:bg-white/25 p-3 rounded-full text-white backdrop-blur border border-white/20 transition-colors cursor-pointer flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-brand-400"
+          >
+            <ChevronRight size={22} aria-hidden="true" />
           </button>
         )}
         {mode === 'depth' && (
           <button
+            type="button"
             onClick={() => setAutoRotate((a) => !a)}
-            aria-label="Toggle auto-rotate"
-            className={`p-3 rounded-full backdrop-blur border transition-colors cursor-pointer ${autoRotate ? 'bg-brand-600 border-brand-500 text-white' : 'bg-white/10 hover:bg-white/25 border-white/20 text-white'}`}
+            aria-label={isRtl ? 'تبديل التدوير التلقائي' : 'Toggle auto-rotate'}
+            aria-pressed={autoRotate}
+            className={`min-w-[48px] min-h-[48px] p-3 rounded-full backdrop-blur border transition-colors cursor-pointer flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-brand-400 ${
+              autoRotate ? 'bg-brand-600 border-brand-500 text-white' : 'bg-white/10 hover:bg-white/25 border-white/20 text-white'
+            }`}
           >
-            <RotateCcw size={20} />
+            <RotateCcw size={20} aria-hidden="true" />
           </button>
         )}
       </div>
-      <p className="absolute bottom-24 w-full text-center text-white/40 text-xs pointer-events-none select-none flex items-center justify-center gap-2">
-        <Move3d size={14} /> {mode === 'pano'
-          ? (isRtl ? 'اسحب للف داخل الغرفة 360° • عجلة الفأرة للتقريب' : 'Drag to look around 360° • Scroll to zoom')
-          : (isRtl ? 'اسحب لرؤية الصورة من زوايا مختلفة • عجلة الفأرة للتقريب' : 'Drag to view from different angles • Scroll to zoom')}
+      <p className="absolute bottom-24 landscape:bottom-14 w-full text-center text-white/80 text-xs pointer-events-none select-none flex items-center justify-center gap-2 px-4">
+        <Move3d size={14} aria-hidden="true" />
+        <span>
+          {mode === 'pano'
+            ? (isRtl ? 'اسحب للالتفاف 360° داخل الغرفة • عجلة الفأرة للتقريب' : 'Drag to look around 360° • Scroll to zoom')
+            : (isRtl ? 'اسحب لرؤية الصورة من زوايا مختلفة • عجلة الفأرة للتقريب' : 'Drag to view from different angles • Scroll to zoom')}
+        </span>
       </p>
     </div>
   );

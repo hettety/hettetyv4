@@ -19,7 +19,7 @@ export default defineConfig(({ mode }) => {
           // manualChunks makes Vite modulepreload it on first paint (~300KB
           // gzip). It is code-split naturally via the lazy Property3DViewer.
           manualChunks: {
-            vendor: ['react', 'react-dom', 'framer-motion', 'lucide-react'],
+            vendor: ['react', 'react-dom', 'motion', 'lucide-react'],
             firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/storage'],
             ai: ['@google/genai']
           }

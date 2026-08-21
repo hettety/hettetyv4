@@ -80,13 +80,85 @@
   background: #cbd5e1;
 }
 
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
 /* Hide scrollbar for Chrome, Safari and Opera */
 .no-scrollbar::-webkit-scrollbar {
-    display: none;
+  display: none;
 }
 
 /* Hide scrollbar for IE, Edge and Firefox */
 .no-scrollbar {
-    -ms-overflow-style: none;  /* IE and Edge */
-    scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
 }
+
+/* ==========================================================================
+   Arabic Typography & Ligature Protection
+   In Arabic script, cursive ligatures connect letters. Positive or negative
+   letter-spacing (tracking) fractures connected glyphs. These rules ensure
+   Cairo font and normal letter-spacing in all RTL and Arabic contexts.
+   ========================================================================== */
+
+[dir="rtl"],
+[lang="ar"],
+:lang(ar),
+.rtl {
+  font-family: var(--font-cairo), system-ui, -apple-system, sans-serif;
+  letter-spacing: normal !important;
+}
+
+[dir="rtl"] h1,
+[dir="rtl"] h2,
+[dir="rtl"] h3,
+[dir="rtl"] h4,
+[dir="rtl"] h5,
+[dir="rtl"] h6,
+[lang="ar"] h1,
+[lang="ar"] h2,
+[lang="ar"] h3,
+[lang="ar"] h4,
+[lang="ar"] h5,
+[lang="ar"] h6 {
+  font-family: var(--font-cairo), system-ui, -apple-system, sans-serif;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+}
+
+[dir="rtl"] .tracking-widest,
+[dir="rtl"] .tracking-wider,
+[dir="rtl"] .tracking-wide,
+[dir="rtl"] .tracking-tight,
+[dir="rtl"] .tracking-tighter,
+[lang="ar"] .tracking-widest,
+[lang="ar"] .tracking-wider,
+[lang="ar"] .tracking-wide,
+[lang="ar"] .tracking-tight,
+[lang="ar"] .tracking-tighter {
+  letter-spacing: normal !important;
+}
+
+[dir="rtl"] .uppercase,
+[lang="ar"] .uppercase {
+  text-transform: none !important;
+}
+
+/* Glassmorphism & UI helpers */
+.glass-pill {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.dark .glass-pill {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+

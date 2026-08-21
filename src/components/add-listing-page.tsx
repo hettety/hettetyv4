@@ -690,13 +690,13 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
 
   const labelCls = "block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2";
   const inputCls = "w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white";
-  const selectCls = inputCls + " appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-[right_0.75rem_center] bg-no-repeat";
+  const selectCls = inputCls + " appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] rtl:bg-[left_0.75rem_center] ltr:bg-[right_0.75rem_center] rtl:ps-4 rtl:pe-10 ltr:ps-4 ltr:pe-10 bg-no-repeat";
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12 animate-fade-in transition-colors duration-500">
       <div className="flex items-center gap-4 mb-8">
         <div className="w-12 h-12 bg-slate-900 dark:bg-black rounded-xl flex items-center justify-center shadow-lg">
-          <PlusCircle className="text-accent-500" size={24} />
+          <PlusCircle className="text-accent-500" size={24} aria-hidden="true" />
         </div>
         <div>
           <h1 className="text-3xl font-heading font-black text-slate-900 dark:text-white tracking-tight">{isRtl ? 'إضافة عقار جديد' : 'Add New Listing'}</h1>
@@ -704,14 +704,28 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
         </div>
       </div>
 
-      <div className="mb-8 flex flex-col md:flex-row gap-4 justify-between relative">
+      <div className="mb-8 flex flex-col md:flex-row gap-4 justify-between relative" role="tablist" aria-label={isRtl ? 'خطوات إضافة العقار' : 'Listing creation steps'}>
          <div className="absolute top-1/2 left-0 w-full h-1 bg-slate-200 dark:bg-slate-800 -z-10 hidden md:block rounded-full"></div>
-         <div className="absolute top-1/2 left-0 h-1 bg-brand-500 transition-all duration-500 -z-10 hidden md:block rounded-full" style={{ width: `${(step - 1) * 50}%`}}></div>
+         <div className={`absolute top-1/2 ${isRtl ? 'right-0' : 'left-0'} h-1 bg-brand-500 transition-all duration-500 -z-10 hidden md:block rounded-full`} style={{ width: `${(step - 1) * 50}%`}}></div>
          {steps.map(s => (
-             <div key={s.id} onClick={() => goToStep(s.id)} className={`flex items-center gap-3 px-6 py-3 rounded-full cursor-pointer transition-all ${step === s.id ? 'bg-brand-600 text-white shadow-lg scale-105' : step > s.id ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
-                 <s.icon size={18} />
+             <div
+               key={s.id}
+               role="tab"
+               tabIndex={0}
+               aria-selected={step === s.id}
+               aria-label={s.title}
+               onClick={() => goToStep(s.id)}
+               onKeyDown={(e) => {
+                 if (e.key === 'Enter' || e.key === ' ') {
+                   e.preventDefault();
+                   goToStep(s.id);
+                 }
+               }}
+               className={`flex items-center gap-3 px-6 py-3 rounded-full cursor-pointer transition-all focus:ring-2 focus:ring-brand-500 outline-none ${step === s.id ? 'bg-brand-600 text-white shadow-lg scale-105' : step > s.id ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}
+             >
+                 <s.icon size={18} aria-hidden="true" />
                  <span className="font-bold text-sm">{s.title}</span>
-                 {step > s.id && <CheckCircle size={16} className="ml-2" />}
+                 {step > s.id && <CheckCircle size={16} className={isRtl ? 'mr-2' : 'ml-2'} aria-hidden="true" />}
              </div>
          ))}
       </div>
@@ -814,18 +828,18 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                     </div>
                     <div className="space-y-2">
                       {unitVariants.map((v, i) => (
-                        <div key={i} className="grid grid-cols-2 md:grid-cols-6 gap-2 items-center bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
-                          <input value={v.title} onChange={e => setUnitVariants(prev => prev.map((x, idx) => idx === i ? { ...x, title: e.target.value } : x))} placeholder={isRtl ? 'الاسم' : 'Label'} className="px-2 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white" />
-                          <select value={v.propertyType} onChange={e => setUnitVariants(prev => prev.map((x, idx) => idx === i ? { ...x, propertyType: e.target.value } : x))} className="px-2 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white">
+                        <div key={i} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2 items-center bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                          <input value={v.title} onChange={e => setUnitVariants(prev => prev.map((x, idx) => idx === i ? { ...x, title: e.target.value } : x))} placeholder={isRtl ? 'الاسم' : 'Label'} aria-label={isRtl ? `اسم النموذج ${i + 1}` : `Unit label ${i + 1}`} className="px-2 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white" />
+                          <select value={v.propertyType} onChange={e => setUnitVariants(prev => prev.map((x, idx) => idx === i ? { ...x, propertyType: e.target.value } : x))} aria-label={isRtl ? `نوع العقار ${i + 1}` : `Property type ${i + 1}`} className="px-2 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white">
                             {PROPERTY_TYPES.map(o => <option key={o.value} value={o.value}>{isRtl ? o.ar : o.en}</option>)}
                           </select>
-                          <input type="number" value={v.bedrooms} onChange={e => setUnitVariants(prev => prev.map((x, idx) => idx === i ? { ...x, bedrooms: e.target.value } : x))} placeholder={isRtl ? 'غرف' : 'Beds'} className="px-2 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white" />
+                          <input type="number" value={v.bedrooms} onChange={e => setUnitVariants(prev => prev.map((x, idx) => idx === i ? { ...x, bedrooms: e.target.value } : x))} placeholder={isRtl ? 'غرف' : 'Beds'} aria-label={isRtl ? `عدد الغرف ${i + 1}` : `Bedrooms ${i + 1}`} className="px-2 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white" />
                           <div className="flex gap-1">
-                            <input type="number" value={v.area} onChange={e => setUnitVariants(prev => prev.map((x, idx) => idx === i ? { ...x, area: e.target.value } : x))} placeholder={isRtl ? 'م²' : 'm²'} className="w-full min-w-0 px-2 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white" />
-                            <input type="number" value={v.areaTo} onChange={e => setUnitVariants(prev => prev.map((x, idx) => idx === i ? { ...x, areaTo: e.target.value } : x))} placeholder={isRtl ? 'إلى' : 'to'} className="w-full min-w-0 px-2 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white" />
+                            <input type="number" value={v.area} onChange={e => setUnitVariants(prev => prev.map((x, idx) => idx === i ? { ...x, area: e.target.value } : x))} placeholder={isRtl ? 'م²' : 'm²'} aria-label={isRtl ? `المساحة من ${i + 1}` : `Area from ${i + 1}`} className="w-full min-w-0 px-2 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white" />
+                            <input type="number" value={v.areaTo} onChange={e => setUnitVariants(prev => prev.map((x, idx) => idx === i ? { ...x, areaTo: e.target.value } : x))} placeholder={isRtl ? 'إلى' : 'to'} aria-label={isRtl ? `المساحة إلى ${i + 1}` : `Area to ${i + 1}`} className="w-full min-w-0 px-2 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white" />
                           </div>
-                          <input type="text" inputMode="numeric" value={v.price} onChange={e => setUnitVariants(prev => prev.map((x, idx) => idx === i ? { ...x, price: toLatinDigits(e.target.value).replace(/[^0-9]/g, '') } : x))} placeholder={isRtl ? 'السعر' : 'Price'} className="px-2 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white" />
-                          <button type="button" onClick={() => setUnitVariants(prev => prev.filter((_, idx) => idx !== i))} className="text-red-500 hover:text-red-600 justify-self-end p-1"><X size={16} /></button>
+                          <input type="text" inputMode="numeric" value={v.price} onChange={e => setUnitVariants(prev => prev.map((x, idx) => idx === i ? { ...x, price: toLatinDigits(e.target.value).replace(/[^0-9]/g, '') } : x))} placeholder={isRtl ? 'السعر' : 'Price'} aria-label={isRtl ? `السعر ${i + 1}` : `Price ${i + 1}`} className="px-2 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white" />
+                          <button type="button" onClick={() => setUnitVariants(prev => prev.filter((_, idx) => idx !== i))} aria-label={isRtl ? `حذف النموذج ${i + 1}` : `Delete unit variant ${i + 1}`} className="text-red-500 hover:text-red-600 justify-self-end p-2 min-w-[36px] min-h-[36px] flex items-center justify-center cursor-pointer"><X size={16} aria-hidden="true" /></button>
                         </div>
                       ))}
                     </div>
@@ -835,14 +849,14 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                 <div className="grid md:grid-cols-2 gap-6">
                     <div>
                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'الحالة' : 'Status'}</label>
-                       <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-[right_0.75rem_center] bg-no-repeat text-slate-900 dark:text-white">
+                       <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className={selectCls}>
                          <option value="For Sale">{isRtl ? 'للبيع' : 'For Sale'}</option>
                          <option value="For Rent">{isRtl ? 'للإيجار' : 'For Rent'}</option>
                        </select>
                     </div>
                     <div>
                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'حالة التوفر' : 'Availability'}</label>
-                       <select value={formData.availability} onChange={e => setFormData({...formData, availability: e.target.value as 'Available' | 'Sold' | 'Reserved'})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-[right_0.75rem_center] bg-no-repeat text-slate-900 dark:text-white">
+                       <select value={formData.availability} onChange={e => setFormData({...formData, availability: e.target.value as 'Available' | 'Sold' | 'Reserved'})} className={selectCls}>
                          <option value="Available">{isRtl ? 'متاح' : 'Available'}</option>
                          <option value="Reserved">{isRtl ? 'محجوز' : 'Reserved'}</option>
                          <option value="Sold">{formData.status === 'For Rent' ? (isRtl ? 'مؤجَّر' : 'Rented') : (isRtl ? 'مباع' : 'Sold')}</option>
@@ -972,7 +986,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                             <span className="text-sm text-slate-500">{isRtl ? 'سنة' : 'yrs'}</span>
                           </div>
                           <input value={pl.note} onChange={e => setPaymentPlans(prev => prev.map((p, idx) => idx === i ? { ...p, note: e.target.value } : p))} className="flex-1 min-w-[120px] px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm" placeholder={isRtl ? 'ملاحظة (مثال: خصم 10%)' : 'note (e.g. 10% discount)'} />
-                          <button type="button" onClick={() => setPaymentPlans(prev => prev.filter((_, idx) => idx !== i))} className="text-red-500 hover:text-red-600 p-1"><X size={16} /></button>
+                          <button type="button" onClick={() => setPaymentPlans(prev => prev.filter((_, idx) => idx !== i))} aria-label={isRtl ? `حذف خطة الدفع ${i + 1}` : `Delete payment plan ${i + 1}`} className="text-red-500 hover:text-red-600 p-2 min-w-[36px] min-h-[36px] flex items-center justify-center cursor-pointer"><X size={16} aria-hidden="true" /></button>
                         </div>
                       ))}
                     </div>
@@ -1030,9 +1044,8 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                                       if (formData.imageUrl === removed) {
                                         setFormData(prev => ({ ...prev, imageUrl: next[0] || '' }));
                                       }
-                                  }} className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-600">
-                                      <X size={12} />
-                                      <span className="sr-only">Delete</span>
+                                  }} aria-label={isRtl ? `حذف الصورة ${i + 1}` : `Delete image ${i + 1}`} className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity shadow-md hover:bg-red-600 min-w-[32px] min-h-[32px] flex items-center justify-center cursor-pointer">
+                                      <X size={14} aria-hidden="true" />
                                   </button>
                                   {i === 0 ? (
                                     <span className="absolute bottom-2 left-2 bg-brand-600 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded shadow">{isRtl ? 'الرئيسية' : 'Main'}</span>
@@ -1115,8 +1128,8 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                         <div key={i} className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 group">
                           <img src={img} className="w-full h-full object-cover" alt="Panorama" />
                           <span className="absolute top-1.5 left-1.5 bg-brand-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded">360°</span>
-                          <button onClick={() => setPanoramas(panoramas.filter((_, idx) => idx !== i))} className="absolute top-1.5 right-1.5 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600">
-                            <X size={11} />
+                          <button onClick={() => setPanoramas(panoramas.filter((_, idx) => idx !== i))} aria-label={isRtl ? `حذف صورة 360 رقم ${i + 1}` : `Delete 360 photo ${i + 1}`} className="absolute top-1.5 right-1.5 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity hover:bg-red-600 cursor-pointer">
+                            <X size={14} aria-hidden="true" />
                           </button>
                         </div>
                       ))}
@@ -1177,7 +1190,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                        {legalDocs.map((_, i) => (
                          <span key={i} className="inline-flex items-center gap-2 bg-white dark:bg-slate-800 border border-orange-200 dark:border-orange-500/30 text-orange-700 dark:text-orange-300 text-xs font-bold px-3 py-1.5 rounded-lg">
                            <FileText size={14} /> {isRtl ? `مستند ${i + 1}` : `Document ${i + 1}`}
-                           <button onClick={() => setLegalDocs(prev => prev.filter((_, idx) => idx !== i))} className="hover:text-red-600"><X size={12} /></button>
+                            <button onClick={() => setLegalDocs(prev => prev.filter((_, idx) => idx !== i))} aria-label={isRtl ? `حذف المستند ${i + 1}` : `Delete document ${i + 1}`} className="hover:text-red-600 p-1 focus:outline-none focus:ring-2 focus:ring-red-400 rounded cursor-pointer"><X size={14} aria-hidden="true" /></button>
                          </span>
                        ))}
                      </div>
@@ -1208,17 +1221,17 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
       <div className="mt-8 flex justify-between items-center">
          {step > 1 ? (
              <button onClick={() => goToStep(step - 1)} className="px-6 py-3 rounded-xl font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 transition-all">
-                 <ArrowLeft size={18} /> {isRtl ? 'السابق' : 'Back'}
+                 {isRtl ? <ArrowRight size={18} aria-hidden="true" /> : <ArrowLeft size={18} aria-hidden="true" />} {isRtl ? 'السابق' : 'Back'}
              </button>
          ) : <div></div>}
 
          {step < 3 ? (
              <button onClick={() => goToStep(step + 1)} className="px-8 py-3 rounded-xl font-bold bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-md hover:bg-black dark:hover:bg-white flex items-center gap-2 transition-all">
-                 {isRtl ? 'التالي' : 'Next'} <ArrowRight size={18} />
+                 {isRtl ? 'التالي' : 'Next'} {isRtl ? <ArrowLeft size={18} aria-hidden="true" /> : <ArrowRight size={18} aria-hidden="true" />}
              </button>
          ) : (
              <button onClick={handleSubmit} disabled={submitting || uploading || !basicsComplete} className="px-8 py-3 rounded-xl font-bold bg-gradient-to-r from-accent-600 to-accent-500 text-white shadow-xl hover:shadow-2xl hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 flex items-center gap-2 transition-all">
-                 {submitting ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle size={18} />}
+                 {submitting ? <Loader2 size={18} className="animate-spin" aria-hidden="true" /> : <CheckCircle size={18} aria-hidden="true" />}
                  {submitting ? (isRtl ? 'جاري النشر...' : 'Publishing...') : (isRtl ? 'نشر العقار' : 'Deploy Listing')}
              </button>
          )}

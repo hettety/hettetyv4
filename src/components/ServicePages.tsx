@@ -15,10 +15,10 @@ const ServicePage: React.FC<ServicePageProps> = ({ title, description, features,
     <div className="min-h-screen bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-sans animate-fade-in transition-colors duration-500" dir={isRtl ? "rtl" : "ltr"}>
       {/* Hero Section */}
       <section className="relative pt-32 pb-20 px-6 text-center overflow-hidden">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-brand-500/10 dark:from-emerald-500/10 via-transparent to-transparent pointer-events-none"></div>
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-brand-500/10 dark:from-brand-500/20 via-transparent to-transparent pointer-events-none"></div>
         
         <div className="max-w-4xl mx-auto relative z-10">
-          <h1 className="text-5xl md:text-6xl font-black mb-6 leading-tight text-slate-900 dark:text-white uppercase tracking-tighter">
+          <h1 className={`text-5xl md:text-6xl font-black mb-6 leading-tight text-slate-900 dark:text-white ${isRtl ? 'font-cairo' : 'uppercase tracking-tighter'}`}>
             {title}
           </h1>
           <p className="text-xl text-slate-600 dark:text-slate-300 leading-relaxed max-w-2xl mx-auto mb-10 font-medium">
@@ -26,7 +26,7 @@ const ServicePage: React.FC<ServicePageProps> = ({ title, description, features,
           </p>
           <button 
             onClick={onCta}
-            className="bg-brand-600 dark:bg-emerald-500 hover:bg-brand-700 dark:hover:bg-emerald-600 text-white px-10 py-4 rounded-2xl font-black text-lg transition-all duration-300 shadow-xl shadow-brand-500/20 hover:shadow-brand-500/40 flex items-center gap-3 mx-auto uppercase tracking-widest"
+            className={`bg-accent-500 hover:bg-accent-600 active:bg-accent-700 text-white px-10 py-4 rounded-2xl font-black text-lg transition-all duration-300 shadow-xl shadow-accent-500/20 hover:shadow-accent-500/40 flex items-center gap-3 mx-auto ${isRtl ? 'font-cairo' : 'uppercase tracking-widest'}`}
           >
             {ctaText} {isRtl ? <ArrowLeft size={24} /> : <ArrowRight size={24} />}
           </button>
@@ -37,11 +37,11 @@ const ServicePage: React.FC<ServicePageProps> = ({ title, description, features,
       <section className="py-16 px-6 bg-slate-50 dark:bg-slate-900/30">
         <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-8">
           {features.map((feature, index) => (
-            <div key={index} className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-800 hover:border-brand-500/30 dark:hover:border-emerald-500/30 transition-all duration-500 hover:-translate-y-2 shadow-sm hover:shadow-2xl group">
-              <div className="w-16 h-16 bg-brand-50 dark:bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-6 text-brand-600 dark:text-emerald-400 group-hover:scale-110 group-hover:rotate-6 transition-all duration-300">
+            <div key={index} className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-800 hover:border-brand-500/30 dark:hover:border-brand-500/40 transition-all duration-500 hover:-translate-y-2 shadow-sm hover:shadow-2xl group">
+              <div className="w-16 h-16 bg-brand-50 dark:bg-brand-900/60 rounded-2xl flex items-center justify-center mb-6 text-brand-600 dark:text-accent-400 group-hover:scale-110 group-hover:rotate-6 transition-all duration-300">
                 {feature.icon}
               </div>
-              <h3 className="text-xl font-black mb-3 text-slate-900 dark:text-white uppercase tracking-tight">{feature.title}</h3>
+              <h3 className={`text-xl font-black mb-3 text-slate-900 dark:text-white ${isRtl ? 'font-cairo' : 'uppercase tracking-tight'}`}>{feature.title}</h3>
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
                 {feature.desc}
               </p>

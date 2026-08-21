@@ -37,6 +37,8 @@ import PrivacyPage from './components/PrivacyPage';
 import CookiePolicyPage from './components/CookiePolicyPage';
 import CookieConsent from './components/CookieConsent';
 import PremiumHero from './components/PremiumHero';
+import EmptyState from './components/EmptyState';
+import { useFocusTrap } from './hooks/useFocusTrap';
 
 // Lazy-loaded so the heavy three.js bundle is only fetched when a 3D tour is opened
 const Property3DViewer = React.lazy(() => import('./components/Property3DViewer'));
@@ -322,9 +324,21 @@ const PropertyCard: React.FC<{
   t: any;
   isRtl: boolean
 }> = ({ property, onView3D, onToggleFavorite, isFavorited, onToggleCompare, isComparing, onClick, t, isRtl }) => (
-  <div onClick={onClick} className={`group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl dark:shadow-none transition-all duration-300 overflow-hidden flex flex-col h-full animate-fade-in ${onClick ? 'cursor-pointer' : ''}`}>
+  <div 
+    onClick={onClick} 
+    onKeyDown={(e) => {
+      if (onClick && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        onClick();
+      }
+    }}
+    role={onClick ? 'button' : undefined}
+    tabIndex={onClick ? 0 : undefined}
+    aria-label={onClick ? `${property.title}, ${property.price.toLocaleString()} ${property.currency || 'EGP'}` : undefined}
+    className={`group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl dark:shadow-none transition-all duration-300 overflow-hidden flex flex-col h-full animate-fade-in focus:outline-none focus:ring-2 focus:ring-brand-500 ${onClick ? 'cursor-pointer' : ''}`}
+  >
     <div className="relative h-64 overflow-hidden">
-      <img src={property.imageUrl} alt={property.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+      <img src={property.imageUrl} alt={property.title || (isRtl ? 'صورة العقار' : 'Property image')} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
       {(() => { const av = availabilityInfo(property.availability, property.status, isRtl); return av.taken ? (
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
           <span className={`${av.color} text-white text-lg font-black uppercase tracking-widest px-6 py-2 rounded-lg -rotate-12 shadow-xl`}>{av.label}</span>
@@ -334,26 +348,40 @@ const PropertyCard: React.FC<{
         {property.status === 'For Sale' ? t.prop_forsale : t.prop_forrent}
       </div>
       {(property.isVerified || property.verificationStatus === 'Verified') && (
-        <div className={`absolute top-4 ${isRtl ? 'left-4' : 'right-12'} bg-green-500 text-white px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm`}>
-          <ShieldCheck size={12} /> {property.verificationStatus === 'Verified' ? (isRtl ? 'أصلي + ثقة وقانون' : 'Verified Legal') : t.prop_verified}
+        <div className={`absolute top-4 ${isRtl ? 'left-14' : 'right-12'} bg-green-500 text-white px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm`}>
+          <ShieldCheck size={12} aria-hidden="true" /> {property.verificationStatus === 'Verified' ? (isRtl ? 'أصلي + ثقة وقانون' : 'Verified Legal') : t.prop_verified}
         </div>
       )}
       {onToggleFavorite && (
         <button 
+          type="button"
           onClick={(e) => { e.stopPropagation(); onToggleFavorite(); }}
-          className={`absolute top-4 ${isRtl ? 'left-4' : 'right-4'} p-2 rounded-full backdrop-blur-md transition-all shadow-lg ${isFavorited ? 'bg-red-500 text-white' : 'bg-white/40 text-white hover:bg-white/60'}`}
+          aria-label={isFavorited ? (isRtl ? 'إزالة من المفضلة' : 'Remove from favorites') : (isRtl ? 'إضافة إلى المفضلة' : 'Add to favorites')}
+          aria-pressed={isFavorited}
+          className={`absolute top-4 ${isRtl ? 'left-4' : 'right-4'} min-w-[48px] min-h-[48px] p-2.5 rounded-full backdrop-blur-md transition-all shadow-lg flex items-center justify-center cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400 ${isFavorited ? 'bg-red-500 text-white' : 'bg-black/40 hover:bg-black/60 text-white'}`}
         >
-          <Heart size={18} fill={isFavorited ? 'currentColor' : 'none'} />
+          <Heart size={18} fill={isFavorited ? 'currentColor' : 'none'} aria-hidden="true" />
         </button>
       )}
       {/* Always visible on touch screens (no hover there); hover-reveal from sm up. */}
       <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/70 to-transparent opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex justify-between items-end">
-        <button onClick={(e) => { e.stopPropagation(); onView3D(); }} className="bg-white/20 hover:bg-white text-white hover:text-brand-900 backdrop-blur border border-white/50 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 cursor-pointer">
-          <Box size={16} /> {t.prop_view_3d}
+        <button 
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onView3D(); }} 
+          aria-label={isRtl ? 'عرض العقار بتقنية ثلاثية الأبعاد' : 'View property in 3D'}
+          className="bg-white/20 hover:bg-white text-white hover:text-brand-900 backdrop-blur border border-white/50 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-400"
+        >
+          <Box size={16} aria-hidden="true" /> {t.prop_view_3d}
         </button>
         {onToggleCompare && (
-          <button onClick={(e) => { e.stopPropagation(); onToggleCompare(); }} className={`backdrop-blur border px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${isComparing ? 'bg-brand-600 text-white border-brand-600' : 'bg-white/20 hover:bg-white text-white hover:text-brand-900 border-white/50'}`}>
-            {isComparing ? <Check size={16} /> : <Plus size={16} />} {isRtl ? 'قارن' : 'Compare'}
+          <button 
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onToggleCompare(); }} 
+            aria-label={isComparing ? (isRtl ? 'إزالة من المقارنة' : 'Remove from comparison') : (isRtl ? 'إضافة إلى المقارنة' : 'Add to comparison')}
+            aria-pressed={isComparing}
+            className={`backdrop-blur border px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-400 ${isComparing ? 'bg-brand-600 text-white border-brand-600' : 'bg-white/20 hover:bg-white text-white hover:text-brand-900 border-white/50'}`}
+          >
+            {isComparing ? <Check size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />} {isRtl ? 'قارن' : 'Compare'}
           </button>
         )}
       </div>
@@ -362,39 +390,39 @@ const PropertyCard: React.FC<{
       <div className="flex justify-between items-start mb-2">
         <h3 className="text-lg font-heading font-bold text-slate-900 dark:text-white line-clamp-1">{property.title}</h3>
         <span className="text-brand-600 dark:text-brand-400 font-bold whitespace-nowrap">
-          {property.price.toLocaleString()} {property.currency || 'EGP'}<span className="text-[10px] text-slate-400 font-medium">{pricePeriodSuffix(property.pricePeriod, isRtl)}</span>
+          {property.price.toLocaleString()} {property.currency || 'EGP'}<span className="text-[10px] text-slate-600 dark:text-slate-400 font-medium">{pricePeriodSuffix(property.pricePeriod, isRtl)}</span>
         </span>
       </div>
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         {property.yallaSahel && <span className="text-[10px] font-bold bg-cyan-50 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 px-2 py-0.5 rounded">🌊 {isRtl ? 'يلا ساحل' : 'Yalla Sahel'}</span>}
         {property.propertyType && <span className="text-[10px] font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-2 py-0.5 rounded">{property.propertyType}</span>}
-        <span className="flex items-center text-slate-500 dark:text-slate-400 text-sm"><MapPin size={14} className={isRtl ? "ml-1" : "mr-1"} /> {property.location}</span>
+        <span className="flex items-center text-slate-600 dark:text-slate-400 text-sm"><MapPin size={14} className={isRtl ? "ml-1" : "mr-1"} aria-hidden="true" /> {property.location}</span>
       </div>
       {property.unitCode && (
-        <div className="text-xs text-slate-400 dark:text-slate-500 mb-3 bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded inline-block w-fit">
+        <div className="text-xs text-slate-600 dark:text-slate-400 mb-3 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded inline-block w-fit">
           {isRtl ? 'كود الوحدة:' : 'Unit Code:'} {property.unitCode}
         </div>
       )}
       {property.paymentMethods && property.paymentMethods.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-4">
           {property.paymentMethods.map(method => (
-            <span key={method} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] uppercase tracking-wider font-bold rounded">
+            <span key={method} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] uppercase tracking-wider font-bold rounded">
               {paymentLabel(method, isRtl)}
             </span>
           ))}
         </div>
       )}
-      <div className="grid grid-cols-3 gap-2 py-4 border-t border-slate-100 mt-auto">
-        <div className="flex flex-col items-center text-slate-600">
-          <BedDouble size={20} className="mb-1 text-brand-400" />
+      <div className="grid grid-cols-3 gap-2 py-4 border-t border-slate-100 dark:border-slate-800 mt-auto">
+        <div className="flex flex-col items-center text-slate-700 dark:text-slate-300">
+          <BedDouble size={20} className="mb-1 text-brand-600 dark:text-brand-400" aria-hidden="true" />
           <span className="text-xs font-medium">{property.bedrooms} {t.prop_beds}</span>
         </div>
-        <div className="flex flex-col items-center text-slate-600">
-          <Bath size={20} className="mb-1 text-brand-400" />
+        <div className="flex flex-col items-center text-slate-700 dark:text-slate-300">
+          <Bath size={20} className="mb-1 text-brand-600 dark:text-brand-400" aria-hidden="true" />
           <span className="text-xs font-medium">{property.bathrooms} {t.prop_baths}</span>
         </div>
-        <div className="flex flex-col items-center text-slate-600">
-          <Maximize size={20} className="mb-1 text-brand-400" />
+        <div className="flex flex-col items-center text-slate-700 dark:text-slate-300">
+          <Maximize size={20} className="mb-1 text-brand-600 dark:text-brand-400" aria-hidden="true" />
           <span className="text-xs font-medium">{property.area}{property.areaTo ? `–${property.areaTo}` : ''} m²</span>
         </div>
       </div>
@@ -1028,7 +1056,7 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
   };
 
   return (
-    <div className={`flex h-[calc(100vh-80px)] w-full bg-[#f8fafc] dark:bg-slate-950 overflow-hidden relative ${isRtl ? 'flex-row-reverse' : 'flex-row'} transition-colors duration-500`}>
+    <div className={`flex h-[calc(100dvh-80px)] w-full bg-[#f8fafc] dark:bg-slate-950 overflow-hidden relative ${isRtl ? 'flex-row-reverse' : 'flex-row'} transition-colors duration-500`}>
       {/* Sidebar Overlay for Mobile */}
       {isSidebarOpen && window.innerWidth < 1024 && (
         <div 
@@ -1290,7 +1318,7 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
             </div>
 
             {/* Quick Suggestions */}
-            <div className="flex gap-2.5 mt-4 overflow-x-auto pb-1 no-scrollbar justify-center">
+            <div className="flex gap-2.5 mt-4 overflow-x-auto pb-1 no-scrollbar justify-start sm:justify-center">
               {[t.ai_quick_1, t.ai_quick_2, t.ai_quick_3].map((s, i) => (
                 <button 
                   key={i} 
@@ -1319,6 +1347,7 @@ const LegalCenter = ({ t, isRtl, userEmail }: { t: any, isRtl: boolean, userEmai
   const [error, setError] = useState<string | null>(null);
   const [viewingDoc, setViewingDoc] = useState<UserDocument | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const legalModalRef = useFocusTrap<HTMLDivElement>(!!viewingDoc, () => setViewingDoc(null));
 
   useEffect(() => {
     if (!auth.currentUser) {
@@ -1556,20 +1585,35 @@ const LegalCenter = ({ t, isRtl, userEmail }: { t: any, isRtl: boolean, userEmai
       </div>
 
       {viewingDoc && (
-        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-800">
+        <div 
+          className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setViewingDoc(null)}
+        >
+          <div 
+            ref={legalModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="legal-doc-modal-title"
+            className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-800"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
               <div className="flex items-center gap-3">
                 <div className="bg-brand-100 dark:bg-brand-900 text-brand-600 dark:text-brand-400 p-2 rounded-lg">
-                  <FileText size={20} />
+                  <FileText size={20} aria-hidden="true" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-900 dark:text-white">{viewingDoc.name}</h3>
+                  <h3 id="legal-doc-modal-title" className="font-bold text-slate-900 dark:text-white">{viewingDoc.name}</h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">{viewingDoc.fileId} • {viewingDoc.type}</p>
                 </div>
               </div>
-              <button onClick={() => setViewingDoc(null)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors cursor-pointer">
-                <X size={20} />
+              <button 
+                type="button"
+                onClick={() => setViewingDoc(null)} 
+                aria-label={isRtl ? "إغلاق المستند" : "Close document viewer"}
+                className="min-w-[48px] min-h-[48px] p-3 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors cursor-pointer flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-brand-500"
+              >
+                <X size={20} aria-hidden="true" />
               </button>
             </div>
             <div className="flex-1 bg-slate-100 dark:bg-slate-950 p-8 flex items-center justify-center overflow-y-auto">
@@ -1902,15 +1946,35 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
             {slides.length > 1 && (
               <>
                 {/* Previous: sits on the start edge and points backwards in both directions. */}
-                <button aria-label={isRtl ? 'الصورة السابقة' : 'Previous image'} onClick={() => setCurrentImageIndex(i => i === 0 ? slides.length - 1 : i - 1)} className={`absolute ${isRtl ? 'right-4' : 'left-4'} top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100 z-20`}>
-                  {isRtl ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+                <button 
+                  type="button"
+                  aria-label={isRtl ? 'الصورة السابقة' : 'Previous image'} 
+                  onClick={() => setCurrentImageIndex(i => i === 0 ? slides.length - 1 : i - 1)} 
+                  className={`absolute ${isRtl ? 'right-4' : 'left-4'} top-1/2 -translate-y-1/2 min-w-[44px] min-h-[44px] p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-brand-400 z-20 flex items-center justify-center`}
+                >
+                  {isRtl ? <ChevronRight size={20} aria-hidden="true" /> : <ChevronLeft size={20} aria-hidden="true" />}
                 </button>
-                <button aria-label={isRtl ? 'الصورة التالية' : 'Next image'} onClick={() => setCurrentImageIndex(i => (i + 1) % slides.length)} className={`absolute ${isRtl ? 'left-4' : 'right-4'} top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100 z-20`}>
-                  {isRtl ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
+                <button 
+                  type="button"
+                  aria-label={isRtl ? 'الصورة التالية' : 'Next image'} 
+                  onClick={() => setCurrentImageIndex(i => (i + 1) % slides.length)} 
+                  className={`absolute ${isRtl ? 'left-4' : 'right-4'} top-1/2 -translate-y-1/2 min-w-[44px] min-h-[44px] p-2 bg-black/50 text-white rounded-full hover:bg-black/70 cursor-pointer transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-brand-400 z-20 flex items-center justify-center`}
+                >
+                  {isRtl ? <ChevronLeft size={20} aria-hidden="true" /> : <ChevronRight size={20} aria-hidden="true" />}
                 </button>
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-20">
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-20" role="tablist" aria-label={isRtl ? 'صور المعرض' : 'Gallery slides'}>
                   {slides.map((_, idx) => (
-                    <div key={idx} className={`w-2.5 h-2.5 rounded-full transition-all ${idx === currentImageIndex ? 'bg-white scale-125' : 'bg-white/50 cursor-pointer'}`} onClick={() => setCurrentImageIndex(idx)} />
+                    <button 
+                      key={idx} 
+                      type="button"
+                      role="tab"
+                      aria-selected={idx === currentImageIndex}
+                      aria-label={isRtl ? `الصورة ${idx + 1} من ${slides.length}` : `Slide ${idx + 1} of ${slides.length}`}
+                      className="w-4 h-4 min-w-[24px] min-h-[24px] flex items-center justify-center p-1 rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-brand-400 cursor-pointer" 
+                      onClick={() => setCurrentImageIndex(idx)}
+                    >
+                      <span className={`w-2.5 h-2.5 rounded-full transition-all block ${idx === currentImageIndex ? 'bg-white scale-125' : 'bg-white/50 hover:bg-white/75'}`} />
+                    </button>
                   ))}
                 </div>
               </>
@@ -2159,9 +2223,18 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
               )}
             </div>
             <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-4 mb-4 border border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-1 mb-2">
+              <div className="flex items-center gap-1 mb-2" role="radiogroup" aria-label={isRtl ? 'التقييم بالنجوم' : 'Rating stars'}>
                 {[1, 2, 3, 4, 5].map(n => (
-                  <button key={n} type="button" onClick={() => setReviewRating(n)} className="p-0.5"><Star size={22} className={n <= reviewRating ? 'text-amber-500' : 'text-slate-300 dark:text-slate-600'} fill={n <= reviewRating ? 'currentColor' : 'none'} /></button>
+                  <button 
+                    key={n} 
+                    type="button" 
+                    onClick={() => setReviewRating(n)} 
+                    aria-label={isRtl ? `${n} نجوم من 5` : `${n} stars out of 5`}
+                    aria-pressed={reviewRating === n}
+                    className="min-w-[44px] min-h-[44px] p-2 flex items-center justify-center cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400 rounded-lg"
+                  >
+                    <Star size={22} className={n <= reviewRating ? 'text-amber-500' : 'text-slate-300 dark:text-slate-600'} fill={n <= reviewRating ? 'currentColor' : 'none'} aria-hidden="true" />
+                  </button>
                 ))}
               </div>
               <textarea value={reviewComment} onChange={e => setReviewComment(e.target.value)} rows={2} placeholder={isRtl ? 'اكتب تقييمك...' : 'Write your review...'} className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm outline-none focus:ring-2 focus:ring-brand-500" />
@@ -2329,7 +2402,7 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-12 animate-fade-in transition-colors duration-500">
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
         <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{isRtl ? 'الملف الشخصي' : 'Personal Profile'}</h1>
         <div className="flex gap-2 flex-wrap justify-end">
           {!isEditing ? (
@@ -2453,7 +2526,7 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
                   <div className="space-y-4">
                     {completedPurchases.map(p => (
                       <div key={p.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row gap-5 items-start sm:items-center">
-                        <img src={p.property?.imageUrl} className="w-full sm:w-32 h-24 rounded-xl object-cover" />
+                        <img src={p.property?.imageUrl} alt={p.property?.title || (isRtl ? 'صورة العقار' : 'Property image')} className="w-full sm:w-32 aspect-video sm:aspect-auto sm:h-24 rounded-xl object-cover" />
                         <div className="flex-1">
                           <div className="flex justify-between items-start mb-2">
                             <h4 className="font-bold text-slate-900 dark:text-white text-lg">{p.property?.title}</h4>
@@ -2490,7 +2563,7 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
                     {inProgressPurchases.map(p => (
                       <div key={p.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row gap-5 items-start sm:items-center relative overflow-hidden group">
                         <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
-                        <img src={p.property?.imageUrl} className="w-full sm:w-32 h-24 rounded-xl object-cover" />
+                        <img src={p.property?.imageUrl} alt={p.property?.title || (isRtl ? 'صورة العقار' : 'Property image')} className="w-full sm:w-32 aspect-video sm:aspect-auto sm:h-24 rounded-xl object-cover" />
                         <div className="flex-1">
                           <div className="flex justify-between items-start mb-2">
                             <h4 className="font-bold text-slate-900 dark:text-white text-lg">{p.property?.title}</h4>
@@ -2540,14 +2613,14 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
                   ))}
                 </div>
               ) : (
-                <div className="bg-slate-50 dark:bg-slate-900/50 p-20 rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 text-center">
-                  <div className="w-20 h-20 bg-white dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-sm">
-                    <Heart size={40} className="text-slate-200 dark:text-slate-700" />
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-2">{t.prof_empty_fav}</h3>
-                  <p className="text-slate-500 dark:text-slate-400 mb-8 max-w-xs mx-auto">{t.prof_empty_fav_desc}</p>
-                  <Button onClick={onBrowse} variant="primary" className="px-10">{t.prof_start_browsing}</Button>
-                </div>
+                <EmptyState
+                  variant="favorites"
+                  title={t.prof_empty_fav}
+                  description={t.prof_empty_fav_desc}
+                  actionLabel={t.prof_start_browsing}
+                  onAction={onBrowse}
+                  isRtl={isRtl}
+                />
               )}
             </div>
           )}
@@ -2576,7 +2649,7 @@ const PaymentPage = ({ property, onConfirm, onCancel, t, isRtl }: { property: Pr
            <CreditCard size={120} />
         </div>
         <div className="flex items-center gap-6 mb-8 pb-8 border-b border-slate-100 dark:border-slate-800 relative z-10">
-          <img src={property.imageUrl} className="w-28 h-28 rounded-2xl object-cover shadow-md border border-white dark:border-slate-700" />
+          <img src={property.imageUrl} alt={property.title || (isRtl ? 'صورة العقار' : 'Property image')} className="w-28 h-28 rounded-2xl object-cover shadow-md border border-white dark:border-slate-700" />
           <div className="flex-1">
             <h2 className="text-2xl font-black text-slate-900 dark:text-white leading-tight mb-1">{property.title}</h2>
             <p className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1 text-sm"><MapPin size={14}/> {property.location}</p>
@@ -2835,21 +2908,23 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
           </div>
         </div>
 
-        <div className="flex flex-wrap bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+        <div className="flex overflow-x-auto no-scrollbar gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 max-w-full" role="tablist" aria-label={isRtl ? 'أقسام لوحة التحكم' : 'Admin dashboard sections'}>
           {[
-            { id: 'stats', label: isRtl ? 'الإحصائيات' : 'Stats', icon: <Target size={16} /> },
-            { id: 'properties', label: isRtl ? 'العقارات' : 'Properties', icon: <Building2 size={16} /> },
-            { id: 'verifications', label: isRtl ? 'التوثيقات' : 'Verifications', icon: <Shield size={16} />, badge: pendingProperties.length },
-            { id: 'purchases', label: isRtl ? 'طلبات الشراء' : 'Purchases', icon: <CreditCard size={16} />, badge: openPurchases.length },
-            { id: 'reports', label: isRtl ? 'البلاغات' : 'Reports', icon: <Shield size={16} />, badge: reports.length },
-            ...(isSuperAdmin ? [{ id: 'users', label: isRtl ? 'المستخدمين' : 'Users', icon: <Users size={16} /> }] : []),
+            { id: 'stats', label: isRtl ? 'الإحصائيات' : 'Stats', icon: <Target size={16} aria-hidden="true" /> },
+            { id: 'properties', label: isRtl ? 'العقارات' : 'Properties', icon: <Building2 size={16} aria-hidden="true" /> },
+            { id: 'verifications', label: isRtl ? 'التوثيقات' : 'Verifications', icon: <Shield size={16} aria-hidden="true" />, badge: pendingProperties.length },
+            { id: 'purchases', label: isRtl ? 'طلبات الشراء' : 'Purchases', icon: <CreditCard size={16} aria-hidden="true" />, badge: openPurchases.length },
+            { id: 'reports', label: isRtl ? 'البلاغات' : 'Reports', icon: <Shield size={16} aria-hidden="true" />, badge: reports.length },
+            ...(isSuperAdmin ? [{ id: 'users', label: isRtl ? 'المستخدمين' : 'Users', icon: <Users size={16} aria-hidden="true" /> }] : []),
           ].map(tab => (
             <button
               key={tab.id}
+              role="tab"
+              aria-selected={activeTab === tab.id}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${
+              className={`flex items-center gap-2 px-4 sm:px-6 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap shrink-0 focus:outline-none focus:ring-2 focus:ring-brand-500 ${
                 activeTab === tab.id 
-                ? 'bg-white dark:bg-slate-700 text-brand-900 dark:text-white shadow-sm border border-slate-200 dark:border-slate-600 cursor-default' 
+                ? 'bg-white dark:bg-slate-700 text-brand-900 dark:text-white shadow-sm border border-slate-200 dark:border-slate-600' 
                 : 'text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 cursor-pointer'
               }`}
             >
@@ -2914,7 +2989,7 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                     <tr key={prop.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
                       <td className="px-8 py-6">
                         <div className="flex items-center gap-4">
-                          <img src={prop.imageUrl} className="w-12 h-12 rounded-lg object-cover" />
+                          <img src={prop.imageUrl} alt={prop.title || (isRtl ? 'صورة العقار' : 'Property thumbnail')} className="w-12 h-12 rounded-lg object-cover" />
                           <div>
                             <div className="font-bold text-slate-900 dark:text-white">{prop.title}</div>
                             <div className="text-xs text-brand-600 dark:text-brand-400 font-medium">{prop.unitCode}</div>
@@ -2986,8 +3061,8 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                       <td className="px-8 py-5">
                         <div className="flex items-center gap-4">
                           {prop.imageUrl
-                            ? <img src={prop.imageUrl} className="w-12 h-12 rounded-lg object-cover" />
-                            : <div className="w-12 h-12 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400"><Building2 size={20} /></div>}
+                            ? <img src={prop.imageUrl} alt={prop.title || (isRtl ? 'صورة العقار' : 'Property thumbnail')} className="w-12 h-12 rounded-lg object-cover" />
+                            : <div className="w-12 h-12 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400"><Building2 size={20} aria-hidden="true" /></div>}
                           <div>
                             <div className="font-bold text-slate-900 dark:text-white line-clamp-1 max-w-[16rem]">{prop.title}</div>
                             <div className="text-xs text-brand-600 dark:text-brand-400 font-medium">{prop.unitCode}</div>
@@ -3042,12 +3117,14 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                             </button>
                           )}
                           <button
+                            type="button"
                             onClick={() => handleDeleteProperty(prop.id)}
                             disabled={updating === prop.id}
+                            aria-label={isRtl ? `حذف العقار ${prop.title}` : `Delete property ${prop.title}`}
                             className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-600 hover:text-white px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer"
                             title={isRtl ? 'حذف' : 'Delete'}
                           >
-                            {updating === prop.id ? <Loader2 className="animate-spin" size={14} /> : <Trash2 size={14} />}
+                            {updating === prop.id ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
                           </button>
                         </div>
                       </td>
@@ -3152,8 +3229,15 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                     <p className="text-sm text-slate-600 dark:text-slate-300 mt-1 whitespace-pre-wrap">{r.reason}</p>
                     <div className="text-[11px] text-slate-400 mt-1">{purchaserEmail(r.userId)} · {(r.createdAt || '').slice(0, 10)}</div>
                   </div>
-                  <button onClick={() => handleDeleteReport(r.id)} disabled={updating === r.id} className="shrink-0 text-red-500 hover:text-red-600 p-2 disabled:opacity-50" title={isRtl ? 'حذف البلاغ' : 'Dismiss report'}>
-                    {updating === r.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                  <button 
+                    type="button"
+                    onClick={() => handleDeleteReport(r.id)} 
+                    disabled={updating === r.id} 
+                    aria-label={isRtl ? 'حذف البلاغ' : 'Dismiss report'}
+                    className="shrink-0 text-red-500 hover:text-red-600 p-2 disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400 rounded-lg min-w-[36px] min-h-[36px] flex items-center justify-center" 
+                    title={isRtl ? 'حذف البلاغ' : 'Dismiss report'}
+                  >
+                    {updating === r.id ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
                   </button>
                 </div>
               ))}
@@ -3222,12 +3306,14 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                              {updating === user.id ? <Loader2 className="animate-spin" size={14} /> : (user.role === 'admin' ? (isRtl ? 'إزالة مشرف' : 'Demote') : (isRtl ? 'ترقية لمشرف' : 'Promote'))}
                            </Button>
                            <button
+                             type="button"
                              onClick={() => handleDeleteUser(user)}
                              disabled={updating === user.id}
-                             className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-600 hover:text-white px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                             aria-label={isRtl ? `حذف المستخدم ${user.name || user.email}` : `Delete user ${user.name || user.email}`}
+                             className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-600 hover:text-white px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer disabled:opacity-50 min-w-[36px] min-h-[36px] flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-red-400"
                              title={isRtl ? 'حذف المستخدم' : 'Delete user'}
                            >
-                             <Trash2 size={14} />
+                             <Trash2 size={14} aria-hidden="true" />
                            </button>
                          </div>
                        ) : (
@@ -3253,7 +3339,7 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
 // --- Main App ---
 
 export default function App() {
-  const [showSplash, setShowSplash] = useState(true);
+  const [showSplash, setShowSplash] = useState(() => !import.meta.env.MODE?.includes('test') && (typeof process === 'undefined' || process.env.NODE_ENV !== 'test'));
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [isAdmin, setIsAdmin] = useState(false);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
@@ -3314,6 +3400,9 @@ export default function App() {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isDarkMode, setIsDarkMode] = useState(false);
+
+  const mobileMenuRef = useFocusTrap<HTMLDivElement>(mobileMenuOpen, () => setMobileMenuOpen(false));
+  const compareModalRef = useFocusTrap<HTMLDivElement>(showCompare, () => setShowCompare(false));
 
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
@@ -3404,6 +3493,17 @@ export default function App() {
       try { localStorage.setItem('theme', 'light'); } catch(e) {}
     }
   };
+
+  // Sync document root attributes with active language & direction
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
+    if (isRtl) {
+      document.documentElement.classList.add('font-cairo');
+    } else {
+      document.documentElement.classList.remove('font-cairo');
+    }
+  }, [lang, isRtl]);
 
   // Firebase Auth Listener
   useEffect(() => {
@@ -3645,8 +3745,10 @@ export default function App() {
 
   const NavLink = ({ page, label }: { page: Page, label: string }) => (
     <button 
+      type="button"
       onClick={() => handleNav(page)} 
-      className={`text-sm font-bold transition-all cursor-pointer relative group py-2
+      aria-current={currentPage === page ? 'page' : undefined}
+      className={`text-sm font-bold transition-all cursor-pointer relative group py-2 focus:outline-none focus:ring-2 focus:ring-brand-500 rounded-lg px-2
         ${currentPage === page ? 'text-brand-600 dark:text-brand-400' : 'text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400'}`}
     >
       {label}
@@ -3671,9 +3773,14 @@ export default function App() {
         <div className="w-full px-4 sm:px-10 h-20 flex items-center justify-between">
           {/* Logo Group - Left side */}
           <div className="flex items-center shrink-0">
-            <div className="cursor-pointer transform hover:scale-105 transition-all duration-300" onClick={() => handleNav('home')}>
+            <button 
+              type="button"
+              className="cursor-pointer transform hover:scale-105 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-brand-500 rounded-xl p-1" 
+              onClick={() => handleNav('home')}
+              aria-label="HETTETY Home"
+            >
               <Logo className="h-14 w-auto text-brand-900 dark:text-white transition-colors" />
-            </div>
+            </button>
           </div>
 
           {/* Menu & Actions Group - Right side (Opposite to logo) */}
@@ -3687,10 +3794,12 @@ export default function App() {
               <NavLink page="legal" label={t.nav_trust} />
               {isAdmin && <NavLink page="manage-users" label={isRtl ? 'لوحة التحكم' : 'Dashboard'} />}
               <button 
+                type="button"
                 onClick={() => handleNav('ai-chat')} 
-                className={`font-black text-xs transition-all flex items-center gap-2 cursor-pointer px-5 py-2.5 rounded-full uppercase tracking-[0.1em] shadow-sm ${currentPage === 'ai-chat' ? 'bg-brand-600 text-white shadow-brand-200' : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-200 hover:bg-brand-50 dark:hover:bg-brand-900/30 hover:text-brand-600'}`}
+                aria-current={currentPage === 'ai-chat' ? 'page' : undefined}
+                className={`font-black text-xs transition-all flex items-center gap-2 cursor-pointer px-5 py-2.5 rounded-full uppercase tracking-[0.1em] shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500 ${currentPage === 'ai-chat' ? 'bg-brand-600 text-white shadow-brand-200' : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-200 hover:bg-brand-50 dark:hover:bg-brand-900/30 hover:text-brand-600'}`}
               >
-                <Sparkles size={16} className="animate-pulse" />
+                <Sparkles size={16} className="animate-pulse" aria-hidden="true" />
                 {t.nav_ai}
               </button>
               <NavLink page="about" label={t.footer_about} />
@@ -3702,14 +3811,19 @@ export default function App() {
                 <button 
                   type="button"
                   onClick={() => toggleDarkMode()} 
-                  className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all flex items-center justify-center cursor-pointer border border-slate-200 dark:border-slate-800 hover:border-brand-300 dark:hover:border-brand-700 shadow-sm active:scale-90"
+                  className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all flex items-center justify-center cursor-pointer border border-slate-200 dark:border-slate-800 hover:border-brand-300 dark:hover:border-brand-700 shadow-sm active:scale-90 focus:outline-none focus:ring-2 focus:ring-brand-500"
                   aria-label="Toggle Theme"
                 >
                   <div className="transform transition-transform duration-500 hover:rotate-12">
-                    {isDarkMode ? <Sun size={24} className="text-amber-500" /> : <Moon size={24} className="text-slate-600" />}
+                    {isDarkMode ? <Sun size={24} className="text-amber-500" aria-hidden="true" /> : <Moon size={24} className="text-slate-600" aria-hidden="true" />}
                   </div>
                 </button>
-                <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="w-10 h-10 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all flex items-center justify-center cursor-pointer border border-transparent hover:border-slate-100 dark:hover:border-slate-700">
+                <button 
+                  type="button"
+                  onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} 
+                  aria-label={isRtl ? 'Switch language to English' : 'تغيير اللغة إلى العربية'}
+                  className="w-10 h-10 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all flex items-center justify-center cursor-pointer border border-transparent hover:border-slate-100 dark:hover:border-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
                   <span className="text-xs font-black tracking-widest leading-none">{lang === 'en' ? 'AR' : 'EN'}</span>
                 </button>
               </div>
@@ -3717,11 +3831,14 @@ export default function App() {
             {userEmail && (
               <div className="relative" data-menu>
                 <button
+                  type="button"
                   onClick={() => { setShowNotifications(!showNotifications); setShowProfileMenu(false); }}
-                  className="relative p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all cursor-pointer border border-transparent hover:border-slate-100 dark:hover:border-slate-700"
-                  aria-label="Notifications"
+                  className="relative min-w-[48px] min-h-[48px] p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all cursor-pointer border border-transparent hover:border-slate-100 dark:hover:border-slate-700 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  aria-label={isRtl ? `الإشعارات (${notifications.filter(n => !n.read).length} غير مقروء)` : `Notifications (${notifications.filter(n => !n.read).length} unread)`}
+                  aria-haspopup="dialog"
+                  aria-expanded={showNotifications}
                 >
-                  <Bell size={22} className="text-slate-500 dark:text-slate-400" />
+                  <Bell size={22} className="text-slate-500 dark:text-slate-400" aria-hidden="true" />
                   {notifications.filter(n => !n.read).length > 0 && (
                     <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-brand-500 rounded-full border-2 border-white dark:border-slate-900 animate-pulse"></span>
                   )}
@@ -3737,7 +3854,7 @@ export default function App() {
                     <div className="max-h-[30rem] overflow-y-auto custom-scrollbar">
                       {notifications.length === 0 ? (
                         <div className="p-16 text-center text-slate-400">
-                          <Bell className="w-12 h-12 mx-auto mb-4 opacity-10" />
+                          <Bell className="w-12 h-12 mx-auto mb-4 opacity-10" aria-hidden="true" />
                           <p className="text-xs font-bold uppercase tracking-widest opacity-60">{isRtl ? 'لا توجد إشعارات حالياً' : 'Inbox is empty'}</p>
                         </div>
                       ) : (
@@ -3760,14 +3877,18 @@ export default function App() {
               {userEmail ? (
                 <>
                   <button
+                    type="button"
                     onClick={() => { setShowProfileMenu(!showProfileMenu); setShowNotifications(false); }}
-                    className="flex items-center gap-2.5 pl-1.5 pr-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
+                    aria-label={isRtl ? "قائمة الملف الشخصي" : "User Profile Menu"}
+                    aria-haspopup="menu"
+                    aria-expanded={showProfileMenu}
+                    className="flex items-center gap-2.5 pl-1.5 pr-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500"
                   >
                     <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-white flex items-center justify-center font-black text-sm uppercase shrink-0">
                       {(userName || userEmail || 'U').charAt(0)}
                     </div>
                     <span className="text-sm font-bold text-slate-900 dark:text-white max-w-[8rem] truncate">{userName || userEmail.split('@')[0]}</span>
-                    <ChevronRight size={16} className={`text-slate-400 transition-transform ${showProfileMenu ? '-rotate-90' : 'rotate-90'}`} />
+                    <ChevronRight size={16} className={`text-slate-400 transition-transform ${showProfileMenu ? '-rotate-90' : 'rotate-90'}`} aria-hidden="true" />
                   </button>
                   {showProfileMenu && (
                     <div className={`absolute top-full mt-4 w-72 bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden z-50 ${isRtl ? 'left-0' : 'right-0'} animate-fade-in`}>
@@ -3777,33 +3898,33 @@ export default function App() {
                         <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">{userEmail}</div>
                         {isAdmin && (
                           <span className={`inline-flex items-center gap-1.5 mt-3 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${isSuperAdmin ? 'bg-accent-100 dark:bg-accent-900/30 text-accent-700 dark:text-accent-400' : 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400'}`}>
-                            <Shield size={11} /> {isSuperAdmin ? (isRtl ? 'سوبر أدمن' : 'Super Admin') : (isRtl ? 'أدمن' : 'Admin')}
+                            <Shield size={11} aria-hidden="true" /> {isSuperAdmin ? (isRtl ? 'سوبر أدمن' : 'Super Admin') : (isRtl ? 'أدمن' : 'Admin')}
                           </span>
                         )}
                       </div>
                       {/* Items */}
                       <div className="py-2">
                         <button onClick={() => { setShowProfileMenu(false); handleNav('profile'); }} className="w-full flex items-center gap-3 px-5 py-3 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer">
-                          <User size={16} className="text-slate-400" /> {isRtl ? 'الملف الشخصي' : 'Personal Profile'}
+                          <User size={16} className="text-slate-400" aria-hidden="true" /> {isRtl ? 'الملف الشخصي' : 'Personal Profile'}
                         </button>
                         {isAdmin && (
                           <button onClick={() => { setShowProfileMenu(false); handleNav('manage-users'); }} className="w-full flex items-center gap-3 px-5 py-3 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer">
-                            <Shield size={16} className="text-slate-400" /> {isRtl ? 'لوحة التحكم' : 'Operations Command Center'}
+                            <Shield size={16} className="text-slate-400" aria-hidden="true" /> {isRtl ? 'لوحة التحكم' : 'Operations Command Center'}
                           </button>
                         )}
                         <button onClick={() => { setShowProfileMenu(false); handleNav('add-listing'); }} className="w-full flex items-center gap-3 px-5 py-3 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer">
-                          <PlusCircle size={16} className="text-slate-400" /> {isRtl ? 'إضافة عقار' : 'Add New Listing'}
+                          <PlusCircle size={16} className="text-slate-400" aria-hidden="true" /> {isRtl ? 'إضافة عقار' : 'Add New Listing'}
                         </button>
                         <div className="my-2 border-t border-slate-50 dark:border-slate-800"></div>
                         <button onClick={() => { setShowProfileMenu(false); handleLogout(); }} className="w-full flex items-center gap-3 px-5 py-3 text-sm font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors cursor-pointer">
-                          <LogOut size={16} /> {isRtl ? 'تسجيل الخروج' : 'Sign Out'}
+                          <LogOut size={16} aria-hidden="true" /> {isRtl ? 'تسجيل الخروج' : 'Sign Out'}
                         </button>
                       </div>
                     </div>
                   )}
                 </>
               ) : (
-                <button onClick={() => handleNav('login')} className="bg-slate-900 dark:bg-brand-600 text-white px-6 py-2.5 rounded-full font-bold text-sm hover:bg-slate-800 dark:hover:bg-brand-700 transition-colors cursor-pointer">
+                <button onClick={() => handleNav('login')} className="bg-slate-900 dark:bg-brand-600 text-white px-6 py-2.5 rounded-full font-bold text-sm hover:bg-slate-800 dark:hover:bg-brand-700 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500">
                   {isRtl ? 'تسجيل الدخول' : 'Sign In'}
                 </button>
               )}
@@ -3811,8 +3932,16 @@ export default function App() {
 
             <div className="h-10 w-px bg-slate-100 dark:bg-slate-800 mx-2 hidden sm:block lg:hidden"></div>
 
-            <button className="lg:hidden cursor-pointer text-slate-900 dark:text-white p-3 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
-              {mobileMenuOpen ? <X size={26} /> : <Menu size={26} />}
+            <button 
+              type="button"
+              id="mobile-menu-toggle"
+              aria-label={mobileMenuOpen ? (isRtl ? "إغلاق القائمة الرئيسية" : "Close main navigation menu") : (isRtl ? "فتح القائمة الرئيسية" : "Open main navigation menu")}
+              aria-expanded={mobileMenuOpen}
+              aria-controls="mobile-navigation-menu"
+              className="lg:hidden min-w-[48px] min-h-[48px] cursor-pointer text-slate-900 dark:text-white p-3 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-brand-500" 
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            >
+              {mobileMenuOpen ? <X size={26} aria-hidden="true" /> : <Menu size={26} aria-hidden="true" />}
             </button>
           </div>
         </div>
@@ -3821,59 +3950,86 @@ export default function App() {
 
       {/* Mobile Menu Overlay - Move out of nav for better compatibility */}
       {mobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 z-[100] bg-white dark:bg-slate-950 p-6 flex flex-col items-center justify-start overflow-y-auto animate-fade-in shadow-2xl">
+        <div 
+          ref={mobileMenuRef}
+          id="mobile-navigation-menu"
+          role="dialog"
+          aria-modal="true"
+          aria-label={isRtl ? "قائمة التنقل للجوال" : "Mobile Navigation Menu"}
+          className="lg:hidden fixed inset-0 z-[100] bg-white dark:bg-slate-950 p-6 flex flex-col items-center justify-start overflow-y-auto animate-fade-in shadow-2xl"
+        >
           <div className="w-full flex justify-between items-center mb-10">
-             <Logo className="h-10 w-auto text-brand-900 dark:text-white" />
-             <button className="p-3 bg-slate-100 dark:bg-slate-900 rounded-full text-slate-900 dark:text-white active:scale-90 transition-transform" onClick={() => setMobileMenuOpen(false)}>
-                <X size={24} />
+             <button 
+               type="button"
+               onClick={() => handleNav('home')} 
+               aria-label="HETTETY Home"
+               className="cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500 rounded-xl"
+             >
+               <Logo className="h-10 w-auto text-brand-900 dark:text-white" />
+             </button>
+             <button 
+               type="button"
+               aria-label={isRtl ? "إغلاق القائمة" : "Close navigation menu"}
+               className="min-w-[48px] min-h-[48px] p-3 bg-slate-100 dark:bg-slate-900 rounded-full text-slate-900 dark:text-white active:scale-90 transition-transform flex items-center justify-center cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500" 
+               onClick={() => setMobileMenuOpen(false)}
+             >
+                <X size={24} aria-hidden="true" />
              </button>
           </div>
           
           <div className="w-full space-y-2 flex flex-col items-center text-center">
-            <button onClick={() => handleNav('home')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
+            <button onClick={() => handleNav('home')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 rounded-xl">
               {t.nav_home}
             </button>
-            <button onClick={() => handleNav('listings')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
+            <button onClick={() => handleNav('listings')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 rounded-xl">
               {t.nav_listings}
             </button>
-            <button onClick={() => handleNav('3d-experience')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
+            <button onClick={() => handleNav('3d-experience')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 rounded-xl">
               {isRtl ? 'جولات 3D' : '3D Tours'}
             </button>
-            <button onClick={() => handleNav('legal')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
+            <button onClick={() => handleNav('legal')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 rounded-xl">
               {t.nav_trust}
             </button>
             {userEmail && (
-              <button onClick={() => handleNav('add-listing')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors">
+              <button onClick={() => handleNav('add-listing')} className="w-full py-4 text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter hover:text-brand-600 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 rounded-xl">
                 {isRtl ? 'إضافة عقار' : 'Add Listing'}
               </button>
             )}
             {isAdmin && (
-              <button onClick={() => handleNav('manage-users')} className="w-full py-4 text-2xl font-black text-brand-600 dark:text-brand-400 uppercase tracking-tighter hover:text-brand-700 transition-colors">
+              <button onClick={() => handleNav('manage-users')} className="w-full py-4 text-2xl font-black text-brand-600 dark:text-brand-400 uppercase tracking-tighter hover:text-brand-700 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 rounded-xl">
                 {isRtl ? 'لوحة التحكم' : 'Dashboard'}
               </button>
             )}
-            <button onClick={() => handleNav('ai-chat')} className="w-full py-6 mt-6 bg-brand-600 text-white rounded-[2rem] font-black text-2xl uppercase tracking-widest flex items-center justify-center gap-4 shadow-2xl shadow-brand-500/40 active:scale-95 transition-transform">
-              <Sparkles size={24} /> {t.nav_ai}
+            <button onClick={() => handleNav('ai-chat')} className="w-full py-6 mt-6 bg-brand-600 text-white rounded-[2rem] font-black text-2xl uppercase tracking-widest flex items-center justify-center gap-4 shadow-2xl shadow-brand-500/40 active:scale-95 transition-transform focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <Sparkles size={24} aria-hidden="true" /> {t.nav_ai}
             </button>
-            <button onClick={() => handleNav('about')} className="w-full py-6 text-lg font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+            <button onClick={() => handleNav('about')} className="w-full py-6 text-lg font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-brand-500 rounded-xl">
               {t.footer_about}
             </button>
 
             <div className="w-full pt-10 mt-10 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-4">
               <div className="flex gap-4">
-                <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="flex-1 py-4 rounded-2xl bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-black uppercase tracking-widest text-xs border border-slate-100 dark:border-slate-800">
+                <button 
+                  type="button"
+                  onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} 
+                  aria-label={isRtl ? 'Switch language to English' : 'تغيير اللغة إلى العربية'}
+                  className="flex-1 min-h-[48px] py-4 rounded-2xl bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-black uppercase tracking-widest text-xs border border-slate-100 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
                   {lang === 'en' ? 'اللغة العربية' : 'English Language'}
                 </button>
                 <button 
+                  type="button"
                   onClick={() => toggleDarkMode()}
-                  className="w-20 flex items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 py-4 active:scale-95 transition-transform"
+                  aria-label="Toggle Theme"
+                  className="w-20 min-h-[48px] flex items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 py-4 active:scale-95 transition-transform focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
-                  {isDarkMode ? <Sun size={28} className="text-amber-500" /> : <Moon size={28} />}
+                  {isDarkMode ? <Sun size={28} className="text-amber-500" aria-hidden="true" /> : <Moon size={28} aria-hidden="true" />}
                 </button>
               </div>
               <button 
+                type="button"
                 onClick={() => handleNav(userEmail ? 'profile' : 'login')} 
-                className="w-full py-5 rounded-2xl bg-slate-900 dark:bg-brand-600 text-white font-black uppercase tracking-[0.2em] text-sm shadow-xl active:scale-[0.98] transition-all"
+                className="w-full min-h-[48px] py-5 rounded-2xl bg-slate-900 dark:bg-brand-600 text-white font-black uppercase tracking-[0.2em] text-sm shadow-xl active:scale-[0.98] transition-all focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
                  {userEmail ? (isRtl ? 'الملف الشخصي' : 'Go to Profile') : (isRtl ? 'تسجيل الدخول' : 'Sign In Now')}
               </button>
@@ -4022,15 +4178,29 @@ export default function App() {
                 {savedSearches.map(s => (
                   <span key={s.id} className="inline-flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold px-3 py-1.5 rounded-full">
                     <button onClick={() => applySavedSearch(s)} className="hover:text-brand-600 dark:hover:text-brand-400">{s.q || (s.typeFilter !== 'all' ? s.typeFilter : (isRtl ? 'بحث محفوظ' : 'Saved search'))}</button>
-                    <button onClick={() => removeSavedSearch(s.id)} className="text-slate-400 hover:text-red-500"><X size={12} /></button>
+                    <button 
+                      type="button"
+                      onClick={() => removeSavedSearch(s.id)} 
+                      aria-label={isRtl ? `حذف البحث المحفوظ ${s.q || 'بحث'}` : `Delete saved search ${s.q || 'search'}`}
+                      className="text-slate-400 hover:text-red-500 p-1 focus:outline-none focus:ring-2 focus:ring-red-400 rounded-full cursor-pointer"
+                    >
+                      <X size={12} aria-hidden="true" />
+                    </button>
                   </span>
                 ))}
               </div>
             )}
             {/* View toggle: individual units vs grouped projects */}
-            <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-fit mb-6">
+            <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-fit mb-6" role="tablist" aria-label={isRtl ? 'طريقة العرض' : 'Listing view'}>
               {(['units', 'projects'] as const).map(v => (
-                <button key={v} onClick={() => setListingView(v)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${listingView === v ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+                <button 
+                  key={v} 
+                  type="button"
+                  role="tab"
+                  aria-selected={listingView === v}
+                  onClick={() => setListingView(v)} 
+                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all focus:outline-none focus:ring-2 focus:ring-brand-500 ${listingView === v ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow' : 'text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                >
                   {v === 'units' ? (isRtl ? 'الوحدات' : 'Units') : (isRtl ? 'المشاريع' : 'Projects')}
                 </button>
               ))}
@@ -4049,7 +4219,22 @@ export default function App() {
                       const max = prices.length ? Math.max(...prices) : 0;
                       const cur = units[0].currency || 'EGP';
                       return (
-                        <div key={name} onClick={() => { setListingView('units'); setListingSearchQuery(name); setAiFilteredIds(null); }} className="group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl transition-all overflow-hidden cursor-pointer animate-fade-in">
+                        <div 
+                          key={name} 
+                          onClick={() => { setListingView('units'); setListingSearchQuery(name); setAiFilteredIds(null); }} 
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setListingView('units');
+                              setListingSearchQuery(name);
+                              setAiFilteredIds(null);
+                            }
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`${name}, ${units.length} ${isRtl ? 'وحدة' : 'units'}`}
+                          className="group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl transition-all overflow-hidden cursor-pointer animate-fade-in focus:outline-none focus:ring-2 focus:ring-brand-500"
+                        >
                           <div className="relative h-56 overflow-hidden">
                             <img src={units[0].imageUrl} alt={name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
                             <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
@@ -4068,10 +4253,26 @@ export default function App() {
                   </div>
                 );
               })()
+            ) : filteredProperties.length === 0 && !loadingProps ? (
+              <EmptyState
+                variant="search"
+                title={isRtl ? 'لم نجد أي عقارات تطابق بحثك' : 'No properties found'}
+                description={isRtl ? 'جرب تغيير معايير البحث أو تصفير الفلاتر لرؤية جميع العقارات المتاحة.' : 'Try adjusting your filters or clearing search criteria to see available properties.'}
+                actionLabel={isRtl ? 'إعادة ضبط الفلاتر' : 'Clear All Filters'}
+                onAction={() => {
+                  setListingSearchQuery('');
+                  setMinPrice('');
+                  setMaxPrice('');
+                  setTypeFilter('all');
+                  setSortBy('default');
+                  setAiFilteredIds(null);
+                }}
+                isRtl={isRtl}
+              />
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
                 {loadingProps
-                  ? [1,2,3,4,5,6].map(i => <div key={i} className="h-96 bg-slate-200 rounded-2xl animate-pulse"></div>)
+                  ? [1,2,3,4,5,6].map(i => <div key={i} className="h-96 bg-slate-200 dark:bg-slate-800 rounded-2xl animate-pulse"></div>)
                   : filteredProperties.map(p => (
                     <PropertyCard
                       key={p.id}
@@ -4340,18 +4541,39 @@ export default function App() {
       {compareIds.length > 0 && !showCompare && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white rounded-2xl shadow-2xl border border-white/10 px-4 py-3 flex items-center gap-4 animate-fade-in">
           <span className="text-sm font-bold">{isRtl ? `مقارنة ${compareIds.length}` : `Compare ${compareIds.length}`}</span>
-          <button onClick={() => setShowCompare(true)} disabled={compareIds.length < 2} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-sm font-bold px-4 py-1.5 rounded-lg">{isRtl ? 'قارن الآن' : 'Compare now'}</button>
-          <button onClick={() => setCompareIds([])} className="text-white/60 hover:text-white"><X size={18} /></button>
+          <button onClick={() => setShowCompare(true)} disabled={compareIds.length < 2} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-sm font-bold px-4 py-2 min-h-[44px] rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-400">{isRtl ? 'قارن الآن' : 'Compare now'}</button>
+          <button 
+            type="button"
+            onClick={() => setCompareIds([])} 
+            aria-label={isRtl ? 'مسح كل العقارات من المقارنة' : 'Clear all properties from comparison'}
+            className="text-white/60 hover:text-white p-2 min-w-[36px] min-h-[36px] flex items-center justify-center cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-400 rounded-lg"
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
         </div>
       )}
 
       {/* Compare modal */}
       {showCompare && (
         <div className="fixed inset-0 z-[75] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowCompare(false)}>
-          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+          <div 
+            ref={compareModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="compare-modal-title"
+            className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-auto" 
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-white dark:bg-slate-900 z-10">
-              <h3 className="font-black text-lg text-slate-900 dark:text-white">{isRtl ? 'مقارنة العقارات' : 'Compare Properties'}</h3>
-              <button onClick={() => setShowCompare(false)} className="text-slate-400 hover:text-slate-700 dark:hover:text-white"><X /></button>
+              <h3 id="compare-modal-title" className="font-black text-lg text-slate-900 dark:text-white">{isRtl ? 'مقارنة العقارات' : 'Compare Properties'}</h3>
+              <button 
+                type="button"
+                onClick={() => setShowCompare(false)} 
+                aria-label={isRtl ? 'إغلاق نافذة المقارنة' : 'Close comparison dialog'}
+                className="min-w-[48px] min-h-[48px] p-3 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white rounded-full flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer"
+              >
+                <X size={20} aria-hidden="true" />
+              </button>
             </div>
             <div className="overflow-x-auto">
               {(() => {
@@ -4371,12 +4593,19 @@ export default function App() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr>
-                        <th className="p-3"></th>
+                        <th className={`p-3 ${isRtl ? 'sticky right-0' : 'sticky left-0'} bg-white dark:bg-slate-900 z-10`}></th>
                         {items.map(p => (
                           <th key={p.id} className="p-3 min-w-[160px]">
-                            <img src={p.imageUrl} alt={p.title} className="w-full h-24 object-cover rounded-xl mb-2" />
+                            <img src={p.imageUrl} alt={p.title || (isRtl ? 'صورة العقار' : 'Property thumbnail')} className="w-full h-24 object-cover rounded-xl mb-2" />
                             <div className="font-bold text-slate-900 dark:text-white text-xs line-clamp-2">{p.title}</div>
-                            <button onClick={() => toggleCompare(p.id)} className="text-red-500 text-[11px] mt-1">{isRtl ? 'إزالة' : 'Remove'}</button>
+                            <button 
+                              type="button"
+                              onClick={() => toggleCompare(p.id)} 
+                              aria-label={isRtl ? `إزالة ${p.title} من المقارنة` : `Remove ${p.title} from comparison`}
+                              className="text-red-500 hover:text-red-600 font-semibold text-xs mt-1 p-1 focus:outline-none focus:ring-2 focus:ring-red-400 rounded cursor-pointer"
+                            >
+                              {isRtl ? 'إزالة' : 'Remove'}
+                            </button>
                           </th>
                         ))}
                       </tr>
@@ -4384,7 +4613,7 @@ export default function App() {
                     <tbody>
                       {rows.map(([label, fn], ri) => (
                         <tr key={ri} className={ri % 2 ? 'bg-slate-50 dark:bg-slate-800/40' : ''}>
-                          <td className="p-3 font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap">{label}</td>
+                          <td className={`p-3 font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap ${isRtl ? 'sticky right-0' : 'sticky left-0'} bg-white dark:bg-slate-900 z-10`}>{label}</td>
                           {items.map(p => <td key={p.id} className="p-3 text-center font-medium text-slate-800 dark:text-slate-200">{fn(p)}</td>)}
                         </tr>
                       ))}
@@ -4423,14 +4652,32 @@ export default function App() {
           <div>
             <h4 className="text-white font-bold mb-4">{t.footer_connect}</h4>
             <div className="flex gap-4">
-              <a href="https://www.tiktok.com/@hettety5?_r=1&_t=ZS-95rJ2NUzN2b" target="_blank" rel="noreferrer" className="w-8 h-8 bg-slate-800 rounded-full hover:bg-brand-500 cursor-pointer flex items-center justify-center text-white transition-colors">
-                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5"/></svg>
+              <a 
+                href="https://www.tiktok.com/@hettety5?_r=1&_t=ZS-95rJ2NUzN2b" 
+                target="_blank" 
+                rel="noreferrer" 
+                aria-label="HETTETY on TikTok (opens in new window)"
+                className="w-12 h-12 min-w-[48px] min-h-[48px] bg-slate-800 rounded-full hover:bg-brand-500 cursor-pointer flex items-center justify-center text-white transition-colors focus:outline-none focus:ring-2 focus:ring-brand-400"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5"/></svg>
               </a>
-              <a href="https://www.instagram.com/hettety_realstate?igsh=Z3Y4NXB4ZHN3cXFu" target="_blank" rel="noreferrer" className="w-8 h-8 bg-slate-800 rounded-full hover:bg-brand-500 cursor-pointer flex items-center justify-center text-white transition-colors">
-                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
+              <a 
+                href="https://www.instagram.com/hettety_realstate?igsh=Z3Y4NXB4ZHN3cXFu" 
+                target="_blank" 
+                rel="noreferrer" 
+                aria-label="HETTETY on Instagram (opens in new window)"
+                className="w-12 h-12 min-w-[48px] min-h-[48px] bg-slate-800 rounded-full hover:bg-brand-500 cursor-pointer flex items-center justify-center text-white transition-colors focus:outline-none focus:ring-2 focus:ring-brand-400"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
               </a>
-              <a href="https://linkedin.com" target="_blank" rel="noreferrer" className="w-8 h-8 bg-slate-800 rounded-full hover:bg-brand-500 cursor-pointer flex items-center justify-center text-white transition-colors">
-                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg>
+              <a 
+                href="https://linkedin.com" 
+                target="_blank" 
+                rel="noreferrer" 
+                aria-label="HETTETY on LinkedIn (opens in new window)"
+                className="w-12 h-12 min-w-[48px] min-h-[48px] bg-slate-800 rounded-full hover:bg-brand-500 cursor-pointer flex items-center justify-center text-white transition-colors focus:outline-none focus:ring-2 focus:ring-brand-400"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg>
               </a>
             </div>
           </div>

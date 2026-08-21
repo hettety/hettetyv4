@@ -5,27 +5,27 @@ const TermsPage = ({ t, isRtl }: { t: any, isRtl: boolean }) => {
   const sections = [
     {
       title: t.terms_sec_1_title,
-      icon: <FileText className="w-6 h-6 text-emerald-400" />,
+      icon: <FileText className="w-6 h-6 text-accent-500 dark:text-accent-400" />,
       content: t.terms_sec_1_desc
     },
     {
       title: t.terms_sec_2_title,
-      icon: <Shield className="w-6 h-6 text-emerald-400" />,
+      icon: <Shield className="w-6 h-6 text-accent-500 dark:text-accent-400" />,
       content: t.terms_sec_2_desc
     },
     {
       title: t.terms_sec_3_title,
-      icon: <Scale className="w-6 h-6 text-emerald-400" />,
+      icon: <Scale className="w-6 h-6 text-accent-500 dark:text-accent-400" />,
       content: t.terms_sec_3_desc
     },
     {
       title: t.terms_sec_4_title,
-      icon: <AlertCircle className="w-6 h-6 text-emerald-400" />,
+      icon: <AlertCircle className="w-6 h-6 text-accent-500 dark:text-accent-400" />,
       content: t.terms_sec_4_desc
     },
     {
       title: t.terms_sec_5_title,
-      icon: <RefreshCw className="w-6 h-6 text-emerald-400" />,
+      icon: <RefreshCw className="w-6 h-6 text-accent-500 dark:text-accent-400" />,
       content: t.terms_sec_5_desc
     }
   ];
@@ -36,10 +36,10 @@ const TermsPage = ({ t, isRtl }: { t: any, isRtl: boolean }) => {
         
         {/* Header */}
         <div className="text-center mb-16">
-          <span className="inline-block py-1 px-4 rounded-full bg-brand-500/10 dark:bg-emerald-500/10 text-brand-600 dark:text-emerald-400 text-xs font-black mb-6 border border-brand-500/20 dark:border-emerald-500/20 uppercase tracking-widest">
+          <span className={`inline-block py-1 px-4 rounded-full bg-brand-500/10 dark:bg-brand-500/20 text-brand-600 dark:text-brand-300 text-xs font-black mb-6 border border-brand-500/20 dark:border-brand-500/30 ${isRtl ? 'font-cairo' : 'uppercase tracking-widest'}`}>
             {t.terms_badge}
           </span>
-          <h1 className="text-4xl md:text-6xl font-black mb-6 text-slate-900 dark:text-white uppercase tracking-tighter">
+          <h1 className={`text-4xl md:text-6xl font-black mb-6 text-slate-900 dark:text-white ${isRtl ? 'font-cairo' : 'uppercase tracking-tighter'}`}>
             {t.terms_title}
           </h1>
           <p className="text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed font-medium">
@@ -52,14 +52,14 @@ const TermsPage = ({ t, isRtl }: { t: any, isRtl: boolean }) => {
           {sections.map((section, index) => (
             <div 
               key={index}
-              className="bg-slate-50 dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 hover:border-brand-500/30 dark:hover:border-emerald-500/30 transition-all duration-300 shadow-sm hover:shadow-xl group"
+              className="bg-slate-50 dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 hover:border-brand-500/30 dark:hover:border-brand-500/40 transition-all duration-300 shadow-sm hover:shadow-xl group"
             >
               <div className="flex flex-col md:flex-row items-start gap-6">
-                <div className="p-4 bg-brand-100 dark:bg-slate-800 rounded-2xl shrink-0 group-hover:scale-110 group-hover:rotate-6 transition-all duration-300 text-brand-600 dark:text-emerald-400">
+                <div className="p-4 bg-brand-100 dark:bg-brand-900/60 rounded-2xl shrink-0 group-hover:scale-110 group-hover:rotate-6 transition-all duration-300 text-brand-600 dark:text-accent-400">
                   {section.icon}
                 </div>
                 <div>
-                  <h2 className="text-2xl font-black mb-3 text-slate-900 dark:text-white uppercase tracking-tight">
+                  <h2 className={`text-2xl font-black mb-3 text-slate-900 dark:text-white ${isRtl ? 'font-cairo' : 'uppercase tracking-tight'}`}>
                     {section.title}
                   </h2>
                   <p className="text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
@@ -72,7 +72,7 @@ const TermsPage = ({ t, isRtl }: { t: any, isRtl: boolean }) => {
         </div>
 
         {/* Footer Note */}
-        <div className="mt-20 text-center text-slate-400 dark:text-slate-500 text-xs font-bold uppercase tracking-widest leading-loose max-w-xl mx-auto">
+        <div className={`mt-20 text-center text-slate-400 dark:text-slate-500 text-xs font-bold leading-loose max-w-xl mx-auto ${isRtl ? 'font-cairo' : 'uppercase tracking-widest'}`}>
           {t.terms_footer}
         </div>
 
