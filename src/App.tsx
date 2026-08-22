@@ -3393,6 +3393,50 @@ export default function App() {
   // When true, the Add Listing form opens with the "Yalla Sahel" toggle pre-checked
   // (set by the CTAs on the Yalla Sahel page).
   const [prefillSahel, setPrefillSahel] = useState(false);
+
+  // Contact form — previously the form had no state and no handler, so every
+  // message the user typed was silently discarded.
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactMessage, setContactMessage] = useState('');
+  const [contactStatus, setContactStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [contactError, setContactError] = useState('');
+
+  const handleContactSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (contactStatus === 'sending') return;
+    const email = contactEmail.trim();
+    const message = contactMessage.trim();
+    if (!/.+@.+\..+/.test(email)) {
+      setContactStatus('error');
+      setContactError(isRtl ? 'من فضلك اكتب بريد إلكتروني صحيح.' : 'Please enter a valid email address.');
+      return;
+    }
+    if (!message) {
+      setContactStatus('error');
+      setContactError(isRtl ? 'من فضلك اكتب رسالتك.' : 'Please write your message.');
+      return;
+    }
+    setContactStatus('sending');
+    setContactError('');
+    try {
+      await addDoc(collection(db, 'contactMessages'), {
+        email: email.slice(0, 199),
+        // Kept under the 5000-char rule limit so a long message can't be rejected.
+        message: message.slice(0, 4999),
+        userId: auth.currentUser?.uid || '',
+        createdAt: new Date().toISOString(),
+      });
+      setContactStatus('sent');
+      setContactEmail('');
+      setContactMessage('');
+    } catch (err) {
+      console.error('Contact message failed:', err);
+      setContactStatus('error');
+      setContactError(isRtl
+        ? 'تعذّر إرسال رسالتك. حاول تاني أو كلّمنا على واتساب.'
+        : 'Could not send your message. Please try again or reach us on WhatsApp.');
+    }
+  };
   const toggleCompare = (id: string) => setCompareIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : (prev.length >= 4 ? prev : [...prev, id]));
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
@@ -4526,10 +4570,55 @@ export default function App() {
                   <div className="pt-10"><Logo color="white" className="h-10" /></div>
                </div>
                <div className="p-10 md:w-3/5">
-                 <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
-                   <div><label className="block text-sm font-medium text-slate-700 mb-1">{t.auth_email}</label><input type="email" className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none text-black" placeholder="you@example.com" /></div>
-                   <div><label className="block text-sm font-medium text-slate-700 mb-1">{t.contact_msg}</label><textarea rows={4} className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none text-black" placeholder="I'm interested in..." /></div>
-                   <Button className="w-full">{t.contact_btn}</Button>
+                 <form className="space-y-6" onSubmit={handleContactSubmit} noValidate>
+                   <div>
+                     <label htmlFor="contact-email" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">{t.auth_email}</label>
+                     <input
+                       id="contact-email"
+                       name="email"
+                       type="email"
+                       required
+                       autoComplete="email"
+                       value={contactEmail}
+                       onChange={(e) => { setContactEmail(e.target.value); if (contactStatus !== 'idle') setContactStatus('idle'); }}
+                       className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 dark:bg-slate-800 focus:ring-2 focus:ring-brand-500 outline-none text-black dark:text-white"
+                       placeholder="you@example.com"
+                       dir="ltr"
+                     />
+                   </div>
+                   <div>
+                     <label htmlFor="contact-message" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">{t.contact_msg}</label>
+                     <textarea
+                       id="contact-message"
+                       name="message"
+                       rows={4}
+                       required
+                       maxLength={4999}
+                       value={contactMessage}
+                       onChange={(e) => { setContactMessage(e.target.value); if (contactStatus !== 'idle') setContactStatus('idle'); }}
+                       className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 dark:bg-slate-800 focus:ring-2 focus:ring-brand-500 outline-none text-black dark:text-white"
+                       placeholder={isRtl ? 'أنا مهتم بـ...' : "I'm interested in..."}
+                     />
+                   </div>
+
+                   {/* Status is announced to screen readers as well as shown visually. */}
+                   <div aria-live="polite" role="status">
+                     {contactStatus === 'sent' && (
+                       <p className="flex items-center gap-2 text-sm font-bold text-green-700 dark:text-green-400">
+                         <CheckCircle size={16} aria-hidden="true" />
+                         {isRtl ? 'تم إرسال رسالتك ✅ هنرد عليك في أقرب وقت.' : "Message sent ✅ we'll get back to you shortly."}
+                       </p>
+                     )}
+                     {contactStatus === 'error' && (
+                       <p className="text-sm font-bold text-red-600 dark:text-red-400">{contactError}</p>
+                     )}
+                   </div>
+
+                   <Button type="submit" disabled={contactStatus === 'sending'} className="w-full">
+                     {contactStatus === 'sending'
+                       ? (isRtl ? 'جاري الإرسال...' : 'Sending...')
+                       : t.contact_btn}
+                   </Button>
                  </form>
                </div>
              </div>
