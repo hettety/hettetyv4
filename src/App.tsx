@@ -15,8 +15,7 @@ import {
   User, ArrowLeft, Phone, Target, CreditCard, PlusCircle, Edit2, Save, LogOut, Shield, Trash2, Bell, Lock as LockIcon,
   Plus, History, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, MessageSquare, Sun, Moon, Heart, Star
 } from 'lucide-react';
-import { GoogleGenAI, Type } from '@google/genai';
-import { GEMINI_MODEL, GEMINI_FALLBACK_MODEL, getGeminiApiKey, extract3DMarker, withRetry, isOverloadedError, generateContentResilient, aiErrorMessage } from './ai';
+import { Type, createChat, extract3DMarker, withRetry, isOverloadedError, generateContentResilient, aiErrorMessage } from './ai';
 import { AddListingPage, PAYMENT_OPTIONS, PROPERTY_TYPES } from './components/add-listing-page';
 import { INITIAL_ENTITY_DATA, TRANSLATIONS, SUPER_ADMIN_EMAILS } from './constants';
 import { Property, ChatMessage, UserDocument, Page, Notification, ChatSession } from './types';
@@ -832,7 +831,7 @@ const AIChat = ({ t, isRtl, properties, userName, onShow3D }: { t: any, isRtl: b
   const chatRef = useRef<any>(null);
   // Kept so we can transparently recreate the chat on a fallback model when the
   // primary model is overloaded (503), preserving the same system instruction.
-  const chatConfigRef = useRef<{ apiKey: string; systemInstruction: string } | null>(null);
+  const chatConfigRef = useRef<{ systemInstruction: string } | null>(null);
 
   // Fetch real sessions from Firestore
   useEffect(() => {
@@ -895,9 +894,7 @@ const AIChat = ({ t, isRtl, properties, userName, onShow3D }: { t: any, isRtl: b
   // Initialize Chat
   useEffect(() => {
     try {
-      const apiKey = getGeminiApiKey();
-      if (apiKey) {
-        const ai = new GoogleGenAI({ apiKey });
+      {
         const systemInstruction = `You are HETTETY AI, the official real estate assistant for HETTETY — Egypt's premier verified property platform. Your goal is to guide users through property data with the expertise of a seasoned broker and the precision of a financial analyst.
 
 ## Tone & Voice
@@ -936,10 +933,8 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
 - HETTETY support via the website contact form.
 - A licensed Egyptian real estate lawyer for legal matters.
 - A certified financial advisor for investment decisions.`;
-        chatConfigRef.current = { apiKey, systemInstruction };
-        chatRef.current = ai.chats.create({ model: GEMINI_MODEL, config: { systemInstruction } });
-      } else {
-        console.error("No API key found for Gemini");
+        chatConfigRef.current = { systemInstruction };
+        chatRef.current = createChat({ config: { systemInstruction } });
       }
     } catch (e) {
       console.error("Failed to initialize AI chat", e);
@@ -983,10 +978,8 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
           // stable fallback model (replaying history) and try once more.
           if (isOverloadedError(apiError) && chatConfigRef.current) {
             try {
-              const ai = new GoogleGenAI({ apiKey: chatConfigRef.current.apiKey });
-              const history = messages.map(m => ({ role: m.role === 'model' ? 'model' : 'user', parts: [{ text: m.text }] }));
-              chatRef.current = ai.chats.create({
-                model: GEMINI_FALLBACK_MODEL,
+              const history = messages.map(m => ({ role: (m.role === 'model' ? 'model' : 'user') as 'model' | 'user', parts: [{ text: m.text }] }));
+              chatRef.current = createChat({
                 history,
                 config: { systemInstruction: chatConfigRef.current.systemInstruction },
               });
@@ -1768,9 +1761,7 @@ const PropertyDetailPage = ({ property, onBack, onPurchase, t, isRtl }: { proper
     setIsLoading(true);
 
     try {
-      const apiKey = getGeminiApiKey();
-      if (apiKey) {
-        const genAI = new GoogleGenAI({ apiKey });
+      {
         const systemPrompt = `You are an expert broker and financial analyst for a specific real estate property on HETTETY — Egypt's premier verified property platform. Your goal is to guide users through this property's data with professional insight.
 
 Answer questions ONLY about this property based on the following data:
@@ -1801,7 +1792,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
 - Language: Keep your answers helpful and in the exact language the user speaks (English, Egyptian Arabic, Franco). Do not invent information not in the data provided.
 - 3D Viewing (Special Capability): You can launch an immersive 3D gallery of this property's photos. When the user asks to see the apartment in 3D, take a virtual tour, walk through it, or says things like "عرضلي الشقة 3D" / "عايز أشوفها مجسمة" / "warini el sha2a 3D", reply with a short enthusiastic confirmation in the user's language and append the exact token [SHOW_3D] at the very end of your reply.`;
 
-        const response = await generateContentResilient(genAI, {
+        const response = await generateContentResilient({
           contents: newMessages.map(m => ({ role: m.role === 'model' ? 'model' : 'user', parts: [{ text: m.text }] })),
           config: {
             systemInstruction: systemPrompt
@@ -1817,10 +1808,6 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
         }
 
         setMessages([...newMessages, { role: 'model', text: aiText, timestamp: new Date() }]);
-      } else {
-        setTimeout(() => {
-          setMessages([...newMessages, { role: 'model', text: "API Key not found. Mock response: Property is great!", timestamp: new Date() }]);
-        }, 1000);
       }
     } catch (err) {
       console.error(err);
@@ -3659,14 +3646,6 @@ export default function App() {
     
     setIsAiSearching(true);
     try {
-      const apiKey = getGeminiApiKey();
-      if (!apiKey) {
-        console.warn("GEMINI_API_KEY is missing. AI search will not work.");
-        setAiFilteredIds(null);
-        return;
-      }
-      const ai = new GoogleGenAI({ apiKey });
-      
       const prompt = `
         You are an AI real estate assistant. Return ONLY a JSON array of property IDs that match the user's search query.
         User Query: "${listingSearchQuery}"
@@ -3674,7 +3653,7 @@ export default function App() {
         ${JSON.stringify(properties.map(p => ({ id: p.id, title: p.title, location: p.location, price: p.price, type: p.status })), null, 2)}
       `;
 
-      const response = await generateContentResilient(ai, {
+      const response = await generateContentResilient({
         contents: prompt,
         config: {
           responseMimeType: 'application/json',

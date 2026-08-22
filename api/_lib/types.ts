@@ -1,0 +1,64 @@
+/**
+ * Provider-neutral AI request/response shapes.
+ *
+ * The browser never talks to a model vendor directly — it posts one of these to
+ * /api/ai, and the server picks a provider. Swapping vendors is therefore an
+ * environment-variable change, not an app rewrite.
+ */
+
+/** A chunk of a message: either text or an inline binary (image / PDF). */
+export type Part =
+  | { text: string }
+  | { inlineData: { mimeType: string; data: string } }; // data = base64, no data: prefix
+
+export interface Message {
+  role: 'user' | 'model';
+  parts: Part[];
+}
+
+export interface AIRequest {
+  /** Conversation so far. The last message is the current turn. */
+  contents: Message[];
+  /** System prompt / persona. */
+  systemInstruction?: string;
+  /** Ask the model for JSON rather than prose. */
+  responseMimeType?: 'text/plain' | 'application/json';
+  /** Optional JSON Schema the response must satisfy (best-effort per provider). */
+  responseSchema?: unknown;
+  /** Override the configured model for this one call. */
+  model?: string;
+}
+
+export interface AIResponse {
+  /** The model's reply as plain text (JSON string when JSON was requested). */
+  text: string;
+  /** Which provider/model actually served the request — useful for debugging. */
+  provider: string;
+  model: string;
+}
+
+/** True for transient "try again later" statuses (overload / rate limit). */
+export const isTransientStatus = (status: number) =>
+  status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+
+/** Error carrying an HTTP status so the route can mirror the provider's status. */
+export class ProviderError extends Error {
+  status: number;
+  /** Whether retrying could plausibly help. Misconfiguration never is. */
+  transient: boolean;
+  constructor(message: string, status = 502, transient?: boolean) {
+    super(message);
+    this.name = 'ProviderError';
+    this.status = status;
+    this.transient = transient ?? isTransientStatus(status);
+  }
+}
+
+export interface Provider {
+  readonly name: string;
+  /** Model used when the request doesn't override it. */
+  readonly defaultModel: string;
+  /** A cheaper/stabler model to retry on when the primary is overloaded. */
+  readonly fallbackModel?: string;
+  generate(req: AIRequest, model: string): Promise<string>;
+}

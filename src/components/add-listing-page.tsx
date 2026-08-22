@@ -3,8 +3,7 @@ import {
   CheckCircle, Loader2, PlusCircle, Upload, PlayCircle, Shield, ArrowRight, ArrowLeft, Wand2, FileText, Image as ImageIcon, X, Box, Globe
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
-import { GoogleGenAI } from '@google/genai';
-import { getGeminiApiKey, generateContentResilient, aiErrorMessage } from '../ai';
+import { generateContentResilient, aiErrorMessage } from '../ai';
 import { storage, ref, uploadBytes, getDownloadURL } from '../firebase';
 import { Property } from '../types';
 
@@ -211,11 +210,8 @@ export const AddListingPage = ({ onAdd, onAddMany, t, isRtl, isAdmin, isSuperAdm
   const generateDescription = async () => {
     try {
       setGeneratingDesc(true);
-      const apiKey = getGeminiApiKey();
-      if (!apiKey) throw new Error("No API Key");
-      const ai = new GoogleGenAI({ apiKey });
       const prompt = `Write a succinct, professional real estate description for a property in ${formData.location} with ${formData.bedrooms} bedrooms, ${formData.bathrooms} bathrooms, an area of ${formData.area} sqm, priced at ${formData.price} EGP. Status: ${formData.status}. ${isRtl ? 'Write it in Arabic.' : 'Write it in English.'}`;
-      const response = await generateContentResilient(ai, { contents: prompt });
+      const response = await generateContentResilient({ contents: prompt });
       setFormData(prev => ({ ...prev, description: response.text || "" }));
     } catch (e) {
       console.error("Description generation failed", e);
@@ -232,10 +228,7 @@ export const AddListingPage = ({ onAdd, onAddMany, t, isRtl, isAdmin, isSuperAdm
     if (!file) return;
     setImporting(true);
     try {
-      const apiKey = getGeminiApiKey();
-      if (!apiKey) throw new Error('No API Key');
       const base64 = (await fileToDataUrl(file)).split(',')[1];
-      const ai = new GoogleGenAI({ apiKey });
       const prompt = `You are a real-estate data extractor. Read this property brochure/flyer (it may be Arabic, English or Franco) and extract ONE listing as JSON.
 If it lists multiple unit types, pick the entry/smallest unit as the base, and summarise ALL unit types (with their areas, starting prices and payment plans) inside "description".
 Return ONLY valid JSON (no markdown), omitting any key you can't find:
@@ -264,7 +257,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
  "units": array — INCLUDE ONLY IF the brochure lists MULTIPLE unit types; one object per unit type: {"title": string (e.g. "1 Bedroom"), "propertyType": one of the propertyType values above, "bedrooms": number, "bathrooms": number, "area": number (from), "areaTo": number (to), "price": number (starting price)},
  "description": string (rich — EOI/maintenance, project story and any details not captured above, in the brochure's own language)
 }`;
-      const response = await generateContentResilient(ai, {
+      const response = await generateContentResilient({
         contents: [{ role: 'user', parts: [ { text: prompt }, { inlineData: { data: base64, mimeType: file.type } } ] }],
         config: { responseMimeType: 'application/json' },
       });
@@ -362,12 +355,9 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
     }
     // 2) OCR the registry number from it.
     try {
-      const apiKey = getGeminiApiKey();
-      if (!apiKey) throw new Error("No API Key");
       // await the read so any failure below is caught and the spinner always stops
       const base64 = (await fileToDataUrl(file)).split(',')[1];
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await generateContentResilient(ai, {
+      const response = await generateContentResilient({
         contents: [
           { role: 'user', parts: [
             { text: "Extract the official Registry Number (رقم المشهر او رقم الشهر العقاري) from this real estate deed/document. Return only the extracted number. If not found, return 'NOT_FOUND'." },

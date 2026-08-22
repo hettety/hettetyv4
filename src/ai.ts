@@ -1,20 +1,54 @@
 /**
- * Centralized Gemini AI configuration.
- * Single source of truth for the model name and API key resolution,
- * shared by the global chat, the unit assistant, AI search, description
- * generation and OCR extraction.
+ * Client-side AI access.
+ *
+ * The browser no longer talks to a model vendor directly and holds no API key —
+ * every request goes to our own /api/ai serverless function, which keeps the key
+ * server-side and forwards it to whichever provider is configured (Gemini,
+ * NVIDIA, OpenRouter, …). Swapping vendors is a server env-var change; nothing
+ * here or in the components needs to move.
  */
 
-// One model everywhere. We default to the stable GA model — the preview model
-// (gemini-3-flash-preview) constantly returned 503 "high demand", breaking the
-// assistant. Stability matters more than being on the bleeding edge here.
-export const GEMINI_MODEL = 'gemini-2.5-flash';
+/** JSON-Schema type names, replacing the vendor SDK's `Type` enum. */
+export const Type = {
+  STRING: 'string',
+  NUMBER: 'number',
+  INTEGER: 'integer',
+  BOOLEAN: 'boolean',
+  ARRAY: 'array',
+  OBJECT: 'object',
+} as const;
 
-// If the primary model is ever overloaded we transparently fall back to this one.
-export const GEMINI_FALLBACK_MODEL = 'gemini-2.0-flash';
+export type Part = { text: string } | { inlineData: { mimeType: string; data: string } };
+export interface Message { role: 'user' | 'model'; parts: Part[] }
+
+/** Vendor-SDK-shaped params, kept so call sites read the same as before. */
+export interface GenerateParams {
+  contents: string | Message[] | { role?: string; parts: Part[] }[];
+  config?: {
+    systemInstruction?: string;
+    responseMimeType?: 'text/plain' | 'application/json';
+    responseSchema?: unknown;
+  };
+  model?: string;
+}
+
+export interface GenerateResult { text: string; provider?: string; model?: string }
+
+/** Error from /api/ai that remembers whether retrying could help. */
+export class AIRequestError extends Error {
+  status: number;
+  transient: boolean;
+  constructor(message: string, status: number, transient: boolean) {
+    super(message);
+    this.name = 'AIRequestError';
+    this.status = status;
+    this.transient = transient;
+  }
+}
 
 /** True for transient "try again later" errors (overload / rate limit). */
 export function isOverloadedError(err: any): boolean {
+  if (err instanceof AIRequestError) return err.transient;
   const code = err?.status ?? err?.error?.code ?? err?.code;
   const status = err?.error?.status ?? err?.status;
   const msg = String(err?.message ?? err?.error?.message ?? '');
@@ -25,7 +59,7 @@ export function isOverloadedError(err: any): boolean {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Retries a call with exponential backoff while it keeps failing with a transient error. */
+/** Retries a call with exponential backoff while it keeps failing transiently. */
 export async function withRetry<T>(fn: () => Promise<T>, retries = 3, baseDelayMs = 600): Promise<T> {
   let lastErr: any;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -40,22 +74,77 @@ export async function withRetry<T>(fn: () => Promise<T>, retries = 3, baseDelayM
   throw lastErr;
 }
 
-/**
- * Runs `ai.models.generateContent` with retry, then one retry on the stable
- * fallback model if the primary is still overloaded. `ai` is the GoogleGenAI
- * instance (loosely typed here to avoid a hard import in this config module).
- */
-export async function generateContentResilient(ai: any, params: any): Promise<any> {
-  const model = params.model ?? GEMINI_MODEL;
-  try {
-    return await withRetry(() => ai.models.generateContent({ ...params, model }));
-  } catch (err) {
-    if (isOverloadedError(err) && model !== GEMINI_FALLBACK_MODEL) {
-      return await withRetry(() => ai.models.generateContent({ ...params, model: GEMINI_FALLBACK_MODEL }), 2);
-    }
-    throw err;
-  }
+/** Accepts a bare string or SDK-style contents and normalises to Message[]. */
+function normaliseContents(contents: GenerateParams['contents']): Message[] {
+  if (typeof contents === 'string') return [{ role: 'user', parts: [{ text: contents }] }];
+  return (contents as any[]).map((m) => ({
+    role: m.role === 'model' ? 'model' : 'user',
+    parts: m.parts,
+  }));
 }
+
+/** Posts one request to our serverless AI route. */
+export async function generateContent(params: GenerateParams): Promise<GenerateResult> {
+  const res = await fetch('/api/ai', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: normaliseContents(params.contents),
+      systemInstruction: params.config?.systemInstruction,
+      responseMimeType: params.config?.responseMimeType,
+      responseSchema: params.config?.responseSchema,
+      model: params.model,
+    }),
+  });
+
+  if (!res.ok) {
+    let message = `AI request failed (${res.status})`;
+    let transient = res.status === 429 || res.status >= 500;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+      if (typeof body?.transient === 'boolean') transient = body.transient;
+    } catch { /* non-JSON error body — keep the default message */ }
+    throw new AIRequestError(message, res.status, transient);
+  }
+
+  const body = await res.json();
+  return { text: body?.text ?? '', provider: body?.provider, model: body?.model };
+}
+
+/**
+ * Same as generateContent — retry and model-fallback now happen server-side, so
+ * this alias exists purely so existing call sites keep reading naturally.
+ */
+export async function generateContentResilient(params: GenerateParams): Promise<GenerateResult> {
+  return generateContent(params);
+}
+
+/**
+ * A stateful chat mirroring the vendor SDK's shape (`chat.sendMessage({ message })`).
+ * History lives here in the browser and is replayed to the stateless endpoint
+ * on every turn.
+ */
+export function createChat(opts: { config?: { systemInstruction?: string }; history?: Message[]; model?: string } = {}) {
+  const history: Message[] = [...(opts.history || [])];
+  return {
+    get history() { return [...history]; },
+    async sendMessage({ message }: { message: string }): Promise<GenerateResult> {
+      const turn: Message = { role: 'user', parts: [{ text: message }] };
+      const result = await generateContent({
+        contents: [...history, turn],
+        config: { systemInstruction: opts.config?.systemInstruction },
+        model: opts.model,
+      });
+      // Only commit to history once the round-trip succeeded, so a failed send
+      // doesn't poison the next turn.
+      history.push(turn, { role: 'model', parts: [{ text: result.text }] });
+      return result;
+    },
+  };
+}
+
+export type Chat = ReturnType<typeof createChat>;
 
 /** User-facing message for AI failures, localized. */
 export function aiErrorMessage(err: any, isRtl: boolean): string {
@@ -67,25 +156,6 @@ export function aiErrorMessage(err: any, isRtl: boolean): string {
   return isRtl
     ? 'حصلت مشكلة في الاتصال بمساعد الذكاء الاصطناعي. حاول تاني.'
     : 'Something went wrong reaching the AI assistant. Please try again.';
-}
-
-/**
- * Resolves the Gemini API key in every supported runtime:
- * - Vite/Vercel builds: VITE_GEMINI_API_KEY (statically replaced by Vite)
- * - AI Studio applets: process.env.GEMINI_API_KEY (injected via vite `define`)
- *
- * `process.env.GEMINI_API_KEY` below is statically replaced at build time by
- * the `define` block in vite.config.ts, so it never throws in the browser.
- */
-export function getGeminiApiKey(): string | undefined {
-  const viteKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
-  if (viteKey) return viteKey;
-  try {
-    return process.env.GEMINI_API_KEY || undefined;
-  } catch {
-    // No `define` replacement happened (non-Vite runtime) — no key available.
-    return undefined;
-  }
 }
 
 /** Marker the AI emits when the user asks to view a property in 3D. */
