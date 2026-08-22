@@ -44,6 +44,10 @@ function matches(sub, p) {
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const oneLine = (s) => String(s == null ? '' : s).replace(/[\r\n]+/g, ' ').slice(0, 150);
 
+/** Public site URL used in outgoing emails. Override with the APP_URL env var so
+ *  the link never has to be edited in code when the deployment moves. */
+const APP_URL = process.env.APP_URL || 'https://hettety.vercel.app';
+
 exports.newListingAlerts = onDocumentCreated(
   { document: 'properties/{id}', database: 'ai-studio-7dc9cb2d-ccba-48fa-8d31-f2b7a4759743' },
   async (event) => {
@@ -71,7 +75,7 @@ exports.newListingAlerts = onDocumentCreated(
               <p>${esc(p.location || '')}${p.compound ? ' — ' + esc(p.compound) : ''}</p>
               <p><strong>${price}</strong> · ${Number(p.bedrooms) || 0} beds · ${esc(p.area || '')} m²</p>
               <p>${esc(String(p.description || '').slice(0, 600))}</p>
-              <a href="https://hettetyv4.vercel.app" style="background:#1b2c4d;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">شوف العقار</a>
+              <a href="${APP_URL}" style="background:#1b2c4d;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">شوف العقار</a>
             </div>`,
         }).catch((e) => console.error('mail failed for', sub.email, e))
       );
