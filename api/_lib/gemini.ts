@@ -13,8 +13,12 @@ export function createGeminiProvider(): Provider {
   return {
     name: 'gemini',
     supportsPdf: true, // Gemini accepts PDFs inline
-    defaultModel: process.env.AI_MODEL || 'gemini-2.5-flash',
-    fallbackModel: process.env.AI_FALLBACK_MODEL || 'gemini-2.0-flash',
+    // gemini-2.5-flash is closed to new API keys — Google's 404 points new users
+    // at 3.6-flash. Override with AI_MODEL if your key has access to something else.
+    defaultModel: process.env.AI_MODEL || 'gemini-3.6-flash',
+    // Opt-in only: a hardcoded guess here would 404 on keys that lack that model,
+    // turning a recoverable overload into a hard failure.
+    fallbackModel: process.env.AI_FALLBACK_MODEL,
 
     async generate(req: AIRequest, model: string): Promise<string> {
       const body: Record<string, unknown> = {
