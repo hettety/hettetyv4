@@ -16,9 +16,9 @@
  *  2. Provider fallback — if the task's provider is misconfigured or down, the
  *     global default is used rather than the whole feature breaking.
  */
-import { createGeminiProvider } from './gemini';
-import { createOpenAICompatibleProvider, OPENAI_COMPATIBLE_PROVIDERS } from './openaiCompatible';
-import { AIRequest, AITask, Provider, ProviderError } from './types';
+import { createGeminiProvider } from './gemini.js';
+import { createOpenAICompatibleProvider, OPENAI_COMPATIBLE_PROVIDERS } from './openaiCompatible.js';
+import { AIRequest, AITask, Provider, ProviderError } from './types.js';
 
 const DEFAULT_PROVIDER = 'gemini';
 

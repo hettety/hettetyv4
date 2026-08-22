@@ -5,7 +5,7 @@
  * local vLLM/Ollama — anything exposing POST /v1/chat/completions. Point it at a
  * base URL and give it a key.
  */
-import { AIRequest, Message, Part, Provider, ProviderError } from './types';
+import { AIRequest, Message, Part, Provider, ProviderError } from './types.js';
 
 /** Presets so AI_PROVIDER=nvidia works without also setting a base URL. */
 const PRESETS: Record<string, { baseUrl: string; keyEnv: string; model: string }> = {

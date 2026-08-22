@@ -2,7 +2,7 @@
  * Google Gemini provider — talks to the Generative Language REST API directly
  * so the serverless function needs no vendor SDK.
  */
-import { AIRequest, Provider, ProviderError } from './types';
+import { AIRequest, Provider, ProviderError } from './types.js';
 
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 

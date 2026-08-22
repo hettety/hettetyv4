@@ -17,8 +17,8 @@
  *   AI_TASK_BROCHURE_PROVIDER / _MODEL   brochure import (needs PDF support)
  *   AI_TASK_OCR_PROVIDER / _MODEL        registry-number extraction from a deed
  */
-import { resolve } from './_lib/router';
-import { AI_TASKS, AIRequest, Message, ProviderError, isTransientStatus } from './_lib/types';
+import { resolve } from './_lib/router.js';
+import { AI_TASKS, AIRequest, Message, ProviderError, isTransientStatus } from './_lib/types.js';
 
 const MAX_BODY_CHARS = 12_000_000; // ~9MB of base64 — a brochure PDF fits, abuse doesn't.
 
