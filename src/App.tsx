@@ -329,6 +329,15 @@ const Logo: React.FC<{ color?: string; className?: string }> = ({ color = "curre
   );
 };
 
+/** A property photo that falls back to a placeholder when the listing has none. */
+const PropertyImage = ({ src, alt, className, iconSize = 24 }: { src?: string; alt: string; className?: string; iconSize?: number }) => (
+  src
+    ? <img src={src} alt={alt} className={className} />
+    : <div role="img" aria-label={alt} className={`${className || ''} flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-400`}>
+        <Building2 size={iconSize} aria-hidden="true" />
+      </div>
+);
+
 const PropertyCard: React.FC<{
   property: Property;
   onView3D: () => void;
@@ -752,7 +761,7 @@ const Experience3DPage = ({ properties, loading, onView3D, onBrowse, isRtl, limi
                   onClick={() => onView3D(p.id)}
                   className="group relative rounded-3xl overflow-hidden bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg hover:shadow-2xl cursor-pointer transition-all duration-500 hover:-translate-y-1"
                 >
-                  <img src={cover} alt={p.title} className="w-full h-80 object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700" />
+                  <PropertyImage src={cover} alt={p.title} iconSize={56} className="w-full h-80 object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700" />
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-900/20 to-transparent"></div>
 
                   {/* Badges */}
@@ -2111,7 +2120,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
             {slides[currentImageIndex]?.type === 'video' ? (
               <video src={slides[currentImageIndex].src} className="w-full h-full object-cover" controls playsInline />
             ) : (
-              <img src={slides[currentImageIndex]?.src} alt={property.title} className="w-full h-full object-cover" />
+              <PropertyImage src={slides[currentImageIndex]?.src} alt={property.title} iconSize={56} className="w-full h-full object-cover" />
             )}
             {av.taken && (
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10 pointer-events-none">
@@ -2734,7 +2743,7 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
                   <div className="space-y-4">
                     {completedPurchases.map(p => (
                       <div key={p.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row gap-5 items-start sm:items-center">
-                        <img src={p.property?.imageUrl} alt={p.property?.title || (isRtl ? 'صورة العقار' : 'Property image')} className="w-full sm:w-32 aspect-video sm:aspect-auto sm:h-24 rounded-xl object-cover" />
+                        <PropertyImage src={p.property?.imageUrl} alt={p.property?.title || (isRtl ? 'صورة العقار' : 'Property image')} className="w-full sm:w-32 aspect-video sm:aspect-auto sm:h-24 rounded-xl object-cover" />
                         <div className="flex-1">
                           <div className="flex justify-between items-start mb-2">
                             <h4 className="font-bold text-slate-900 dark:text-white text-lg">{p.property?.title}</h4>
@@ -2771,7 +2780,7 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
                     {inProgressPurchases.map(p => (
                       <div key={p.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row gap-5 items-start sm:items-center relative overflow-hidden group">
                         <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
-                        <img src={p.property?.imageUrl} alt={p.property?.title || (isRtl ? 'صورة العقار' : 'Property image')} className="w-full sm:w-32 aspect-video sm:aspect-auto sm:h-24 rounded-xl object-cover" />
+                        <PropertyImage src={p.property?.imageUrl} alt={p.property?.title || (isRtl ? 'صورة العقار' : 'Property image')} className="w-full sm:w-32 aspect-video sm:aspect-auto sm:h-24 rounded-xl object-cover" />
                         <div className="flex-1">
                           <div className="flex justify-between items-start mb-2">
                             <h4 className="font-bold text-slate-900 dark:text-white text-lg">{p.property?.title}</h4>
@@ -2868,7 +2877,7 @@ const PaymentPage = ({ property, onConfirm, onCancel, t, isRtl }: { property: Pr
            <CreditCard size={120} />
         </div>
         <div className="flex items-center gap-6 mb-8 pb-8 border-b border-slate-100 dark:border-slate-800 relative z-10">
-          <img src={property.imageUrl} alt={property.title || (isRtl ? 'صورة العقار' : 'Property image')} className="w-28 h-28 rounded-2xl object-cover shadow-md border border-white dark:border-slate-700" />
+          <PropertyImage src={property.imageUrl} alt={property.title || (isRtl ? 'صورة العقار' : 'Property image')} iconSize={32} className="w-28 h-28 rounded-2xl object-cover shadow-md border border-white dark:border-slate-700" />
           <div className="flex-1">
             <h2 className="text-2xl font-black text-slate-900 dark:text-white leading-tight mb-1">{property.title}</h2>
             <p className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1 text-sm"><MapPin size={14}/> {property.location}</p>
@@ -3206,7 +3215,7 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                     <tr key={prop.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
                       <td className="px-8 py-6">
                         <div className="flex items-center gap-4">
-                          <img src={prop.imageUrl} alt={prop.title || (isRtl ? 'صورة العقار' : 'Property thumbnail')} className="w-12 h-12 rounded-lg object-cover" />
+                          <PropertyImage src={prop.imageUrl} alt={prop.title || (isRtl ? 'صورة العقار' : 'Property thumbnail')} iconSize={18} className="w-12 h-12 rounded-lg object-cover" />
                           <div>
                             <div className="font-bold text-slate-900 dark:text-white">{prop.title}</div>
                             <div className="text-xs text-brand-600 dark:text-brand-400 font-medium">{prop.unitCode}</div>
@@ -3278,7 +3287,7 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                       <td className="px-8 py-5">
                         <div className="flex items-center gap-4">
                           {prop.imageUrl
-                            ? <img src={prop.imageUrl} alt={prop.title || (isRtl ? 'صورة العقار' : 'Property thumbnail')} className="w-12 h-12 rounded-lg object-cover" />
+                            ? <PropertyImage src={prop.imageUrl} alt={prop.title || (isRtl ? 'صورة العقار' : 'Property thumbnail')} iconSize={18} className="w-12 h-12 rounded-lg object-cover" />
                             : <div className="w-12 h-12 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400"><Building2 size={20} aria-hidden="true" /></div>}
                           <div>
                             <div className="font-bold text-slate-900 dark:text-white line-clamp-1 max-w-[16rem]">{prop.title}</div>
@@ -4510,7 +4519,7 @@ export default function App() {
                           className="group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl transition-all overflow-hidden cursor-pointer animate-fade-in focus:outline-none focus:ring-2 focus:ring-brand-500"
                         >
                           <div className="relative h-56 overflow-hidden">
-                            <img src={units[0].imageUrl} alt={name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                            <PropertyImage src={units[0].imageUrl} alt={name} iconSize={48} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
                             <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
                               <h3 className="text-white font-heading font-black text-lg line-clamp-1">{name}</h3>
                               {units[0].developer && <p className="text-white/70 text-xs">{units[0].developer}</p>}
@@ -4940,7 +4949,7 @@ export default function App() {
                         <th className={`p-3 ${isRtl ? 'sticky right-0' : 'sticky left-0'} bg-white dark:bg-slate-900 z-10`}></th>
                         {items.map(p => (
                           <th key={p.id} className="p-3 min-w-[160px]">
-                            <img src={p.imageUrl} alt={p.title || (isRtl ? 'صورة العقار' : 'Property thumbnail')} className="w-full h-24 object-cover rounded-xl mb-2" />
+                            <PropertyImage src={p.imageUrl} alt={p.title || (isRtl ? 'صورة العقار' : 'Property thumbnail')} className="w-full h-24 object-cover rounded-xl mb-2" />
                             <div className="font-bold text-slate-900 dark:text-white text-xs line-clamp-2">{p.title}</div>
                             <button 
                               type="button"
