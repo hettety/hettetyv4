@@ -71,10 +71,6 @@ export const api = {
     await new Promise(resolve => setTimeout(resolve, 1000));
     return { success: true, data: "Based on your preferences, I recommend looking at properties in New Cairo. Would you like to see some listings?" };
   },
-  uploadDocument: async (name: string, type: string) => {
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    return { success: true, data: { isValid: true } };
-  },
   saveConsent: async (preferences: any) => {
     await new Promise(resolve => setTimeout(resolve, 500));
     console.log("Consent saved to backend:", preferences);

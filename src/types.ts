@@ -1,4 +1,4 @@
-export type Page = 'home' | 'listings' | '3d-experience' | 'legal' | 'ai-chat' | 'login' | 'register' | 'contact' | '3d' | 'about' | 'buy' | 'verification' | 'tours' | 'terms' | 'privacy' | 'cookie-policy' | 'profile' | 'add-listing' | 'payment' | 'manage-users' | 'property' | 'yalla-sahel' | 'project';
+export type Page = 'home' | 'listings' | '3d-experience' | 'legal' | 'ai-chat' | 'login' | 'register' | 'contact' | '3d' | 'about' | 'buy' | 'verification' | 'tours' | 'terms' | 'privacy' | 'cookie-policy' | 'profile' | 'add-listing' | 'payment' | 'manage-users' | 'property' | 'yalla-sahel' | 'project' | 'edit-listing';
 
 export interface Property {
   id: string;
@@ -28,6 +28,14 @@ export interface Property {
   yallaSahel?: boolean;    // Explicitly listed under the "Yalla Sahel" coastal programme
   lat?: number;            // Optional geolocation for the map
   lng?: number;
+  // Publication state, controlled by the owner. Absent means 'Live' (legacy listings).
+  // NOTE: this is a UI-level hide, not a privacy boundary — the properties collection
+  // is world-readable, so a Draft is hidden, never secret.
+  listingState?: 'Draft' | 'Live' | 'Removed';
+  storagePaths?: string[]; // Storage object paths for this listing's media, so a delete can clean up
+  verifiedBy?: string;     // Reviewer email — written by an admin only
+  verifiedAt?: string;     // ISO timestamp of the review
+  reviewNote?: string;     // What the reviewer saw / what needs fixing
   imageUrl: string;
   images?: string[];
   panoramas?: string[]; // Equirectangular 360° photos for the immersive look-around viewer
@@ -89,12 +97,28 @@ export interface ChatSession {
   lastUpdatedAt: string;
 }
 
+/**
+ * Where a document is in the review queue.
+ * 'Checked' means a reviewer read the copy that was uploaded — it is NOT a claim
+ * that the document is genuine or registered with the Real Estate Publicity
+ * Department (الشهر العقاري). Nothing in this app can establish that.
+ */
+export type DocReviewStatus = 'Uploaded' | 'InReview' | 'Checked' | 'NeedsAttention';
+
 export interface UserDocument {
   id: string;
   fileId?: string;
   name: string;
   type: string;
-  status: string;
+  /** @deprecated Legacy self-asserted field. Every old document says 'Verified'
+   *  without anything having checked it. Read reviewStatus instead. */
+  status?: string;
+  reviewStatus?: DocReviewStatus; // absent => 'Uploaded' (never reviewed)
+  reviewedBy?: string;            // reviewer email — admin-written only
+  reviewedAt?: string;            // ISO timestamp
+  reviewNote?: string;            // what the reviewer saw / what needs fixing
+  aiSummary?: string;             // JSON string from an admin-triggered machine read
+  aiRunAt?: string;               // ISO timestamp of that read
   uploadDate: string;
   accessStatus?: 'Locked' | 'Requested' | 'Granted';
   size?: number;

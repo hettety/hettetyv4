@@ -4,8 +4,30 @@ import {
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { generateContentResilient, aiErrorMessage } from '../ai';
-import { storage, ref, uploadBytes, getDownloadURL } from '../firebase';
+import { storage, ref, uploadBytes, getDownloadURL, auth } from '../firebase';
 import { Property } from '../types';
+
+/**
+ * Fields whose change invalidates a previous review. Mirrors materialListingKeys()
+ * in firestore.rules — if these two drift apart, owner edits start failing with a
+ * bare permission-denied. Keep them in step.
+ */
+export const MATERIAL_LISTING_FIELDS = [
+  'title', 'price', 'currency', 'location', 'area', 'areaTo', 'status',
+  'propertyType', 'compound', 'developer', 'contactPhone', 'legalDocs',
+  'registrationNumber', 'courtSignatureValidity', 'isResale',
+] as const;
+
+/**
+ * Collapses the several ways this form represents "empty" (undefined, '', 0,
+ * false, []) so an untouched optional field never looks like an edit.
+ */
+export const normalizeField = (v: unknown): string => {
+  if (v === undefined || v === null || v === '' || v === false || v === 0) return '';
+  if (Array.isArray(v)) return v.length ? JSON.stringify(v) : '';
+  if (typeof v === 'object') return JSON.stringify(v);
+  return String(v);
+};
 
 // Canonical payment-method values (stored in English) with bilingual labels.
 export const PAYMENT_OPTIONS = [
@@ -82,7 +104,11 @@ const withTimeout = <T,>(promise: Promise<T>, ms: number) =>
 
 const uploadToStorage = async (file: Blob, originalName: string) => {
   const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80);
-  const storageRef = ref(storage, `properties/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`);
+  // The uid segment is what lets storage.rules authorise the owner to delete this
+  // object later. Objects uploaded before this existed sit at the flat prefix and
+  // can only be swept with the Admin SDK.
+  const uid = auth.currentUser?.uid || 'anonymous';
+  const storageRef = ref(storage, `properties/${uid}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`);
   await withTimeout(uploadBytes(storageRef, file), STORAGE_TIMEOUT_MS);
   return getDownloadURL(storageRef);
 };
@@ -145,9 +171,30 @@ const isLikelyTourUrl = (raw: string) => {
   } catch { return false; }
 };
 
-export const AddListingPage = ({ onAdd, onAddMany, t, isRtl, isAdmin, isSuperAdmin, defaultYallaSahel = false }: { onAdd: (prop: Omit<Property, 'id'>) => Promise<void>, onAddMany?: (props: Omit<Property, 'id'>[]) => Promise<void>, t: any, isRtl: boolean, isAdmin: boolean, isSuperAdmin: boolean, defaultYallaSahel?: boolean }) => {
+export const AddListingPage = ({ onAdd, onAddMany, onUpdate, mode = 'create', initialProperty, t, isRtl, isAdmin, isSuperAdmin, defaultYallaSahel = false }: { onAdd: (prop: Omit<Property, 'id'>) => Promise<void>, onAddMany?: (props: Omit<Property, 'id'>[]) => Promise<void>, onUpdate?: (id: string, patch: Record<string, unknown>) => Promise<void>, mode?: 'create' | 'edit', initialProperty?: Property, t: any, isRtl: boolean, isAdmin: boolean, isSuperAdmin: boolean, defaultYallaSahel?: boolean }) => {
+  const isEdit = mode === 'edit' && !!initialProperty;
+  const seed = initialProperty;
+  const numStr = (v: number | undefined, fallback = '') => (v === undefined || v === null ? fallback : String(v));
   const [step, setStep] = useState(1);
-  const [formData, setFormData] = useState({
+  // In edit mode every field is seeded from the stored listing. formData keeps
+  // numbers as strings, so each numeric field is converted on the way in.
+  const [formData, setFormData] = useState(() => seed ? {
+    title: seed.title || '', description: seed.description || '',
+    price: numStr(seed.price), location: seed.location || '',
+    bedrooms: numStr(seed.bedrooms, '1'), bathrooms: numStr(seed.bathrooms, '1'),
+    area: numStr(seed.area), areaTo: numStr(seed.areaTo),
+    currency: (seed.currency || 'EGP') as 'EGP' | 'USD',
+    pricePeriod: (seed.pricePeriod || 'total') as 'total' | 'night' | 'week' | 'month',
+    guests: numStr(seed.guests), village: seed.village || '', yallaSahel: !!seed.yallaSahel,
+    propertyType: seed.propertyType || 'Apartment', contactPhone: seed.contactPhone || '',
+    compound: seed.compound || '', developer: seed.developer || '', deliveryDate: seed.deliveryDate || '',
+    finishing: seed.finishing || '', floor: seed.floor || '', view: seed.view || '', furnished: !!seed.furnished,
+    imageUrl: seed.imageUrl || '', videoUrl: seed.videoUrl || '', digitalTwinUrl: seed.digitalTwinUrl || '',
+    status: seed.status || 'For Sale',
+    availability: (seed.availability || 'Available') as 'Available' | 'Sold' | 'Reserved',
+    registrationNumber: seed.registrationNumber || '',
+    courtSignatureValidity: !!seed.courtSignatureValidity, isResale: !!seed.isResale,
+  } : {
     title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '', areaTo: '',
     currency: 'EGP' as 'EGP' | 'USD',
     pricePeriod: 'total' as 'total' | 'night' | 'week' | 'month',
@@ -159,15 +206,17 @@ export const AddListingPage = ({ onAdd, onAddMany, t, isRtl, isAdmin, isSuperAdm
     registrationNumber: '', courtSignatureValidity: false, isResale: false
   });
   // Payment methods the buyer can use; at least one is required before publishing.
-  const [paymentMethods, setPaymentMethods] = useState<string[]>(['Cash']);
+  const [paymentMethods, setPaymentMethods] = useState<string[]>(seed?.paymentMethods?.length ? seed.paymentMethods : ['Cash']);
   const togglePayment = (m: string) =>
     setPaymentMethods(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
-  const [images, setImages] = useState<string[]>([]);
-  const [panoramas, setPanoramas] = useState<string[]>([]);
-  const [legalDocs, setLegalDocs] = useState<string[]>([]);
-  const [amenities, setAmenities] = useState<string[]>([]);
+  const [images, setImages] = useState<string[]>(seed?.images || []);
+  const [panoramas, setPanoramas] = useState<string[]>(seed?.panoramas || []);
+  const [legalDocs, setLegalDocs] = useState<string[]>(seed?.legalDocs || []);
+  const [amenities, setAmenities] = useState<string[]>(seed?.amenities || []);
   const toggleAmenity = (v: string) => setAmenities(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]);
-  const [paymentPlans, setPaymentPlans] = useState<{ downPayment: string; years: string; note: string }[]>([]);
+  const [paymentPlans, setPaymentPlans] = useState<{ downPayment: string; years: string; note: string }[]>(
+    (seed?.paymentPlans || []).map(pp => ({ downPayment: numStr(pp.downPayment), years: numStr(pp.years), note: pp.note || '' }))
+  );
   // Developer projects: one brochure → several unit types → one listing per type.
   const [unitVariants, setUnitVariants] = useState<{ title: string; propertyType: string; bedrooms: string; bathrooms: string; area: string; areaTo: string; price: string }[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -561,6 +610,8 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
     setErrorMsg('');
     setSubmitting(true);
     
+    // unitCode and publishDate identify the listing; regenerating them on an edit
+    // would rewrite its history, and the rules refuse them from an owner anyway.
     const unitCode = `HET-${Math.floor(10000 + Math.random() * 90000)}`;
     const publishDate = new Date().toISOString().split('T')[0];
 
@@ -579,39 +630,79 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
       panoramas: panoramas,
       status: formData.status as 'For Sale' | 'For Rent',
       availability: formData.availability,
-      isVerified: (isAdmin || isSuperAdmin),
-      verificationStatus: (isAdmin || isSuperAdmin) ? 'Verified' : 'Pending',
       paymentMethods: paymentMethods,
-      unitCode,
-      publishDate,
       legalDocs: legalDocs,
       registrationNumber: formData.registrationNumber,
       courtSignatureValidity: formData.courtSignatureValidity,
       isResale: formData.isResale
     };
 
-    if (formData.videoUrl) newProperty.videoUrl = formData.videoUrl;
-    if (formData.digitalTwinUrl) newProperty.digitalTwinUrl = formData.digitalTwinUrl;
-    if (formData.contactPhone.trim()) newProperty.contactPhone = formData.contactPhone.trim();
-    if (formData.compound.trim()) newProperty.compound = formData.compound.trim();
-    if (formData.developer.trim()) newProperty.developer = formData.developer.trim();
-    if (formData.deliveryDate.trim()) newProperty.deliveryDate = formData.deliveryDate.trim();
-    if (formData.finishing) newProperty.finishing = formData.finishing;
-    if (formData.floor.trim()) newProperty.floor = formData.floor.trim();
-    if (formData.view.trim()) newProperty.view = formData.view.trim();
-    if (formData.furnished) newProperty.furnished = true;
-    if (formData.areaTo && Number(formData.areaTo) > 0) newProperty.areaTo = Number(formData.areaTo);
-    if (formData.pricePeriod !== 'total') newProperty.pricePeriod = formData.pricePeriod;
-    if (formData.guests && Number(formData.guests) > 0) newProperty.guests = Number(formData.guests);
-    if (formData.village.trim()) newProperty.village = formData.village.trim();
-    if (formData.yallaSahel) newProperty.yallaSahel = true;
-    if (amenities.length) newProperty.amenities = amenities;
-    const cleanPlans = paymentPlans
-      .filter(p => p.downPayment || p.years || p.note.trim())
-      .map(p => ({ downPayment: Number(p.downPayment) || 0, years: Number(p.years) || 0, note: p.note.trim() }));
-    if (cleanPlans.length) newProperty.paymentPlans = cleanPlans;
+    if (!isEdit) {
+      newProperty.unitCode = unitCode;
+      newProperty.publishDate = publishDate;
+      newProperty.isVerified = (isAdmin || isSuperAdmin);
+      newProperty.verificationStatus = (isAdmin || isSuperAdmin) ? 'Verified' : 'Pending';
+    }
+
+    // On create, omitting an empty optional keeps the document small. On edit the
+    // opposite is needed: updateDoc merges, so an omitted key is an unchanged key
+    // and the owner could never clear a phone number or drop a payment plan.
+    const optional: Record<string, unknown> = {
+      videoUrl: formData.videoUrl,
+      digitalTwinUrl: formData.digitalTwinUrl,
+      contactPhone: formData.contactPhone.trim(),
+      compound: formData.compound.trim(),
+      developer: formData.developer.trim(),
+      deliveryDate: formData.deliveryDate.trim(),
+      finishing: formData.finishing,
+      floor: formData.floor.trim(),
+      view: formData.view.trim(),
+      furnished: formData.furnished,
+      areaTo: formData.areaTo && Number(formData.areaTo) > 0 ? Number(formData.areaTo) : 0,
+      pricePeriod: formData.pricePeriod,
+      guests: formData.guests && Number(formData.guests) > 0 ? Number(formData.guests) : 0,
+      village: formData.village.trim(),
+      yallaSahel: formData.yallaSahel,
+      amenities,
+      paymentPlans: paymentPlans
+        .filter(pp => pp.downPayment || pp.years || pp.note.trim())
+        .map(pp => ({ downPayment: Number(pp.downPayment) || 0, years: Number(pp.years) || 0, note: pp.note.trim() })),
+    };
+    const isEmpty = (v: unknown) =>
+      v === '' || v === false || v === 0 || (Array.isArray(v) && v.length === 0) || v === 'total';
+    Object.entries(optional).forEach(([k, v]) => {
+      if (isEdit || !isEmpty(v)) newProperty[k] = v;
+    });
 
     try {
+      if (isEdit && onUpdate && initialProperty) {
+        // Send only what actually changed. Firestore's affectedKeys() compares
+        // values, and the rules key the "does this invalidate the review" decision
+        // off it — so writing 0 over an absent areaTo would read as a material
+        // edit and downgrade a listing nobody meaningfully touched.
+        const patch: Record<string, unknown> = {};
+        Object.keys(newProperty).forEach(k => {
+          if (normalizeField((initialProperty as any)[k]) !== normalizeField(newProperty[k])) {
+            patch[k] = newProperty[k];
+          }
+        });
+        if (Object.keys(patch).length === 0) {
+          setSuccessMessage(isRtl ? 'مفيش تعديلات تتحفظ.' : 'Nothing changed.');
+          return;
+        }
+        const changedMaterial = MATERIAL_LISTING_FIELDS.some(k => k in patch);
+        if (changedMaterial) {
+          patch.verificationStatus = 'Pending';
+          patch.isVerified = false;
+        }
+        await onUpdate(initialProperty.id, patch);
+        setSuccessMessage(changedMaterial
+          ? (isRtl
+              ? 'اتحفظت التعديلات. لأنك غيّرت السعر أو الموقع أو المستندات، رجع الإعلان لحالة «لم تتم المراجعة» لحد ما حد من الفريق يراجعه تاني.'
+              : "Changes saved. Because you changed the price, location or documents, this listing is back to \u201cnot reviewed\u201d until a reviewer looks at it again.")
+          : (isRtl ? 'اتحفظت التعديلات.' : 'Changes saved.'));
+        return;
+      }
       if (unitVariants.length > 0 && onAddMany) {
         // One listing per unit type, all sharing the project-level data.
         const list = unitVariants.map((v) => {
@@ -630,7 +721,11 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
         setSuccessMessage(isRtl ? `تم نشر ${list.length} وحدات من المشروع بنجاح.` : `Published ${list.length} project units successfully.`);
       } else {
         await onAdd(newProperty);
-        setSuccessMessage(isRtl ? 'تم إضافة العقار بنجاح وتم نشره على المنصة.' : 'Property added successfully and published to the platform.');
+        setSuccessMessage(isAdmin || isSuperAdmin
+          ? (isRtl ? 'اتنشر العقار على المنصة.' : 'Property published to the platform.')
+          : (isRtl
+              ? 'إعلانك منشور. لسه ما اتراجعتش مستنداته — هنبلّغك أول ما حد من الفريق يراجعها.'
+              : "Your listing is live. Its documents have not been reviewed yet \u2014 we'll tell you once a reviewer has looked at them."));
       }
       setFormData({
         title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '', areaTo: '',
@@ -663,12 +758,16 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
     return (
       <div className="max-w-2xl mx-auto px-4 py-24 text-center animate-fade-in">
         <div className="bg-green-50 text-green-800 p-8 rounded-2xl border border-green-200 shadow-lg">
-          <CheckCircle className="mx-auto h-16 w-16 mb-4 text-green-500" />
-          <h2 className="text-2xl font-heading font-black mb-2">{isRtl ? 'تم النشر' : 'Published'}</h2>
+          <CheckCircle className="mx-auto h-16 w-16 mb-4 text-green-500" aria-hidden="true" />
+          <h2 className="text-2xl font-heading font-black mb-2">
+            {isEdit ? (isRtl ? 'تم حفظ التعديلات' : 'Changes saved') : (isRtl ? 'تم النشر' : 'Published')}
+          </h2>
           <p className="text-lg font-medium">{successMessage}</p>
-          <button onClick={() => setSuccessMessage('')} className="mt-8 px-6 py-3 bg-brand-600 text-white rounded-xl shadow-md font-bold">
-            {isRtl ? 'إضافة عقار آخر' : 'Add Another Property'}
-          </button>
+          {!isEdit && (
+            <button onClick={() => setSuccessMessage('')} className="mt-8 px-6 py-3 bg-brand-600 text-white rounded-xl shadow-md font-bold cursor-pointer">
+              {isRtl ? 'إضافة عقار آخر' : 'Add Another Property'}
+            </button>
+          )}
         </div>
       </div>
     );
@@ -691,8 +790,16 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
           <PlusCircle className="text-accent-500" size={24} aria-hidden="true" />
         </div>
         <div>
-          <h1 className="text-3xl font-heading font-black text-slate-900 dark:text-white tracking-tight">{isRtl ? 'إضافة عقار جديد' : 'Add New Listing'}</h1>
-          <p className="text-slate-500 dark:text-slate-400 font-medium">{isRtl ? 'إضافة العقار مجانية تماماً للمشرفين.' : 'Adding a property is completely free for admins.'}</p>
+          <h1 className="text-3xl font-heading font-black text-slate-900 dark:text-white tracking-tight">
+            {isEdit ? (isRtl ? 'تعديل الإعلان' : 'Edit listing') : (isRtl ? 'إضافة عقار جديد' : 'Add New Listing')}
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400 font-medium">
+            {isEdit
+              ? (isRtl
+                  ? 'تعديل السعر أو الموقع أو المستندات هيرجّع الإعلان لحالة «لم تتم المراجعة».'
+                  : 'Changing the price, location or documents sends this listing back to “not reviewed”.')
+              : (isRtl ? 'إضافة العقار مجانية.' : 'Posting a listing is free.')}
+          </p>
         </div>
       </div>
 
@@ -1222,7 +1329,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                  {isRtl ? 'التالي' : 'Next'} {isRtl ? <ArrowLeft size={18} aria-hidden="true" /> : <ArrowRight size={18} aria-hidden="true" />}
              </button>
          ) : (
-             <button onClick={handleSubmit} disabled={submitting || uploading || !basicsComplete} className="px-8 py-3 rounded-xl font-bold bg-gradient-to-r from-accent-600 to-accent-500 text-white shadow-xl hover:shadow-2xl hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 flex items-center gap-2 transition-all">
+             <button onClick={handleSubmit} disabled={submitting || uploading || !basicsComplete} data-testid="listing-submit" className="px-8 py-3 rounded-xl font-bold bg-gradient-to-r from-accent-600 to-accent-500 text-white shadow-xl hover:shadow-2xl hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 flex items-center gap-2 transition-all">
                  {submitting ? <Loader2 size={18} className="animate-spin" aria-hidden="true" /> : <CheckCircle size={18} aria-hidden="true" />}
                  {submitting ? (isRtl ? 'جاري النشر...' : 'Publishing...') : (isRtl ? 'نشر العقار' : 'Deploy Listing')}
              </button>

@@ -40,7 +40,7 @@ describe('Tier 1 — PropertyCard Component Interactions & Visual Badges', () =>
     expect(screen.getByText(/450 m²/i)).toBeInTheDocument();
   });
 
-  it('renders Verified badge on verified properties and omits on pending ones', async () => {
+  it('labels every card with what was actually reviewed, reviewed or not', async () => {
     render(<App />);
 
     const listingsBtns = screen.getAllByRole('button', { name: TRANSLATIONS.en.nav_listings });
@@ -48,9 +48,14 @@ describe('Tier 1 — PropertyCard Component Interactions & Visual Badges', () =>
 
     await screen.findByText('Luxury Beachfront Villa');
 
-    // Verified badge should be present on prop-1
-    const verifiedBadges = screen.getAllByText(/Verified/i);
-    expect(verifiedBadges.length).toBeGreaterThan(0);
+    // 3 fixtures are Verified, 2 are Pending. Absence of a badge used to be the
+    // only signal for an unreviewed listing, which told a buyer nothing.
+    expect(screen.getAllByText('Documents reviewed')).toHaveLength(3);
+    expect(screen.getAllByText('Not reviewed')).toHaveLength(2);
+
+    // The old copy claimed a legal guarantee the platform never established.
+    expect(screen.queryByText('Verified Legal')).toBeNull();
+    expect(screen.queryByText('أصلي + ثقة وقانون')).toBeNull();
   });
 
   it('toggles Compare button on PropertyCard and activates compare tray', async () => {

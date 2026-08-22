@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { 
   Building2, MapPin, Users, Globe, ShieldCheck, 
@@ -380,11 +380,13 @@ const PropertyCard: React.FC<{
       <div className={`absolute top-4 ${isRtl ? 'right-4' : 'left-4'} bg-accent-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-sm`}>
         {property.status === 'For Sale' ? t.prop_forsale : t.prop_forrent}
       </div>
-      {(property.isVerified || property.verificationStatus === 'Verified') && (
-        <div className={`absolute top-4 ${isRtl ? 'left-14' : 'right-12'} bg-green-500 text-white px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm`}>
-          <ShieldCheck size={12} aria-hidden="true" /> {property.verificationStatus === 'Verified' ? (isRtl ? 'أصلي + ثقة وقانون' : 'Verified Legal') : t.prop_verified}
-        </div>
-      )}
+{/* The badge follows verificationStatus alone. A stale isVerified: true on a
+          listing a reviewer later rejected must never keep showing green. And an
+          unreviewed listing says so, rather than saying nothing. */}
+      <div className={`absolute top-4 ${isRtl ? 'left-14' : 'right-12'} ${listingReviewInfo(property, t).chip} px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm`}>
+        {property.verificationStatus === 'Verified' && <ShieldCheck size={12} aria-hidden="true" />}
+        {listingReviewInfo(property, t).label}
+      </div>
       {onToggleFavorite && (
         <button 
           type="button"
@@ -1226,7 +1228,7 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate tracking-tight">{userName || 'HETTETY Member'}</p>
                    <div className="flex items-center gap-1.5 opacity-60">
                       <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate font-black uppercase tracking-wider">Verified Account</p>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate font-black uppercase tracking-wider">{isRtl ? 'مسجّل الدخول' : 'Signed in'}</p>
                    </div>
                 </div>
              </div>
@@ -1368,9 +1370,35 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
   );
 };
 
+/**
+ * How a document's review state is shown. Absent reviewStatus means nobody has
+ * looked at it — legacy documents carry a self-asserted status: 'Verified' that
+ * no human or system ever checked, so it is deliberately ignored here.
+ */
+const docReviewInfo = (doc: UserDocument, t: any) => {
+  switch (doc.reviewStatus) {
+    case 'InReview':
+      return { key: 'InReview', label: t.doc_status_inreview, desc: t.doc_status_inreview_desc,
+               chip: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800',
+               icon: 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' };
+    case 'Checked':
+      return { key: 'Checked', label: t.doc_status_checked, desc: t.doc_status_checked_desc,
+               chip: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800',
+               icon: 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' };
+    case 'NeedsAttention':
+      return { key: 'NeedsAttention', label: t.doc_status_attention, desc: t.doc_status_attention_desc,
+               chip: 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800',
+               icon: 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' };
+    default:
+      return { key: 'Uploaded', label: t.doc_status_uploaded, desc: t.doc_status_uploaded_desc,
+               chip: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+               icon: 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400' };
+  }
+};
+
 const LegalCenter = ({ t, isRtl, userEmail }: { t: any, isRtl: boolean, userEmail: string | null }) => {
   const [docs, setDocs] = useState<UserDocument[]>([]);
-  const [analyzing, setAnalyzing] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [viewingDoc, setViewingDoc] = useState<UserDocument | null>(null);
@@ -1434,7 +1462,7 @@ const LegalCenter = ({ t, isRtl, userEmail }: { t: any, isRtl: boolean, userEmai
       return;
     }
 
-    setAnalyzing(true);
+    setUploading(true);
     const newDocName = file.name;
     
     try {
@@ -1453,15 +1481,15 @@ const LegalCenter = ({ t, isRtl, userEmail }: { t: any, isRtl: boolean, userEmai
       const uploadResult = await uploadBytes(fileRef, fileToUpload);
       const downloadUrl = await getDownloadURL(uploadResult.ref);
 
-      const response = await api.uploadDocument(newDocName, 'Document');
       
+      // Uploading a file is not verifying it. The document starts unreviewed and
+      // only an admin can move it on — see the user_documents rules.
       const newDocData = {
-          fileId: `DOC-${Math.floor(1000 + Math.random() * 9000)}`,
+          fileId: `DOC-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
           name: newDocName,
           type: file.type.includes('image') ? 'Image' : file.type.includes('pdf') ? 'PDF' : 'Document',
-          status: response.success && response.data?.isValid ? 'Verified' : 'Action Required',
+          reviewStatus: 'Uploaded',
           uploadDate: new Date().toISOString().split('T')[0],
-          accessStatus: 'Granted',
           size: fileToUpload.size,
           content: downloadUrl,
           ownerUid: auth.currentUser!.uid,
@@ -1473,32 +1501,42 @@ const LegalCenter = ({ t, isRtl, userEmail }: { t: any, isRtl: boolean, userEmai
       setError(isRtl ? 'فشل رفع المستند. يرجى المحاولة مرة أخرى.' : 'Failed to upload document. Please try again.');
       console.error('Upload Error:', err);
     } finally {
-      setAnalyzing(false);
+      setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  /**
+   * Documents uploaded before reviewStatus existed carry no state, so the admin's
+   * queue query cannot see them. This is the owner's way of joining the queue —
+   * the only reviewStatus value they may ever write, enforced by the rules.
+   */
+  const handleRequestReview = async (docData: UserDocument) => {
+    setError(null);
+    try {
+      await updateDoc(doc(db, 'user_documents', docData.id), { reviewStatus: 'Uploaded' });
+    } catch (err) {
+      console.error('Review request failed:', err);
+      setError(isRtl ? 'تعذّر إرسال المستند للمراجعة.' : 'Could not send this document for review.');
     }
   };
 
   const handleDelete = async (docData: UserDocument) => {
     if (!window.confirm(isRtl ? 'هل أنت متأكد من حذف هذا المستند؟' : 'Are you sure you want to delete this document?')) return;
     try {
+      // Delete the file first. If that fails, keep the Firestore row: dropping it
+      // would leave a live download URL behind with nothing pointing at it. A file
+      // that is already gone is not a failure — otherwise the row is undeletable.
       if (docData.storagePath) {
-        const fileRef = ref(storage, docData.storagePath);
-        await deleteObject(fileRef).catch(err => console.warn('Storage delete failed:', err));
+        await deleteObject(ref(storage, docData.storagePath)).catch((err: any) => {
+          if (err?.code !== 'storage/object-not-found') throw err;
+        });
       }
       await deleteDoc(doc(db, 'user_documents', docData.id));
     } catch (err) {
       setError(isRtl ? 'فشل حذف المستند.' : 'Failed to delete document.');
       console.error('Delete Error:', err);
     }
-  };
-
-  const handleRequestAccess = (id: string) => {
-    setError(null);
-    updateDoc(doc(db, 'user_documents', id), { accessStatus: 'Requested' })
-      .catch(err => {
-        setError(isRtl ? 'فشل طلب الوصول.' : 'Failed to request access.');
-        console.error('Firestore Error:', err);
-      });
   };
 
   const formatSize = (bytes?: number) => {
@@ -1532,9 +1570,9 @@ const LegalCenter = ({ t, isRtl, userEmail }: { t: any, isRtl: boolean, userEmai
             />
           </div>
           <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
-          <Button onClick={handleUploadClick} disabled={analyzing} className="w-full sm:w-auto whitespace-nowrap">
-            {analyzing ? <Loader2 className="animate-spin w-4 h-4" /> : <Upload className="w-4 h-4" />}
-            {analyzing ? t.legal_analyzing : t.legal_upload}
+          <Button onClick={handleUploadClick} disabled={uploading} className="w-full sm:w-auto whitespace-nowrap">
+            {uploading ? <Loader2 className="animate-spin w-4 h-4" /> : <Upload className="w-4 h-4" />}
+            {uploading ? t.legal_uploading : t.legal_upload}
           </Button>
         </div>
       </div>
@@ -1548,10 +1586,13 @@ const LegalCenter = ({ t, isRtl, userEmail }: { t: any, isRtl: boolean, userEmai
 
       <div className="grid md:grid-cols-3 gap-8">
         <div className="md:col-span-2 space-y-4">
-           {filteredDocs.length > 0 ? filteredDocs.map(doc => (
-             <div key={doc.id} className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between shadow-sm hover:shadow-md transition-shadow gap-4">
+           {filteredDocs.length > 0 ? filteredDocs.map(doc => {
+             const rev = docReviewInfo(doc, t);
+             return (
+             <div key={doc.id} className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-4 overflow-hidden">
-                  <div className={`shrink-0 w-12 h-12 rounded-lg flex items-center justify-center ${doc.status === 'Verified' ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' : 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'}`}><FileText size={24} /></div>
+                  <div className={`shrink-0 w-12 h-12 rounded-lg flex items-center justify-center ${rev.icon}`}><FileText size={24} aria-hidden="true" /></div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs font-mono bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded">{doc.fileId}</span>
@@ -1561,31 +1602,34 @@ const LegalCenter = ({ t, isRtl, userEmail }: { t: any, isRtl: boolean, userEmai
                   </div>
                 </div>
                 <div className="flex items-center gap-3 sm:ml-4 shrink-0 justify-between sm:justify-end">
-                  <div className={`px-3 py-1 rounded-full text-xs font-bold border ${doc.status === 'Verified' ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800'}`}>{doc.status === 'Verified' ? t.prop_verified : doc.status}</div>
-                  
-                  {doc.accessStatus === 'Locked' && (
-                    <button onClick={() => handleRequestAccess(doc.id)} className="text-xs font-medium bg-slate-900 dark:bg-brand-600 text-white px-3 py-1.5 rounded-lg hover:bg-slate-800 dark:hover:bg-brand-700 transition-colors cursor-pointer">
-                      {isRtl ? 'طلب وصول' : 'Request Access'}
+                  <div className={`px-3 py-1 rounded-full text-xs font-bold border ${rev.chip}`}>{rev.label}</div>
+                  <div className="flex items-center gap-2">
+                    {!doc.reviewStatus && (
+                      <button onClick={() => handleRequestReview(doc)} className="text-xs font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-700 hover:text-white transition-colors cursor-pointer">
+                        {isRtl ? 'اطلب مراجعة' : 'Request review'}
+                      </button>
+                    )}
+                    <button onClick={() => setViewingDoc(doc)} className="text-xs font-medium text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/30 px-3 py-1.5 rounded-lg border border-brand-200 dark:border-brand-800 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors cursor-pointer">
+                      {isRtl ? 'عرض' : 'View'}
                     </button>
-                  )}
-                  {doc.accessStatus === 'Requested' && (
-                    <span className="text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-3 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800">
-                      {isRtl ? 'قيد المراجعة' : 'Pending Approval'}
-                    </span>
-                  )}
-                  {doc.accessStatus === 'Granted' && (
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setViewingDoc(doc)} className="text-xs font-medium text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/30 px-3 py-1.5 rounded-lg border border-brand-200 dark:border-brand-800 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors cursor-pointer">
-                        {isRtl ? 'عرض' : 'View'}
-                      </button>
-                      <button onClick={() => handleDelete(doc)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors cursor-pointer" title={isRtl ? 'حذف' : 'Delete'}>
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  )}
+                    <button onClick={() => handleDelete(doc)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors cursor-pointer" title={isRtl ? 'حذف' : 'Delete'}>
+                      <Trash2 size={16} aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
               </div>
-            )) : (
+              {/* What the state actually means, in the row itself. Burying the
+                  caveat behind a click is how "Reviewed" gets read as "genuine". */}
+              <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">{rev.desc}</p>
+              {doc.reviewNote && (
+                <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                  <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">{t.doc_review_note}</p>
+                  <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{doc.reviewNote}</p>
+                </div>
+              )}
+             </div>
+             );
+            }) : (
               <div className="bg-white dark:bg-slate-900 p-8 rounded-xl border border-slate-200 dark:border-slate-800 text-center text-slate-500 dark:text-slate-400">
                 {isRtl ? "لم يتم العثور على ملفات." : "No files found."}
               </div>
@@ -1596,18 +1640,22 @@ const LegalCenter = ({ t, isRtl, userEmail }: { t: any, isRtl: boolean, userEmai
              <div className="absolute top-0 right-0 p-4 opacity-10"><Shield size={80} /></div>
              <h3 className="font-bold mb-4 flex items-center gap-2 relative z-10"><ShieldCheck className="text-brand-400" /> {t.legal_status}</h3>
              <div className="space-y-4 relative z-10">
-               {[t.legal_stat_1, t.legal_stat_2, t.legal_stat_3].map((label: string, i) => (
-                 <div key={i} className="flex justify-between text-sm"><span className="text-slate-400">{label}</span><CheckCircle className="text-green-400 w-4 h-4" /></div>
+               {([
+                 { label: t.legal_stat_1, n: docs.filter(d => !d.reviewStatus || d.reviewStatus === 'Uploaded').length, color: 'text-slate-300' },
+                 { label: t.legal_stat_2, n: docs.filter(d => d.reviewStatus === 'InReview').length, color: 'text-amber-400' },
+                 { label: t.legal_stat_3, n: docs.filter(d => d.reviewStatus === 'NeedsAttention').length, color: 'text-red-400' },
+                 { label: t.legal_stat_4, n: docs.filter(d => d.reviewStatus === 'Checked').length, color: 'text-green-400' },
+               ]).map((row) => (
+                 <div key={row.label} className="flex justify-between items-center text-sm">
+                   <span className="text-slate-400">{row.label}</span>
+                   <span className={`font-black tabular-nums ${row.color}`}>{row.n}</span>
+                 </div>
                ))}
              </div>
            </div>
            <div className="bg-brand-50 dark:bg-brand-900/20 border border-brand-100 dark:border-brand-800 p-6 rounded-2xl">
-             <h3 className="font-bold text-brand-900 dark:text-brand-300 mb-2 text-sm">{isRtl ? 'مساحة العمل الخاصة بك' : 'Your Private Workspace'}</h3>
-             <p className="text-xs text-brand-700 dark:text-brand-400 leading-relaxed">
-               {isRtl 
-                 ? 'هذه الملفات مشفرة ومخصصة لحسابك فقط. لا يمكن لأي مستخدم آخر رؤية مستنداتك. بعض الملفات الإدارية تتطلب طلب وصول من الإدارة.' 
-                 : 'These files are encrypted and scoped to your account. No other users can see your documents. Some administrative files require an access request.'}
-             </p>
+             <h3 className="font-bold text-brand-900 dark:text-brand-300 mb-2 text-sm">{t.legal_privacy_title}</h3>
+             <p className="text-xs text-brand-700 dark:text-brand-400 leading-relaxed">{t.legal_privacy}</p>
            </div>
         </div>
       </div>
@@ -1633,6 +1681,9 @@ const LegalCenter = ({ t, isRtl, userEmail }: { t: any, isRtl: boolean, userEmai
                 <div>
                   <h3 id="legal-doc-modal-title" className="font-bold text-slate-900 dark:text-white">{viewingDoc.name}</h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">{viewingDoc.fileId} • {viewingDoc.type}</p>
+                </div>
+                <div className={`px-3 py-1 rounded-full text-xs font-bold border ${docReviewInfo(viewingDoc, t).chip}`}>
+                  {docReviewInfo(viewingDoc, t).label}
                 </div>
               </div>
               <button 
@@ -1689,18 +1740,7 @@ const LegalCenter = ({ t, isRtl, userEmail }: { t: any, isRtl: boolean, userEmai
                         })()}
                       </div>
                     ) : (
-                      <>
-                        <p>
-                          {isRtl 
-                            ? 'هذا المستند هو نسخة إلكترونية موثقة. يحتوي على تفاصيل الاتفاقية أو الهوية أو الملكية الخاصة بك.' 
-                            : 'This document is a verified electronic copy. It contains the details of your agreement, identification, or property deed.'}
-                        </p>
-                        <p>
-                          {isRtl 
-                            ? 'تم التحقق من صحة هذا المستند وتشفيره بأمان على خوادمنا. لا يمكن لأي شخص آخر الوصول إليه بدون إذنك الصريح.' 
-                            : 'This document has been validated and securely encrypted on our servers. No one else can access it without your explicit permission.'}
-                        </p>
-                      </>
+                      <p>{docReviewInfo(viewingDoc, t).desc}</p>
                     )}
                     <div className="mt-8 p-4 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-lg">
                       <p className="text-xs text-slate-500 dark:text-slate-500 font-mono">
@@ -1711,13 +1751,10 @@ const LegalCenter = ({ t, isRtl, userEmail }: { t: any, isRtl: boolean, userEmai
                       </p>
                     </div>
                   </div>
-                  <div className="mt-16 pt-8 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
-                    <div className="text-xs text-slate-400 dark:text-slate-500">
-                      {isRtl ? 'وثيقة موثقة ومحمية' : 'Verified & Protected Document'}
-                    </div>
-                    <div className="flex items-center gap-2 text-green-600 dark:text-green-400 text-sm font-medium">
-                      <ShieldCheck size={16} />
-                      {isRtl ? 'تم التحقق' : 'Verified'}
+                  <div className="mt-16 pt-8 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center gap-4 flex-wrap">
+                    <div className="text-xs text-slate-400 dark:text-slate-500 max-w-md">{docReviewInfo(viewingDoc, t).desc}</div>
+                    <div className={`px-3 py-1 rounded-full text-xs font-bold border ${docReviewInfo(viewingDoc, t).chip}`}>
+                      {docReviewInfo(viewingDoc, t).label}
                     </div>
                   </div>
                 </div>
@@ -2178,13 +2215,15 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">{property.title}</h1>
-                {property.verificationStatus === 'Verified' && (
-                  <span className="bg-green-500 text-white text-[10px] px-2 py-1 rounded-full font-black flex items-center gap-1 uppercase tracking-wider">
-                    <ShieldCheck size={12}/> {isRtl ? 'أصلي + ثقة وقانون' : 'Verified Legal'}
-                  </span>
-                )}
+                <span className={`${listingReviewInfo(property, t).chip} text-[10px] px-2 py-1 rounded-full font-black flex items-center gap-1 uppercase tracking-wider`}>
+                  {property.verificationStatus === 'Verified' && <ShieldCheck size={12} aria-hidden="true" />}
+                  {listingReviewInfo(property, t).label}
+                </span>
                 <span className={`${av.color} text-white text-[10px] px-2 py-1 rounded-full font-black uppercase tracking-wider`}>{av.label}</span>
               </div>
+              {listingReviewInfo(property, t).note && (
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 max-w-2xl">{listingReviewInfo(property, t).note}</p>
+              )}
               <p className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mb-1 font-medium flex-wrap">
                 <MapPin size={16} className="text-brand-500"/> {property.location}
                 {property.compound && (onOpenProject
@@ -2544,14 +2583,99 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
   );
 };
 
-const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFavorites, allProperties, onToggleFavorite, open3D, onOpenProperty }: { t: any, isRtl: boolean, onBrowse: () => void, onLogout: () => void, onLogin: () => void, userEmail: string | null, userFavorites: string[], allProperties: Property[], onToggleFavorite: (id: string) => void, open3D: (id: string) => void, onOpenProperty: (id: string) => void }) => {
+/**
+ * Recovers a Storage object path from a download URL, so deleting a listing can
+ * clean up its media. Firebase encodes the path between /o/ and the query string.
+ * Returns null for base64 fallbacks and for anything that isn't a Storage URL.
+ */
+const storagePathFromUrl = (url?: string): string | null => {
+  if (!url || !url.startsWith('https://firebasestorage.googleapis.com/')) return null;
+  const m = url.match(/\/o\/([^?]+)/);
+  if (!m) return null;
+  try { return decodeURIComponent(m[1]); } catch { return null; }
+};
+
+/** How a listing's review state is shown to a buyer. */
+const listingReviewInfo = (p: Property, t: any) => {
+  if (p.verificationStatus === 'Verified') {
+    return { label: t.listing_review_done, note: t.listing_review_note,
+             chip: 'bg-green-500 text-white', verified: true };
+  }
+  if (p.verificationStatus === 'Rejected') {
+    return { label: t.listing_review_rejected, note: p.reviewNote || '',
+             chip: 'bg-red-500 text-white', verified: false };
+  }
+  return { label: t.listing_review_pending, note: '',
+           chip: 'bg-slate-500/90 text-white', verified: false };
+};
+
+const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFavorites, allProperties, onToggleFavorite, open3D, onOpenProperty, onEditListing, refreshProperties }: { t: any, isRtl: boolean, onBrowse: () => void, onLogout: () => void, onLogin: () => void, userEmail: string | null, userFavorites: string[], allProperties: Property[], onToggleFavorite: (id: string) => void, open3D: (id: string) => void, onOpenProperty: (id: string) => void, onEditListing?: (id: string) => void, refreshProperties?: () => Promise<void> }) => {
   const [profile, setProfile] = useState<any>(null);
   const [purchases, setPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
   const [saving, setSaving] = useState(false);
-  const [activeSubTab, setActiveSubTab] = useState<'purchases' | 'favorites'>('purchases');
+  const [activeSubTab, setActiveSubTab] = useState<'purchases' | 'favorites' | 'listings'>('purchases');
+  const [listingBusy, setListingBusy] = useState<string | null>(null);
+  const [listingError, setListingError] = useState<string | null>(null);
+
+  const myListings = allProperties.filter(p => p.authorUid && p.authorUid === auth.currentUser?.uid);
+
+  /** Hide or re-publish a listing. Reversible, and nothing referencing it breaks. */
+  const setListingState = async (id: string, next: 'Live' | 'Removed') => {
+    setListingBusy(id);
+    setListingError(null);
+    try {
+      await updateDoc(doc(db, 'properties', id), { listingState: next });
+      await refreshProperties?.();
+    } catch (err) {
+      console.error('Listing state change failed:', err);
+      setListingError(isRtl ? 'تعذّر تغيير حالة الإعلان.' : 'Could not change the listing state.');
+    } finally {
+      setListingBusy(null);
+    }
+  };
+
+  /**
+   * Hard delete. Media uploaded before paths were namespaced by uid cannot be
+   * removed from the browser, so the owner is told rather than reassured.
+   */
+  const deleteListing = async (p: Property) => {
+    const urls = [p.imageUrl, ...(p.images || []), ...(p.panoramas || []), p.videoUrl].filter(Boolean) as string[];
+    const paths = urls.map(storagePathFromUrl).filter(Boolean) as string[];
+    const legacy = paths.filter(path => !path.startsWith(`properties/${auth.currentUser?.uid}/`));
+    const warning = legacy.length
+      ? (isRtl
+          ? `\n\nملحوظة: ${legacy.length} من ملفات الإعلان اترفعت قبل تعديل مسارات التخزين، فمش هتتمسح من السيرفر. لازم تتشال يدوي.`
+          : `\n\nNote: ${legacy.length} of this listing's files predate the current storage layout and will stay on the server. They have to be removed manually.`)
+      : '';
+    if (!window.confirm((isRtl
+      ? 'حذف الإعلان ده نهائياً؟ مش هينفع ترجّعه.'
+      : 'Delete this listing permanently? This cannot be undone.') + warning)) return;
+
+    setListingBusy(p.id);
+    setListingError(null);
+    try {
+      for (const path of paths) {
+        if (legacy.includes(path)) continue;   // rules refuse these; skip rather than fail the whole delete
+        await deleteObject(ref(storage, path)).catch((err: any) => {
+          if (err?.code === 'storage/object-not-found') return;  // already gone
+          console.error('Storage delete failed for', path, err);
+          throw err;
+        });
+      }
+      await deleteDoc(doc(db, 'properties', p.id));
+      await refreshProperties?.();
+    } catch (err) {
+      console.error('Listing delete failed:', err);
+      setListingError(isRtl
+        ? 'تعذّر حذف الإعلان. ما اتشالش حاجة — جرّب تاني.'
+        : 'Could not delete the listing. Nothing was removed — please try again.');
+    } finally {
+      setListingBusy(null);
+    }
+  };
 
   const favoriteProperties = allProperties.filter(p => userFavorites.includes(p.id));
   const completedPurchases = purchases.filter(p => p.status?.toLowerCase() === 'completed' || p.status?.toLowerCase() === 'finished');
@@ -2566,10 +2690,13 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
     const fetchProfile = async () => {
       try {
         const userDoc = await getDoc(doc(db, 'users', auth.currentUser!.uid));
-        if (userDoc.exists()) {
-          setProfile(userDoc.data());
-          setEditForm(userDoc.data());
-        }
+        // A signed-in account whose /users doc was never written still has a
+        // profile — it just isn't in Firestore yet. Falling through to null here
+        // used to tell them they weren't signed in, and hid their own listings.
+        const fallback = { name: auth.currentUser!.displayName || '', email: auth.currentUser!.email || '', phone: '', preferences: '' };
+        const data = userDoc.exists() ? userDoc.data() : fallback;
+        setProfile(data);
+        setEditForm(data);
         
         // Fetch real purchases from Firestore
         const q = query(
@@ -2609,7 +2736,8 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
   };
 
   if (loading) return <div className="py-20 text-center"><Loader2 className="animate-spin mx-auto text-brand-500 w-8 h-8"/></div>;
-  if (!profile) return (
+  // Gate on the auth session, not on whether a Firestore document happens to exist.
+  if (!auth.currentUser || !profile) return (
     <div className="py-20 text-center">
       <h2 className="text-2xl font-bold text-slate-900 mb-4">{isRtl ? 'يرجى تسجيل الدخول' : 'Please Sign In'}</h2>
       <p className="text-slate-500 mb-8">{isRtl ? 'يجب تسجيل الدخول لعرض الملف الشخصي.' : 'You must be signed in to view your profile.'}</p>
@@ -2726,6 +2854,14 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
               {t.prof_favorites}
               {activeSubTab === 'favorites' && <motion.div layoutId="subtab" className="absolute bottom-0 left-0 right-0 h-1 bg-brand-600 rounded-full" />}
             </button>
+            <button
+              onClick={() => setActiveSubTab('listings')}
+              className={`pb-4 px-2 font-bold text-sm uppercase tracking-wider transition-all relative ${activeSubTab === 'listings' ? 'text-brand-600' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              {t.prof_listings}
+              <span className="ml-1.5 text-xs font-normal text-slate-400">({myListings.length})</span>
+              {activeSubTab === 'listings' && <motion.div layoutId="subtab" className="absolute bottom-0 left-0 right-0 h-1 bg-brand-600 rounded-full" />}
+            </button>
           </div>
 
           {activeSubTab === 'purchases' && (
@@ -2841,6 +2977,92 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
               )}
             </div>
           )}
+          {activeSubTab === 'listings' && (
+            <div className="animate-fade-in">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-2">
+                <div className="p-2 bg-brand-50 dark:bg-brand-900/20 text-brand-600 rounded-lg">
+                  <Building2 size={18} aria-hidden="true" />
+                </div>
+                {t.prof_listings}
+                <span className="text-sm font-normal text-slate-400 font-sans">({myListings.length})</span>
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">{t.listing_draft_note}</p>
+
+              {listingError && (
+                <p className="mb-4 p-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm font-medium">{listingError}</p>
+              )}
+
+              {myListings.length === 0 ? (
+                <EmptyState
+                  variant="favorites"
+                  title={t.listing_none}
+                  description={t.listing_draft_note}
+                  actionLabel={t.prof_start_browsing}
+                  onAction={onBrowse}
+                  isRtl={isRtl}
+                />
+              ) : (
+                <div className="space-y-4">
+                  {myListings.map(p => {
+                    const state = p.listingState || 'Live';
+                    const rev = listingReviewInfo(p, t);
+                    const stateLabel = state === 'Draft' ? t.listing_state_draft : state === 'Removed' ? t.listing_state_removed : t.listing_state_live;
+                    return (
+                      <div key={p.id} className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                        <div className="flex flex-col sm:flex-row gap-4">
+                          <button onClick={() => onOpenProperty(p.id)} className="shrink-0 cursor-pointer text-start">
+                            <PropertyImage src={p.imageUrl} alt={p.title} iconSize={22} className="w-full sm:w-28 h-24 rounded-xl object-cover" />
+                          </button>
+                          <div className="flex-1 min-w-0">
+                            <button onClick={() => onOpenProperty(p.id)} className="font-bold text-slate-900 dark:text-white hover:text-brand-600 cursor-pointer text-start truncate block w-full">
+                              {p.title}
+                            </button>
+                            <p className="text-sm text-slate-500 dark:text-slate-400">
+                              {p.price?.toLocaleString()} {p.currency || 'EGP'} • {p.location}
+                            </p>
+                            <div className="flex items-center gap-2 mt-2 flex-wrap">
+                              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${state === 'Live' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
+                                {stateLabel}
+                              </span>
+                              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${rev.chip}`}>{rev.label}</span>
+                            </div>
+                            {p.verificationStatus === 'Rejected' && p.reviewNote && (
+                              <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+                                <strong>{t.doc_review_note}:</strong> {p.reviewNote}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex sm:flex-col gap-2 shrink-0">
+                            <button
+                              onClick={() => onEditListing?.(p.id)}
+                              disabled={listingBusy === p.id}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 hover:bg-brand-600 hover:text-white transition-all cursor-pointer disabled:opacity-50"
+                            >
+                              {t.listing_edit}
+                            </button>
+                            <button
+                              onClick={() => setListingState(p.id, state === 'Live' ? 'Removed' : 'Live')}
+                              disabled={listingBusy === p.id}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-700 hover:text-white transition-all cursor-pointer disabled:opacity-50"
+                            >
+                              {state === 'Live' ? t.listing_unpublish : t.listing_publish}
+                            </button>
+                            <button
+                              onClick={() => deleteListing(p)}
+                              disabled={listingBusy === p.id}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-600 hover:text-white transition-all cursor-pointer disabled:opacity-50"
+                            >
+                              {t.listing_delete}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -2941,9 +3163,15 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
   const [allProperties, setAllProperties] = useState<Property[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
   const [reports, setReports] = useState<any[]>([]);
+  const [reviewDocs, setReviewDocs] = useState<UserDocument[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'stats' | 'properties' | 'verifications' | 'purchases' | 'users' | 'reports'>('stats');
+  const [activeTab, setActiveTab] = useState<'stats' | 'properties' | 'verifications' | 'purchases' | 'users' | 'reports' | 'documents'>('stats');
   const [updating, setUpdating] = useState<string | null>(null);
+  // Document being reviewed, plus the note the reviewer is writing about it.
+  const [reviewingDoc, setReviewingDoc] = useState<UserDocument | null>(null);
+  const [reviewNote, setReviewNote] = useState('');
+  const [reviewFileUrl, setReviewFileUrl] = useState<string | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -2958,12 +3186,28 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
           return [] as any[];
         }
       };
-      const [usersList, propsList, purchasesList, reportsList] = await Promise.all([
+      // Only the documents actually waiting on a reviewer — the rules run isAdmin()
+      // per returned doc, so pulling the whole collection would cost reads for nothing.
+      const safeQueue = async () => {
+        try {
+          const snap = await getDocs(query(
+            collection(db, 'user_documents'),
+            where('reviewStatus', 'in', ['Uploaded', 'InReview'])
+          ));
+          return snap.docs.map(d => ({ id: d.id, ...d.data() })) as UserDocument[];
+        } catch (error) {
+          console.error('Error fetching document review queue:', error);
+          return [] as UserDocument[];
+        }
+      };
+      const [usersList, propsList, purchasesList, reportsList, docsList] = await Promise.all([
         safeGet('users'),
         safeGet('properties'),
         safeGet('purchases'),
         safeGet('reports'),
+        safeQueue(),
       ]);
+      setReviewDocs(docsList);
       setUsers(usersList);
       setAllProperties(propsList as Property[]);
       setPurchases(purchasesList);
@@ -3068,21 +3312,106 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
     }
   };
 
-  const handleVerifyProperty = async (propId: string, status: 'Verified' | 'Rejected' | 'Pending') => {
+  const handleVerifyProperty = async (propId: string, status: 'Verified' | 'Rejected' | 'Pending', note?: string) => {
     setUpdating(propId);
     try {
-      await updateDoc(doc(db, 'properties', propId), {
+      // Who decided, and when — so a badge is always traceable to a person.
+      const patch: Record<string, unknown> = {
         verificationStatus: status,
-        isVerified: status === 'Verified'
-      });
-      setAllProperties(prev => prev.map(p => p.id === propId ? { ...p, verificationStatus: status, isVerified: status === 'Verified' } : p));
+        isVerified: status === 'Verified',
+        verifiedBy: auth.currentUser?.email || '',
+        verifiedAt: new Date().toISOString(),
+        reviewNote: note || '',
+      };
+      await updateDoc(doc(db, 'properties', propId), patch);
+      setAllProperties(prev => prev.map(p => p.id === propId ? { ...p, ...patch } as Property : p));
 
-      // Notify the owner (Simulated for now, would be a Cloud Function)
-      // In a real app, we'd trigger a push/email notification here.
+      // Tell the owner. isValidNotification allows exactly five keys and there is no
+      // locale field, so both languages go into the one message, Arabic first.
+      const prop = allProperties.find(p => p.id === propId);
+      if (prop?.authorUid && prop.authorUid !== 'anonymous') {
+        const msg = status === 'Verified'
+          ? `راجع فريق حتتي مستندات إعلانك «${prop.title}». — A HETTETY reviewer has reviewed the documents for your listing "${prop.title}".`
+          : status === 'Rejected'
+            ? `إعلانك «${prop.title}» محتاج تعديل. ${note || ''} — Your listing "${prop.title}" needs changes. ${note || ''}`
+            : `رجع إعلانك «${prop.title}» لحالة «لم تتم المراجعة». — Your listing "${prop.title}" is back to "not reviewed".`;
+        await addDoc(collection(db, 'notifications'), {
+          userId: prop.authorUid,
+          title: status === 'Rejected' ? 'إعلانك يحتاج تعديل / Listing needs changes' : 'تحديث مراجعة إعلانك / Listing review update',
+          message: msg.slice(0, 999),
+          date: new Date().toISOString(),
+          read: false,
+        }).catch(err => console.error('Owner notification failed:', err));
+      }
     } catch (error) {
       console.error("Error verifying property:", error);
     } finally {
       setUpdating(null);
+    }
+  };
+
+  /**
+   * Move a document through the review queue. Only an admin can reach this — the
+   * user_documents rules pin an owner's create to 'Uploaded' and let them change
+   * nothing but the file name afterwards.
+   */
+  const handleReviewDoc = async (target: UserDocument, next: 'InReview' | 'Checked' | 'NeedsAttention', note: string) => {
+    if (next === 'NeedsAttention' && !note.trim()) {
+      setReviewError(isRtl ? 'اكتب سبب الرفض قبل الإرسال.' : 'Write what needs fixing before sending it back.');
+      return;
+    }
+    setUpdating(target.id);
+    setReviewError(null);
+    try {
+      const patch: Record<string, unknown> = {
+        reviewStatus: next,
+        reviewedBy: auth.currentUser?.email || '',
+        reviewedAt: new Date().toISOString(),
+      };
+      if (next !== 'InReview') patch.reviewNote = note.trim();
+      await updateDoc(doc(db, 'user_documents', target.id), patch);
+
+      setReviewDocs(prev => next === 'InReview'
+        ? prev.map(d => d.id === target.id ? { ...d, ...patch } as UserDocument : d)
+        : prev.filter(d => d.id !== target.id));  // leaves the queue once decided
+      if (next !== 'InReview') { setReviewingDoc(null); setReviewNote(''); setReviewFileUrl(null); }
+      else setReviewingDoc(prev => prev && prev.id === target.id ? { ...prev, ...patch } as UserDocument : prev);
+
+      if (next !== 'InReview' && target.ownerUid) {
+        const label = next === 'Checked'
+          ? 'راجع فريق حتتي مستندك. المراجعة مش إثبات إن المستند سليم أو مسجّل في الشهر العقاري. — A HETTETY reviewer read your document. A review is not proof the document is genuine or registered.'
+          : `مستندك محتاج إجراء: ${note.trim()} — Your document needs attention: ${note.trim()}`;
+        await addDoc(collection(db, 'notifications'), {
+          userId: target.ownerUid,
+          title: 'تحديث مراجعة المستند / Document review update',
+          message: `${target.name} — ${label}`.slice(0, 999),
+          date: new Date().toISOString(),
+          read: false,
+        }).catch(err => console.error('Owner notification failed:', err));
+      }
+    } catch (error) {
+      console.error('Error reviewing document:', error);
+      setReviewError(isRtl ? 'تعذّر حفظ المراجعة.' : 'Could not save the review.');
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  /**
+   * Resolve the file from its Storage path under the reviewer's own auth rather
+   * than from the stored download URL, which is a bearer token.
+   */
+  const openDocForReview = async (target: UserDocument) => {
+    setReviewingDoc(target);
+    setReviewNote(target.reviewNote || '');
+    setReviewError(null);
+    setReviewFileUrl(null);
+    try {
+      if (target.storagePath) setReviewFileUrl(await getDownloadURL(ref(storage, target.storagePath)));
+      else setReviewError(isRtl ? 'المستند ده اترفع قبل تسجيل المسار — افتحه من الكونسول.' : 'This document predates path tracking — open it from the Firebase console.');
+    } catch (error) {
+      console.error('Could not resolve document file:', error);
+      setReviewError(isRtl ? 'تعذّر فتح الملف.' : 'Could not open the file.');
     }
   };
 
@@ -3141,6 +3470,7 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
             { id: 'verifications', label: isRtl ? 'التوثيقات' : 'Verifications', icon: <Shield size={16} aria-hidden="true" />, badge: pendingProperties.length },
             { id: 'purchases', label: isRtl ? 'طلبات الشراء' : 'Purchases', icon: <CreditCard size={16} aria-hidden="true" />, badge: openPurchases.length },
             { id: 'reports', label: isRtl ? 'البلاغات' : 'Reports', icon: <Shield size={16} aria-hidden="true" />, badge: reports.length },
+            { id: 'documents', label: isRtl ? 'المستندات' : 'Documents', icon: <FileText size={16} aria-hidden="true" />, badge: reviewDocs.length },
             ...(isSuperAdmin ? [{ id: 'users', label: isRtl ? 'المستخدمين' : 'Users', icon: <Users size={16} aria-hidden="true" /> }] : []),
           ].map(tab => (
             <button
@@ -3246,6 +3576,130 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {activeTab === 'documents' && (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xl animate-scale-up">
+          <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+            <h2 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+              <FileText className="text-brand-600 dark:text-brand-400" aria-hidden="true" />
+              {isRtl ? `مستندات في انتظار المراجعة (${reviewDocs.length})` : `Documents awaiting review (${reviewDocs.length})`}
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              {isRtl
+                ? 'المراجعة معناها إن حد من الفريق قرأ النسخة المرفوعة. مش إثبات إن المستند سليم ولا إنه مسجّل في الشهر العقاري.'
+                : 'A review means a person read the uploaded copy. It is not proof the document is genuine or registered with the Real Estate Publicity Department.'}
+            </p>
+          </div>
+          {reviewDocs.length === 0 ? (
+            <div className="p-20 text-center text-slate-400 dark:text-slate-600">
+              <FileText size={48} className="mx-auto mb-4 opacity-20" aria-hidden="true" />
+              <p className="font-medium">{isRtl ? 'مفيش مستندات مستنية مراجعة.' : 'Nothing waiting for review.'}</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-black uppercase tracking-widest">
+                  <tr>
+                    <th className="px-8 py-4">{isRtl ? 'الملف' : 'File'}</th>
+                    <th className="px-8 py-4">{isRtl ? 'صاحبه' : 'Owner'}</th>
+                    <th className="px-8 py-4">{isRtl ? 'التاريخ' : 'Date'}</th>
+                    <th className="px-8 py-4">{isRtl ? 'الحالة' : 'State'}</th>
+                    <th className="px-8 py-4 text-right">{isRtl ? 'الإجراءات' : 'Actions'}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {reviewDocs.map((d) => (
+                    <tr key={d.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
+                      <td className="px-8 py-6">
+                        <div className="font-bold text-slate-900 dark:text-white">{d.name}</div>
+                        <div className="text-xs text-brand-600 dark:text-brand-400 font-mono">{d.fileId} • {d.type}</div>
+                      </td>
+                      <td className="px-8 py-6 text-slate-600 dark:text-slate-400 text-sm">{users.find(u => u.id === d.ownerUid)?.email || `#${(d.ownerUid || '').slice(0, 8)}`}</td>
+                      <td className="px-8 py-6 text-slate-400 dark:text-slate-500 text-xs">{d.uploadDate}</td>
+                      <td className="px-8 py-6">
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold border ${d.reviewStatus === 'InReview' ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}`}>
+                          {d.reviewStatus === 'InReview' ? (isRtl ? 'قيد المراجعة' : 'Under review') : (isRtl ? 'لم تتم مراجعته' : 'Not reviewed')}
+                        </span>
+                      </td>
+                      <td className="px-8 py-6 text-right">
+                        <button
+                          onClick={() => openDocForReview(d)}
+                          disabled={updating === d.id}
+                          className="bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 hover:bg-brand-600 dark:hover:bg-brand-600 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          {isRtl ? 'مراجعة' : 'Review'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {reviewingDoc && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in" onClick={() => { setReviewingDoc(null); setReviewFileUrl(null); }}>
+          <div role="dialog" aria-modal="true" aria-label={isRtl ? 'مراجعة مستند' : 'Review document'} className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-800" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
+              <div className="min-w-0">
+                <h3 className="font-bold text-slate-900 dark:text-white truncate">{reviewingDoc.name}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">{reviewingDoc.fileId} • {reviewingDoc.type}</p>
+              </div>
+              <button type="button" onClick={() => { setReviewingDoc(null); setReviewFileUrl(null); }} aria-label={isRtl ? 'إغلاق' : 'Close'} className="min-w-[48px] min-h-[48px] p-3 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors cursor-pointer flex items-center justify-center">
+                <X size={20} aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto bg-slate-100 dark:bg-slate-950 p-4">
+              {reviewError && <p className="mb-4 p-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm font-medium">{reviewError}</p>}
+              {reviewFileUrl ? (
+                reviewingDoc.type === 'Image' ? (
+                  <img src={reviewFileUrl} alt={reviewingDoc.name} className="max-w-full mx-auto rounded-xl" referrerPolicy="no-referrer" />
+                ) : (
+                  <iframe src={reviewFileUrl} title={reviewingDoc.name} className="w-full min-h-[55vh] border-0 rounded-xl bg-white" />
+                )
+              ) : !reviewError ? (
+                <div className="py-20 text-center text-slate-400"><Loader2 className="animate-spin w-6 h-6 mx-auto" aria-hidden="true" /></div>
+              ) : null}
+            </div>
+
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+              <label htmlFor="admin-review-note" className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                {isRtl ? 'ملاحظة المراجع (إجبارية عند طلب تعديل)' : "Reviewer's note (required when sending back)"}
+              </label>
+              <textarea
+                id="admin-review-note"
+                value={reviewNote}
+                onChange={(e) => setReviewNote(e.target.value)}
+                rows={2}
+                maxLength={2000}
+                placeholder={isRtl ? 'اكتب اللي شفته بالظبط.' : 'Write exactly what you saw.'}
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              <div className="flex flex-wrap gap-2 justify-end">
+                {reviewingDoc.reviewStatus !== 'InReview' && (
+                  <button onClick={() => handleReviewDoc(reviewingDoc, 'InReview', reviewNote)} disabled={updating === reviewingDoc.id} className="px-4 py-2 rounded-lg text-xs font-bold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:bg-amber-600 hover:text-white transition-all cursor-pointer disabled:opacity-50">
+                    {isRtl ? 'بدء المراجعة' : 'Start review'}
+                  </button>
+                )}
+                <button onClick={() => handleReviewDoc(reviewingDoc, 'NeedsAttention', reviewNote)} disabled={updating === reviewingDoc.id} className="px-4 py-2 rounded-lg text-xs font-bold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-600 hover:text-white transition-all cursor-pointer disabled:opacity-50">
+                  {isRtl ? 'يحتاج إجراء' : 'Needs attention'}
+                </button>
+                <button onClick={() => handleReviewDoc(reviewingDoc, 'Checked', reviewNote)} disabled={updating === reviewingDoc.id} className="px-4 py-2 rounded-lg text-xs font-bold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-600 hover:text-white transition-all cursor-pointer disabled:opacity-50">
+                  {isRtl ? 'تمت المراجعة' : 'Mark reviewed'}
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                {isRtl
+                  ? '«تمت المراجعة» معناها إنك قريت النسخة دي. مش شهادة بصحة المستند ولا بتسجيله في الشهر العقاري.'
+                  : '"Reviewed" means you read this copy. It is not a certificate of authenticity, nor of registration with the Real Estate Publicity Department.'}
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -3572,6 +4026,7 @@ export default function App() {
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [properties, setProperties] = useState<Property[]>([]);
+  const [editingPropertyId, setEditingPropertyId] = useState<string | null>(null);
   const [loadingProps, setLoadingProps] = useState(true);
   const [lang, setLang] = useState<'en' | 'ar'>('en');
   const [listingSearchQuery, setListingSearchQuery] = useState('');
@@ -3687,6 +4142,10 @@ export default function App() {
       if (page === 'property' && param) {
         setSelectedPropertyId(param);
         setCurrentPage('property');
+      } else if (page === 'edit-listing' && param) {
+        // Editing a listing: #edit-listing/<id>
+        setEditingPropertyId(param);
+        setCurrentPage('edit-listing');
       } else if (page === 'project' && param) {
         // Project pages carry the compound name: #project/<encoded name>
         setSelectedProject(decodeURIComponent(param));
@@ -3923,7 +4382,13 @@ export default function App() {
     }
   };
 
-  let filteredProperties = properties.filter(p => {
+  // What a visitor is allowed to see. `properties` stays complete because My
+  // Listings needs the owner's own drafts. This is a UI-level hide, not a privacy
+  // boundary — the collection is world-readable by design so the list query works.
+  const publicProperties = properties.filter(p =>
+    (p.listingState || 'Live') === 'Live' && p.verificationStatus !== 'Rejected');
+
+  let filteredProperties = publicProperties.filter(p => {
     const matchesPrice = (minPrice === '' || p.price >= Number(minPrice)) &&
                          (maxPrice === '' || p.price <= Number(maxPrice));
     const matchesType = typeFilter === 'all' || p.propertyType === typeFilter;
@@ -3951,18 +4416,23 @@ export default function App() {
     filteredProperties.sort((a, b) => b.title.localeCompare(a.title));
   }
 
+  /**
+   * Reload every property. Owner edits and deletes happen inside ProfilePage, so
+   * without a shared refresh the listings, home and 3D pages would stay stale
+   * until a full reload.
+   */
+  const refreshProperties = useCallback(async () => {
+    const snap = await getDocs(collection(db, 'properties'));
+    setProperties(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Property[]);
+  }, []);
+
   // Initial Fetch from Firestore
   useEffect(() => {
     const fetchProps = async () => {
       setLoadingProps(true);
       try {
         // Real data only — load every property straight from Firestore.
-        const querySnapshot = await getDocs(collection(db, 'properties'));
-        const propsData = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as Property[];
-        setProperties(propsData);
+        await refreshProperties();
       } catch (err) {
         console.error("Error fetching properties from Firestore:", err);
         setProperties([]);
@@ -3971,7 +4441,7 @@ export default function App() {
       }
     };
     fetchProps();
-  }, []);
+  }, [refreshProperties]);
 
   // SEO Schema
   useEffect(() => {
@@ -4012,6 +4482,13 @@ export default function App() {
   };
 
   // Opens a compound's project page, grouping all of its units in one place.
+  const openEditListing = (id: string) => {
+    setEditingPropertyId(id);
+    window.location.hash = `edit-listing/${id}`;
+    setCurrentPage('edit-listing');
+    window.scrollTo(0, 0);
+  };
+
   const openProject = (name: string) => {
     setSelectedProject(name);
     window.location.hash = `project/${encodeURIComponent(name)}`;
@@ -4590,7 +5067,7 @@ export default function App() {
         {currentPage === 'project' && selectedProject && (
           <ProjectPage
             projectName={selectedProject}
-            units={properties.filter(p => (p.compound || '') === selectedProject)}
+            units={publicProperties.filter(p => (p.compound || '') === selectedProject)}
             onBack={() => handleNav('listings')}
             onOpenProperty={openProperty}
             onView3D={open3D}
@@ -4607,7 +5084,7 @@ export default function App() {
           const coastalKeywords = /ساحل|sahel|north coast|الساحل|مارينا|marina|marassi|مراسي|راس الحكمة|ras el|hacienda|هاسيندا|العلمين|alamein|بورتو|porto|جايا|جاردينيا|سيدي عبد|فوكا|fouka/i;
           // Explicitly flagged units always belong here; the keyword/type heuristics
           // just catch coastal listings added before the flag existed.
-          const allSahel = properties.filter(p => p.yallaSahel === true || p.propertyType === 'Chalet' || coastalKeywords.test(p.location || '') || coastalKeywords.test(p.compound || '') || !!p.village);
+          const allSahel = publicProperties.filter(p => p.yallaSahel === true || p.propertyType === 'Chalet' || coastalKeywords.test(p.location || '') || coastalKeywords.test(p.compound || '') || !!p.village);
           const villages = Array.from(new Set(allSahel.map(p => p.village).filter(Boolean))) as string[];
           const sahelUnits = allSahel.filter(p =>
             (sahelVillage === 'all' || p.village === sahelVillage) &&
@@ -4726,6 +5203,8 @@ export default function App() {
             onToggleFavorite={toggleFavorite}
             open3D={open3D}
             onOpenProperty={openProperty}
+            onEditListing={openEditListing}
+            refreshProperties={refreshProperties}
           />
         )}
         {currentPage === 'payment' && paymentProperty && (
@@ -4775,7 +5254,69 @@ export default function App() {
             isRtl={isRtl} 
           />
         )}
-        {currentPage === 'add-listing' && (
+        {/* Posting requires an account: the listing is written under the poster's
+            uid, and the rules reject an anonymous write. Better to say so before
+            someone uploads twenty photos. */}
+        {currentPage === 'add-listing' && !auth.currentUser && (
+          <div className="max-w-lg mx-auto px-4 py-24 text-center animate-fade-in">
+            <PlusCircle size={48} className="mx-auto mb-4 text-slate-300 dark:text-slate-700" aria-hidden="true" />
+            <h1 className="text-2xl font-heading font-black text-slate-900 dark:text-white mb-2">
+              {isRtl ? 'سجّل الدخول عشان تضيف إعلان' : 'Sign in to post a listing'}
+            </h1>
+            <p className="text-slate-500 dark:text-slate-400 mb-8">
+              {isRtl
+                ? 'الإعلان بيتسجّل باسم حسابك، عشان تقدر تعدّله أو تشيله بعدين.'
+                : 'A listing is filed under your account, so you can edit or remove it later.'}
+            </p>
+            <button onClick={() => handleNav('login')} className="bg-brand-600 hover:bg-brand-700 text-white px-8 py-3 rounded-full font-bold cursor-pointer">
+              {isRtl ? 'تسجيل الدخول' : 'Sign in'}
+            </button>
+          </div>
+        )}
+
+        {/* Editing a listing you own. The ownership check here is convenience —
+            firestore.rules is the actual gate. */}
+        {currentPage === 'edit-listing' && editingPropertyId && (() => {
+          const prop = properties.find(pr => pr.id === editingPropertyId);
+          if (!prop) {
+            return (
+              <div className="max-w-lg mx-auto px-4 py-24 text-center animate-fade-in">
+                <p className="text-slate-500 dark:text-slate-400 mb-6">{isRtl ? 'الإعلان ده مش موجود.' : 'That listing no longer exists.'}</p>
+                <button onClick={() => handleNav('profile')} className="bg-brand-600 hover:bg-brand-700 text-white px-6 py-2.5 rounded-full font-bold cursor-pointer">
+                  {isRtl ? 'رجوع لإعلاناتي' : 'Back to my listings'}
+                </button>
+              </div>
+            );
+          }
+          if (!auth.currentUser || prop.authorUid !== auth.currentUser.uid) {
+            return (
+              <div className="max-w-lg mx-auto px-4 py-24 text-center animate-fade-in">
+                <LockIcon size={40} className="mx-auto mb-4 text-slate-300 dark:text-slate-700" aria-hidden="true" />
+                <p className="text-slate-500 dark:text-slate-400 mb-6">{isRtl ? 'الإعلان ده مش بتاعك.' : "This listing isn't yours to edit."}</p>
+                <button onClick={() => handleNav('listings')} className="bg-brand-600 hover:bg-brand-700 text-white px-6 py-2.5 rounded-full font-bold cursor-pointer">
+                  {isRtl ? 'تصفّح العقارات' : 'Browse listings'}
+                </button>
+              </div>
+            );
+          }
+          return (
+            <AddListingPage
+              mode="edit"
+              initialProperty={prop}
+              isAdmin={isAdmin}
+              isSuperAdmin={isSuperAdmin}
+              onAdd={async () => { /* unreachable in edit mode */ }}
+              onUpdate={async (id, patch) => {
+                await updateDoc(doc(db, 'properties', id), patch);
+                await refreshProperties();
+              }}
+              t={t}
+              isRtl={isRtl}
+            />
+          );
+        })()}
+
+        {currentPage === 'add-listing' && auth.currentUser && (
           <AddListingPage
             isAdmin={isAdmin}
             isSuperAdmin={isSuperAdmin}
@@ -4786,13 +5327,7 @@ export default function App() {
                   ...prop,
                   authorUid: auth.currentUser?.uid || 'anonymous'
                 });
-                // Refresh properties
-                const querySnapshot = await getDocs(collection(db, 'properties'));
-                const propsData = querySnapshot.docs.map(doc => ({
-                  id: doc.id,
-                  ...doc.data()
-                })) as Property[];
-                setProperties(propsData);
+                await refreshProperties();
                 handleNav('listings');
               } catch (err) {
                 // Re-throw so AddListingPage's own catch keeps the form intact and
@@ -4809,9 +5344,7 @@ export default function App() {
               props.forEach(p => batch.set(doc(collection(db, 'properties')), { ...p, authorUid: uid }));
               try {
                 await batch.commit();
-                const querySnapshot = await getDocs(collection(db, 'properties'));
-                const propsData = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Property[];
-                setProperties(propsData);
+                await refreshProperties();
                 handleNav('listings');
               } catch (err) {
                 console.error("Error adding project units to Firestore:", err);
