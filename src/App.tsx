@@ -16,7 +16,7 @@ import {
   Plus, History, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, MessageSquare, Sun, Moon, Heart, Star
 } from 'lucide-react';
 import { Type, createChat, extract3DMarker, withRetry, isOverloadedError, generateContentResilient, aiErrorMessage } from './ai';
-import { AddListingPage, PAYMENT_OPTIONS, PROPERTY_TYPES } from './components/add-listing-page';
+import { AddListingPage, PAYMENT_OPTIONS, PROPERTY_TYPES, FINISHING_OPTIONS, AMENITIES } from './components/add-listing-page';
 import { INITIAL_ENTITY_DATA, TRANSLATIONS, SUPER_ADMIN_EMAILS } from './constants';
 import { Property, ChatMessage, UserDocument, Page, Notification, ChatSession } from './types';
 import imageCompression from 'browser-image-compression';
@@ -89,6 +89,23 @@ const pricePeriodSuffix = (period: string | undefined, isRtl: boolean) => {
     default: return '';
   }
 };
+
+/** Looks a stored English value up in an option list and returns the localized label.
+ *  Property values are stored in English but were being rendered raw, so an Arabic
+ *  visitor saw "Semi Finished" / "Apartment" and could not read their own listing. */
+const optionLabel = (
+  options: { value: string; ar: string; en: string }[],
+  value: string | undefined,
+  isRtl: boolean
+) => {
+  if (!value) return '';
+  const hit = options.find((o) => o.value === value);
+  return hit ? (isRtl ? hit.ar : hit.en) : value;
+};
+
+const typeLabel = (v: string | undefined, isRtl: boolean) => optionLabel(PROPERTY_TYPES, v, isRtl);
+const finishingLabel = (v: string | undefined, isRtl: boolean) => optionLabel(FINISHING_OPTIONS, v, isRtl);
+const amenityLabel = (v: string, isRtl: boolean) => optionLabel(AMENITIES, v, isRtl);
 
 /** Localized label for a stored (English) payment-method value. */
 const paymentLabel = (value: string, isRtl: boolean) => {
@@ -394,7 +411,7 @@ const PropertyCard: React.FC<{
       </div>
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         {property.yallaSahel && <span className="text-[10px] font-bold bg-cyan-50 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 px-2 py-0.5 rounded">🌊 {isRtl ? 'يلا ساحل' : 'Yalla Sahel'}</span>}
-        {property.propertyType && <span className="text-[10px] font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-2 py-0.5 rounded">{property.propertyType}</span>}
+        {property.propertyType && <span className="text-[10px] font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-2 py-0.5 rounded">{typeLabel(property.propertyType, isRtl)}</span>}
         <span className="flex items-center text-slate-600 dark:text-slate-400 text-sm"><MapPin size={14} className={isRtl ? "ml-1" : "mr-1"} aria-hidden="true" /> {property.location}</span>
       </div>
       {property.unitCode && (
@@ -1986,22 +2003,12 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
                 <MapPin size={16} className="text-brand-500"/> {property.location}{property.compound ? ` — ${property.compound}` : ''}
                 <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="text-brand-600 dark:text-brand-400 font-bold hover:underline text-sm">{isRtl ? '· عرض على الخريطة' : '· View on map'}</a>
               </p>
-              {(property.propertyType || property.finishing || property.floor || property.view || property.furnished || property.guests || property.village) && (
-                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  {property.propertyType && <span className="text-xs font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-2.5 py-1 rounded-lg">{property.propertyType}</span>}
-                  {property.finishing && <span className="text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg">{property.finishing}</span>}
-                  {property.floor && <span className="text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg">{isRtl ? 'الدور' : 'Floor'}: {property.floor}</span>}
-                  {property.view && <span className="text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg">{property.view}</span>}
-                  {property.furnished && <span className="text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg">{isRtl ? 'مفروش' : 'Furnished'}</span>}
-                  {property.guests ? <span className="text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg">{isRtl ? `${property.guests} أفراد` : `Sleeps ${property.guests}`}</span> : null}
-                  {property.village && <span className="text-xs font-bold bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-300 px-2.5 py-1 rounded-lg">🌊 {property.village}</span>}
-                </div>
+              {property.propertyType && (
+                <p className="text-base font-bold text-brand-700 dark:text-brand-300 mb-1">{typeLabel(property.propertyType, isRtl)}</p>
               )}
-              <div className="flex items-center gap-4 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest flex-wrap">
-                {property.developer && <span className="normal-case tracking-normal">{isRtl ? 'المطوّر:' : 'Developer:'} {property.developer}</span>}
-                {property.deliveryDate && <span className="normal-case tracking-normal">{isRtl ? 'الاستلام:' : 'Delivery:'} {property.deliveryDate}</span>}
-                {property.unitCode && <span>{isRtl ? 'كود الوحدة:' : 'Unit Code:'} {property.unitCode}</span>}
-                {property.publishDate && <span>{isRtl ? 'تاريخ النشر:' : 'Published:'} {property.publishDate}</span>}
+              <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400 flex-wrap">
+                {property.unitCode && <span>{isRtl ? 'كود الوحدة:' : 'Unit code:'} <span className="font-bold text-slate-700 dark:text-slate-300">{property.unitCode}</span></span>}
+                {property.publishDate && <span>{isRtl ? 'نُشر:' : 'Published:'} <span className="font-bold text-slate-700 dark:text-slate-300">{property.publishDate}</span></span>}
               </div>
             </div>
             <div className="text-right bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex sm:flex-col justify-between items-center sm:items-end gap-2 w-full sm:w-auto">
@@ -2010,24 +2017,56 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
             </div>
           </div>
 
-          {/* Stats */}
+          {/* Headline figures — big enough to read at a glance */}
           <div className="grid grid-cols-3 gap-4">
-            <div className="flex flex-col items-center p-4 bg-slate-50 dark:bg-slate-800 rounded-xl">
-              <BedDouble className="text-brand-500 dark:text-brand-400 mb-2"/>
-              <span className="font-bold text-slate-900 dark:text-white">{property.bedrooms}</span>
-              <span className="text-xs text-slate-500 dark:text-slate-400">{t.prop_beds}</span>
-            </div>
-            <div className="flex flex-col items-center p-4 bg-slate-50 dark:bg-slate-800 rounded-xl">
-              <Bath className="text-brand-500 dark:text-brand-400 mb-2"/>
-              <span className="font-bold text-slate-900 dark:text-white">{property.bathrooms}</span>
-              <span className="text-xs text-slate-500 dark:text-slate-400">{t.prop_baths}</span>
-            </div>
-            <div className="flex flex-col items-center p-4 bg-slate-50 dark:bg-slate-800 rounded-xl">
-              <Maximize className="text-brand-500 dark:text-brand-400 mb-2"/>
-              <span className="font-bold text-slate-900 dark:text-white">{property.area}{property.areaTo ? `–${property.areaTo}` : ''} m²</span>
-              <span className="text-xs text-slate-500 dark:text-slate-400">{isRtl ? 'المساحة' : 'Area'}</span>
-            </div>
+            {[
+              { icon: <BedDouble className="text-brand-500 dark:text-brand-400" size={26} aria-hidden="true" />, value: property.bedrooms, label: t.prop_beds },
+              { icon: <Bath className="text-brand-500 dark:text-brand-400" size={26} aria-hidden="true" />, value: property.bathrooms, label: t.prop_baths },
+              { icon: <Maximize className="text-brand-500 dark:text-brand-400" size={26} aria-hidden="true" />, value: `${property.area}${property.areaTo ? `–${property.areaTo}` : ''} ${isRtl ? 'م²' : 'm²'}`, label: isRtl ? 'المساحة' : 'Area' },
+            ].map((s, i) => (
+              <div key={i} className="flex flex-col items-center justify-center p-5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700">
+                {s.icon}
+                <span className="text-2xl font-black text-slate-900 dark:text-white mt-2 leading-none">{s.value}</span>
+                <span className="text-sm font-medium text-slate-500 dark:text-slate-400 mt-1.5">{s.label}</span>
+              </div>
+            ))}
           </div>
+
+          {/* Full specification — every stored field, labelled and in the user's
+              language. These values are stored in English and used to render raw,
+              which made the listing unreadable in Arabic. */}
+          {(() => {
+            const rows: { label: string; value: React.ReactNode }[] = [];
+            const add = (label: string, value: React.ReactNode) => {
+              if (value !== undefined && value !== null && value !== '' && value !== 0) rows.push({ label, value });
+            };
+            add(isRtl ? 'نوع العقار' : 'Property type', typeLabel(property.propertyType, isRtl));
+            add(isRtl ? 'الغرض' : 'Purpose', property.status === 'For Sale' ? (isRtl ? 'للبيع' : 'For sale') : (isRtl ? 'للإيجار' : 'For rent'));
+            add(isRtl ? 'الحالة' : 'Availability', av.label);
+            add(isRtl ? 'التشطيب' : 'Finishing', finishingLabel(property.finishing, isRtl));
+            add(isRtl ? 'الدور' : 'Floor', property.floor);
+            add(isRtl ? 'الإطلالة' : 'View', property.view);
+            add(isRtl ? 'مفروش' : 'Furnished', property.furnished ? (isRtl ? 'نعم' : 'Yes') : undefined);
+            add(isRtl ? 'عدد الأفراد' : 'Sleeps', property.guests);
+            add(isRtl ? 'الكمبوند' : 'Compound', property.compound);
+            add(isRtl ? 'القرية' : 'Village', property.village);
+            add(isRtl ? 'المطوّر' : 'Developer', property.developer);
+            add(isRtl ? 'الاستلام' : 'Delivery', property.deliveryDate);
+            if (rows.length === 0) return null;
+            return (
+              <div>
+                <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-3">{isRtl ? 'تفاصيل الوحدة' : 'Property details'}</h3>
+                <dl className="grid sm:grid-cols-2 gap-x-8 gap-y-0 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 px-5 py-1">
+                  {rows.map((r, i) => (
+                    <div key={i} className="flex items-baseline justify-between gap-4 py-3 border-b border-slate-100 dark:border-slate-800 last:border-0">
+                      <dt className="text-sm text-slate-500 dark:text-slate-400 shrink-0">{r.label}</dt>
+                      <dd className="text-base font-bold text-slate-900 dark:text-white text-end">{r.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            );
+          })()}
 
           {property.description && (
             <div>
@@ -2106,7 +2145,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
               <div className="flex flex-wrap gap-2">
                 {property.amenities.map(a => (
                   <span key={a} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium border border-slate-100 dark:border-slate-700">
-                    <CheckCircle size={14} className="text-brand-500" /> {a}
+                    <CheckCircle size={14} className="text-brand-500" aria-hidden="true" /> {amenityLabel(a, isRtl)}
                   </span>
                 ))}
               </div>
@@ -2199,7 +2238,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
             </div>
           ) : (
             <Button onClick={() => onPurchase(property.id)} className="w-full py-4 text-lg">
-              {isRtl ? 'المتابعة للدفع' : 'Proceed to Payment'}
+              {isRtl ? 'اطلب الوحدة دي' : 'Request this property'}
             </Button>
           )}
 
@@ -2619,20 +2658,31 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
   );
 };
 
-const PaymentPage = ({ property, onConfirm, onCancel, t, isRtl }: { property: Property, onConfirm: () => void, onCancel: () => void, t: any, isRtl: boolean }) => {
+const PaymentPage = ({ property, onConfirm, onCancel, t, isRtl }: { property: Property, onConfirm: () => void | Promise<void>, onCancel: () => void, t: any, isRtl: boolean }) => {
   const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState('');
 
-  const handlePay = () => {
+  const handlePay = async () => {
+    if (processing) return; // no double-submit -> no duplicate request
     setProcessing(true);
-    setTimeout(() => {
+    setError('');
+    try {
+      await onConfirm();
+    } catch (err: any) {
+      // Previously the failure was swallowed and the user was navigated away as
+      // if the request had gone through.
+      console.error('Purchase request failed:', err);
+      setError(isRtl
+        ? 'تعذّر إرسال الطلب. حاول تاني أو كلّمنا على واتساب.'
+        : 'Could not send your request. Please try again, or contact us on WhatsApp.');
+    } finally {
       setProcessing(false);
-      onConfirm();
-    }, 2000);
+    }
   };
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-12 animate-fade-in transition-colors duration-500">
-      <h1 className="text-3xl font-black text-slate-900 dark:text-white mb-8 tracking-tight uppercase">{isRtl ? 'بوابة الدفع الآمنة' : 'Secure Payment Gateway'}</h1>
+      <h1 className="text-3xl font-black text-slate-900 dark:text-white mb-8 tracking-tight uppercase">{isRtl ? 'طلب شراء وحدة' : 'Request to Purchase'}</h1>
       <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden relative">
         <div className="absolute top-0 right-0 p-8 opacity-5">
            <CreditCard size={120} />
@@ -2650,43 +2700,41 @@ const PaymentPage = ({ property, onConfirm, onCancel, t, isRtl }: { property: Pr
         </div>
         
         <div className="space-y-6 relative z-10">
-          <h3 className="font-black text-slate-900 dark:text-white uppercase tracking-widest text-xs flex items-center gap-2">
-            <LockIcon size={14} className="text-brand-600" />
-            {isRtl ? 'تفاصيل البطاقة البنكية' : 'Bank Card Details'}
-          </h3>
-          <div className="space-y-5">
-            <div>
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'رقم البطاقة' : 'Card Number'}</label>
-              <div className="relative">
-                <CreditCard className={`absolute top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 ${isRtl ? 'right-4' : 'left-4'}`} />
-                <input type="text" placeholder="0000 0000 0000 0000" className={`w-full py-3.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white text-lg font-mono ${isRtl ? 'pr-12 pl-4' : 'pl-12 pr-4'}`} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'تاريخ الانتهاء' : 'Expiry Date'}</label>
-                <input type="text" placeholder="MM/YY" className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white font-mono" />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">CVC</label>
-                <input type="text" placeholder="123" className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white font-mono" />
-              </div>
-            </div>
+          {/* No card fields: nothing here charges a card. Collecting real card
+              numbers that go nowhere is a liability, so this is an enquiry. */}
+          <div className="bg-brand-50 dark:bg-brand-900/20 border border-brand-100 dark:border-brand-800 rounded-2xl p-5">
+            <h3 className="font-black text-slate-900 dark:text-white mb-2 flex items-center gap-2">
+              <FileCheck size={18} className="text-brand-600 dark:text-brand-400" aria-hidden="true" />
+              {isRtl ? 'إيه اللي هيحصل دلوقتي؟' : 'What happens next?'}
+            </h3>
+            <ol className="text-sm text-slate-600 dark:text-slate-300 space-y-2 list-decimal ps-5 leading-relaxed">
+              <li>{isRtl ? 'بنسجّل طلبك على الوحدة دي ويوصلك تأكيد.' : 'We register your request for this unit and send you a confirmation.'}</li>
+              <li>{isRtl ? 'فريق هيتيتي بيراجع الطلب ويتواصل معاك.' : 'The HETTETY team reviews it and contacts you.'}</li>
+              <li>{isRtl ? 'بنتفق على المعاينة والتفاصيل والدفع بعد كده — مفيش أي فلوس بتتدفع من هنا.' : 'Viewing, terms and payment are arranged with you directly — no money is taken here.'}</li>
+            </ol>
           </div>
-          
-          <div className="pt-8 flex flex-col sm:flex-row gap-4">
-            <Button onClick={handlePay} disabled={processing} className="flex-1 py-4 text-xl font-black uppercase tracking-widest">
-              {processing ? <Loader2 className="animate-spin mx-auto"/> : (isRtl ? 'تأكيد عملية الشراء' : 'Confirm Purchase')}
+
+          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+            {isRtl
+              ? 'إرسال الطلب مجاني ومش بيلزمك بأي حاجة، ومش بنطلب أي بيانات بنكية على الموقع.'
+              : 'Sending a request is free and non-binding. We never ask for card or bank details on the site.'}
+          </p>
+
+          {error && (
+            <p role="alert" className="text-sm font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3">
+              {error}
+            </p>
+          )}
+
+          <div className="pt-4 flex flex-col sm:flex-row gap-4">
+            <Button onClick={handlePay} disabled={processing} className="flex-1 py-4 text-lg font-black">
+              {processing
+                ? <Loader2 className="animate-spin mx-auto" aria-label={isRtl ? 'جاري الإرسال' : 'Sending'} />
+                : (isRtl ? 'أرسل طلب الشراء' : 'Send purchase request')}
             </Button>
             <button onClick={onCancel} className="px-8 py-4 rounded-xl font-bold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer">
               {isRtl ? 'رجوع' : 'Cancel'}
             </button>
-          </div>
-
-          <div className="mt-6 flex items-center justify-center gap-6 opacity-40">
-             <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Secure SSL</div>
-             <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">PCI DSS</div>
-             <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">HETTETY Cloud</div>
           </div>
         </div>
       </div>
@@ -4458,33 +4506,41 @@ export default function App() {
           <PaymentPage 
             property={paymentProperty} 
             onConfirm={async () => {
-              try {
-                if (auth.currentUser) {
-                  await addDoc(collection(db, 'purchases'), {
-                    userId: auth.currentUser.uid,
-                    propertyId: paymentProperty.id,
-                    status: 'processing',
-                    createdAt: new Date().toISOString()
-                  });
-                  
-                  // Add a notification
-                  await addDoc(collection(db, 'notifications'), {
-                    userId: auth.currentUser.uid,
-                    title: isRtl ? 'طلب شراء قيد المراجعة' : 'Purchase Request Received',
-                    message: isRtl 
-                      ? `تم استلام طلبك للعقار ${paymentProperty.title}. سيقوم أحد خبرائنا بالتواصل معك قريباً.` 
-                      : `Your request for ${paymentProperty.title} has been received. Our expert will contact you shortly.`,
-                    date: new Date().toISOString(),
-                    read: false
-                  });
-                }
-                handleNav('profile');
-                setPaymentProperty(null);
-              } catch (err: any) {
-                console.error("Purchase error:", err);
-                alert(`Error: ${err?.message || String(err)}`);
+              // Signed-out users used to sail through this and have the request
+              // silently dropped — send them to sign in instead.
+              if (!auth.currentUser) {
+                alert(isRtl
+                  ? 'سجّل الدخول الأول عشان نقدر نتواصل معاك بخصوص الطلب.'
+                  : 'Please sign in first so we can contact you about this request.');
+                handleNav('login');
+                return;
               }
-            }} 
+              // The request itself is what matters; if it fails, nothing is written
+              // and the error is reported, so retrying can't create a duplicate.
+              await addDoc(collection(db, 'purchases'), {
+                userId: auth.currentUser.uid,
+                propertyId: paymentProperty.id,
+                status: 'processing',
+                createdAt: new Date().toISOString()
+              });
+              // Best-effort confirmation notification — a failure here must never
+              // undo or duplicate the request that already succeeded.
+              try {
+                await addDoc(collection(db, 'notifications'), {
+                  userId: auth.currentUser.uid,
+                  title: isRtl ? 'طلب شراء قيد المراجعة' : 'Purchase Request Received',
+                  message: isRtl
+                    ? `تم استلام طلبك للعقار ${paymentProperty.title}. سيقوم أحد خبرائنا بالتواصل معك قريباً.`
+                    : `Your request for ${paymentProperty.title} has been received. Our expert will contact you shortly.`,
+                  date: new Date().toISOString(),
+                  read: false
+                });
+              } catch (notifyErr) {
+                console.warn('Purchase saved, but the confirmation notification failed:', notifyErr);
+              }
+              setPaymentProperty(null);
+              handleNav('profile');
+            }}
             onCancel={() => {
               setPaymentProperty(null);
               handleNav('listings');
