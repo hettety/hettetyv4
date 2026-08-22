@@ -64,11 +64,11 @@ describe('Tier 4 — End-to-End Real-World User Scenarios', () => {
     expect(screen.getByText(TRANSLATIONS.ar.legal_title)).toBeInTheDocument();
   });
 
-  it('Scenario 2: Buyer Coastal Journey (Yalla Sahel -> Village Filter -> 3D Experience)', () => {
+  it('Scenario 2: Buyer Coastal Journey (Sahel Hettety -> Village Filter -> 3D Experience)', () => {
     render(<App />);
 
-    // 1. Navigate to Yalla Sahel
-    const sahelBtns = screen.getAllByRole('button', { name: /Yalla Sahel/i });
+    // 1. Navigate to Sahel Hettety
+    const sahelBtns = screen.getAllByRole('button', { name: /Sahel Hettety/i });
     fireEvent.click(sahelBtns[0]);
     expect(window.location.hash).toBe('#yalla-sahel');
 

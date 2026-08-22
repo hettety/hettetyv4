@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { 
   Building2, MapPin, Users, Globe, ShieldCheck, 
@@ -354,7 +354,15 @@ const PropertyCard: React.FC<{
     className={`group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl dark:shadow-none transition-all duration-300 overflow-hidden flex flex-col h-full animate-fade-in focus:outline-none focus:ring-2 focus:ring-brand-500 ${onClick ? 'cursor-pointer' : ''}`}
   >
     <div className="relative h-64 overflow-hidden">
-      <img src={property.imageUrl} alt={property.title || (isRtl ? 'صورة العقار' : 'Property image')} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+      {property.imageUrl ? (
+        <img src={property.imageUrl} alt={property.title || (isRtl ? 'صورة العقار' : 'Property image')} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+      ) : (
+        // A listing saved without a photo would otherwise render a broken image.
+        <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-400">
+          <Building2 size={40} aria-hidden="true" />
+          <span className="text-xs font-bold">{isRtl ? 'من غير صورة' : 'No photo yet'}</span>
+        </div>
+      )}
       {(() => { const av = availabilityInfo(property.availability, property.status, isRtl); return av.taken ? (
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
           <span className={`${av.color} text-white text-lg font-black uppercase tracking-widest px-6 py-2 rounded-lg -rotate-12 shadow-xl`}>{av.label}</span>
@@ -410,7 +418,7 @@ const PropertyCard: React.FC<{
         </span>
       </div>
       <div className="flex items-center gap-2 mb-3 flex-wrap">
-        {property.yallaSahel && <span className="text-[10px] font-bold bg-cyan-50 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 px-2 py-0.5 rounded">🌊 {isRtl ? 'يلا ساحل' : 'Yalla Sahel'}</span>}
+        {property.yallaSahel && <span className="text-[10px] font-bold bg-cyan-50 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 px-2 py-0.5 rounded">🌊 {isRtl ? 'ساحل حتتي' : 'Sahel Hettety'}</span>}
         {property.propertyType && <span className="text-[10px] font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-2 py-0.5 rounded">{typeLabel(property.propertyType, isRtl)}</span>}
         <span className="flex items-center text-slate-600 dark:text-slate-400 text-sm"><MapPin size={14} className={isRtl ? "ml-1" : "mr-1"} aria-hidden="true" /> {property.location}</span>
       </div>
@@ -1731,7 +1739,176 @@ const Viewer3D = ({ property, onClose, isRtl }: { property: Property | undefined
   );
 };
 
-const PropertyDetailPage = ({ property, onBack, onPurchase, t, isRtl }: { property: Property, onBack: () => void, onPurchase: (id: string) => void, t: any, isRtl: boolean }) => {
+/** Unit types grouped into the categories a buyer actually shops by. */
+const UNIT_CATEGORIES: { key: string; ar: string; en: string; types: string[] }[] = [
+  { key: 'apartments', ar: 'شقق', en: 'Apartments', types: ['Apartment', 'Duplex', 'Penthouse', 'Studio'] },
+  { key: 'villas', ar: 'فلل', en: 'Villas', types: ['Villa', 'Townhouse'] },
+  { key: 'chalets', ar: 'شاليهات', en: 'Chalets', types: ['Chalet'] },
+  { key: 'commercial', ar: 'تجاري وإداري', en: 'Commercial', types: ['Office', 'Retail'] },
+  { key: 'land', ar: 'أراضي', en: 'Land', types: ['Land'] },
+];
+
+/**
+ * A whole compound on one page: its units split into the categories a buyer
+ * shops by (apartments / villas / ...), each with its own price, area and
+ * bedroom filters. Reached from the Projects view or #project/<compound>.
+ */
+const ProjectPage = ({
+  projectName, units, onBack, onOpenProperty, onView3D, onToggleFavorite, userFavorites,
+  onToggleCompare, compareIds, t, isRtl,
+}: {
+  projectName: string; units: Property[]; onBack: () => void;
+  onOpenProperty: (id: string) => void; onView3D: (id: string) => void;
+  onToggleFavorite: (id: string) => void; userFavorites: string[];
+  onToggleCompare: (id: string) => void; compareIds: string[];
+  t: any; isRtl: boolean;
+}) => {
+  // Only show a tab for a category this project actually has units in.
+  const categories = useMemo(() => {
+    const present = UNIT_CATEGORIES
+      .map(c => ({ ...c, units: units.filter(u => c.types.includes(u.propertyType || '')) }))
+      .filter(c => c.units.length > 0);
+    const categorised = new Set(present.flatMap(c => c.units.map(u => u.id)));
+    const rest = units.filter(u => !categorised.has(u.id));
+    if (rest.length) {
+      present.push({ key: 'other', ar: 'وحدات أخرى', en: 'Other units', types: [], units: rest });
+    }
+    return present;
+  }, [units]);
+
+  const [tabIndex, setTabIndex] = useState(0);
+  const [maxPrice, setMaxPrice] = useState<number | ''>('');
+  const [minArea, setMinArea] = useState<number | ''>('');
+  const [minBeds, setMinBeds] = useState(0);
+  // Each category has its own price/area range, so carrying filters across tabs would mislead.
+  const clearFilters = () => { setMaxPrice(''); setMinArea(''); setMinBeds(0); };
+
+  const tab = Math.min(tabIndex, Math.max(categories.length - 1, 0));
+  const activeUnits = categories[tab] ? categories[tab].units : [];
+
+  const shown = activeUnits.filter(u =>
+    (maxPrice === '' || u.price <= Number(maxPrice)) &&
+    (minArea === '' || (u.area || 0) >= Number(minArea)) &&
+    (minBeds === 0 || (u.bedrooms || 0) >= minBeds)
+  );
+
+  const lead = units[0];
+  const prices = units.map(u => u.price).filter(Boolean);
+  const areas = units.map(u => u.area).filter(Boolean);
+  const currency = lead?.currency || 'EGP';
+  const fmt = (n: number) => n.toLocaleString();
+
+  return (
+    <div className="animate-fade-in">
+      <div className="relative h-64 sm:h-80 overflow-hidden">
+        {lead?.imageUrl && <img src={lead.imageUrl} alt={projectName} className="w-full h-full object-cover" />}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/20" />
+        <div className="absolute inset-0 max-w-6xl mx-auto px-4 flex flex-col justify-end pb-8">
+          <button onClick={onBack} className="self-start mb-auto mt-6 flex items-center gap-2 text-white/90 hover:text-white font-bold bg-black/30 backdrop-blur px-4 py-2 rounded-full cursor-pointer">
+            {isRtl ? <ArrowRight size={18} aria-hidden="true" /> : <ArrowLeft size={18} aria-hidden="true" />}
+            {isRtl ? 'رجوع' : 'Back'}
+          </button>
+          <h1 className="text-3xl sm:text-5xl font-heading font-black text-white mb-2">{projectName}</h1>
+          <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-white/85 text-sm font-medium">
+            {lead?.developer && <span>{isRtl ? 'المطوّر:' : 'Developer:'} <strong>{lead.developer}</strong></span>}
+            {lead?.location && <span className="flex items-center gap-1"><MapPin size={14} aria-hidden="true" /> {lead.location}</span>}
+            {lead?.deliveryDate && <span>{isRtl ? 'الاستلام:' : 'Delivery:'} <strong>{lead.deliveryDate}</strong></span>}
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
+          <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-5 text-center border border-slate-100 dark:border-slate-700">
+            <div className="text-2xl font-black text-slate-900 dark:text-white">{units.length}</div>
+            <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">{isRtl ? 'وحدة متاحة' : 'Units available'}</div>
+          </div>
+          {prices.length > 0 && (
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-5 text-center border border-slate-100 dark:border-slate-700">
+              <div className="text-lg font-black text-brand-600 dark:text-brand-400">{isRtl ? 'تبدأ من' : 'From'} {fmt(Math.min(...prices))}</div>
+              <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">{currency}</div>
+            </div>
+          )}
+          {areas.length > 0 && (
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-5 text-center border border-slate-100 dark:border-slate-700">
+              <div className="text-lg font-black text-slate-900 dark:text-white">{Math.min(...areas)} - {Math.max(...areas)}</div>
+              <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">{isRtl ? 'م²' : 'm²'}</div>
+            </div>
+          )}
+        </div>
+
+        {categories.length > 0 && (
+          <div role="tablist" aria-label={isRtl ? 'أنواع الوحدات' : 'Unit types'} className="flex gap-2 flex-wrap mb-6 border-b border-slate-200 dark:border-slate-800">
+            {categories.map((c, i) => (
+              <button
+                key={c.key}
+                role="tab"
+                aria-selected={i === tab}
+                onClick={() => { setTabIndex(i); clearFilters(); }}
+                className={`px-5 py-3 font-bold text-sm transition-all border-b-2 -mb-px cursor-pointer rounded-t focus:outline-none focus:ring-2 focus:ring-brand-500 ${i === tab ? 'border-brand-600 text-brand-600 dark:text-brand-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
+              >
+                {isRtl ? c.ar : c.en} <span className="text-xs opacity-70">({c.units.length})</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 mb-6 grid sm:grid-cols-3 gap-4">
+          <div>
+            <label htmlFor="proj-price" className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">{isRtl ? 'أقصى سعر' : 'Max price'}</label>
+            <input id="proj-price" type="number" min="0" value={maxPrice}
+              onChange={e => setMaxPrice(e.target.value === '' ? '' : Number(e.target.value))}
+              placeholder={prices.length ? fmt(Math.max(...prices)) : ''}
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+          <div>
+            <label htmlFor="proj-area" className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">{isRtl ? 'أقل مساحة (م²)' : 'Min area (m²)'}</label>
+            <input id="proj-area" type="number" min="0" value={minArea}
+              onChange={e => setMinArea(e.target.value === '' ? '' : Number(e.target.value))}
+              placeholder={areas.length ? String(Math.min(...areas)) : ''}
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+          <div>
+            <label htmlFor="proj-beds" className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">{isRtl ? 'عدد الغرف' : 'Bedrooms'}</label>
+            <select id="proj-beds" value={minBeds} onChange={e => setMinBeds(Number(e.target.value))}
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500">
+              <option value={0}>{isRtl ? 'أي عدد' : 'Any'}</option>
+              {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}+</option>)}
+            </select>
+          </div>
+        </div>
+
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-4" aria-live="polite">
+          {isRtl ? `${shown.length} من ${activeUnits.length} وحدة` : `Showing ${shown.length} of ${activeUnits.length} units`}
+        </p>
+
+        {shown.length === 0 ? (
+          <div className="text-center py-16 text-slate-400">
+            <p className="font-bold mb-3">{isRtl ? 'مفيش وحدات مطابقة للاختيارات دي.' : 'No units match these filters.'}</p>
+            <button onClick={clearFilters} className="bg-brand-600 hover:bg-brand-700 text-white px-6 py-2.5 rounded-full font-bold cursor-pointer">
+              {isRtl ? 'امسح الفلاتر' : 'Clear filters'}
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+            {shown.map(p => (
+              <PropertyCard key={p.id} property={p}
+                onView3D={() => onView3D(p.id)}
+                onToggleFavorite={() => onToggleFavorite(p.id)}
+                isFavorited={userFavorites.includes(p.id)}
+                onToggleCompare={() => onToggleCompare(p.id)}
+                isComparing={compareIds.includes(p.id)}
+                onClick={() => onOpenProperty(p.id)}
+                t={t} isRtl={isRtl} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const PropertyDetailPage = ({ property, onBack, onPurchase, onOpenProject, t, isRtl }: { property: Property, onBack: () => void, onPurchase: (id: string) => void, onOpenProject?: (name: string) => void, t: any, isRtl: boolean }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [show3D, setShow3D] = useState(false);
   const [calcDown, setCalcDown] = useState(10); // installment estimate: down payment %
@@ -2000,7 +2177,10 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
                 <span className={`${av.color} text-white text-[10px] px-2 py-1 rounded-full font-black uppercase tracking-wider`}>{av.label}</span>
               </div>
               <p className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mb-1 font-medium flex-wrap">
-                <MapPin size={16} className="text-brand-500"/> {property.location}{property.compound ? ` — ${property.compound}` : ''}
+                <MapPin size={16} className="text-brand-500"/> {property.location}
+                {property.compound && (onOpenProject
+                  ? <>{'—'} <button onClick={() => onOpenProject(property.compound!)} className="text-brand-600 dark:text-brand-400 font-bold hover:underline cursor-pointer">{property.compound}</button></>
+                  : <>{' — '}{property.compound}</>)}
                 <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="text-brand-600 dark:text-brand-400 font-bold hover:underline text-sm">{isRtl ? '· عرض على الخريطة' : '· View on map'}</a>
               </p>
               {property.propertyType && (
@@ -3380,6 +3560,7 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [isAdmin, setIsAdmin] = useState(false);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [properties, setProperties] = useState<Property[]>([]);
   const [loadingProps, setLoadingProps] = useState(true);
@@ -3428,7 +3609,7 @@ export default function App() {
   const [sahelVillage, setSahelVillage] = useState('all');
   const [sahelGuests, setSahelGuests] = useState(0);
   // When true, the Add Listing form opens with the "Yalla Sahel" toggle pre-checked
-  // (set by the CTAs on the Yalla Sahel page).
+  // (set by the CTAs on the Sahel Hettety page).
   const [prefillSahel, setPrefillSahel] = useState(false);
 
   // Contact form — previously the form had no state and no handler, so every
@@ -3497,6 +3678,10 @@ export default function App() {
       if (page === 'property' && param) {
         setSelectedPropertyId(param);
         setCurrentPage('property');
+      } else if (page === 'project' && param) {
+        // Project pages carry the compound name: #project/<encoded name>
+        setSelectedProject(decodeURIComponent(param));
+        setCurrentPage('project');
       } else if (page) {
         setCurrentPage(page as Page);
       } else {
@@ -3817,6 +4002,15 @@ export default function App() {
     window.scrollTo(0, 0);
   };
 
+  // Opens a compound's project page, grouping all of its units in one place.
+  const openProject = (name: string) => {
+    setSelectedProject(name);
+    window.location.hash = `project/${encodeURIComponent(name)}`;
+    setCurrentPage('project');
+    setMobileMenuOpen(false);
+    window.scrollTo(0, 0);
+  };
+
   const NavLink = ({ page, label }: { page: Page, label: string }) => (
     <button 
       type="button"
@@ -3863,7 +4057,7 @@ export default function App() {
             <div className="hidden lg:flex items-center gap-8 xl:gap-12">
               <NavLink page="home" label={t.nav_home} />
               <NavLink page="listings" label={t.nav_listings} />
-              <NavLink page="yalla-sahel" label={isRtl ? '🌊 يلا ساحل' : '🌊 Yalla Sahel'} />
+              <NavLink page="yalla-sahel" label={isRtl ? '🌊 ساحل حتتي' : '🌊 Sahel Hettety'} />
               <NavLink page="3d-experience" label={isRtl ? 'جولات 3D' : '3D Tours'} />
               <NavLink page="legal" label={t.nav_trust} />
               {isAdmin && <NavLink page="manage-users" label={isRtl ? 'لوحة التحكم' : 'Dashboard'} />}
@@ -4292,16 +4486,22 @@ export default function App() {
                       const min = prices.length ? Math.min(...prices) : 0;
                       const max = prices.length ? Math.max(...prices) : 0;
                       const cur = units[0].currency || 'EGP';
+                      // Real compounds get their own page; the "individual units" bucket
+                      // isn't a project, so it just filters the units list as before.
+                      const openGroup = () => {
+                        if (units[0].compound) { openProject(name); return; }
+                        setListingView('units');
+                        setListingSearchQuery(name);
+                        setAiFilteredIds(null);
+                      };
                       return (
                         <div 
                           key={name} 
-                          onClick={() => { setListingView('units'); setListingSearchQuery(name); setAiFilteredIds(null); }} 
+                          onClick={openGroup} 
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
                               e.preventDefault();
-                              setListingView('units');
-                              setListingSearchQuery(name);
-                              setAiFilteredIds(null);
+                              openGroup();
                             }
                           }}
                           role="button"
@@ -4378,6 +4578,22 @@ export default function App() {
         {currentPage === 'verification' && <VerificationPage onCta={() => handleNav('legal')} t={t} isRtl={isRtl} />}
         {currentPage === 'tours' && <Tours3DPage onCta={() => handleNav('3d-experience')} t={t} isRtl={isRtl} />}
 
+        {currentPage === 'project' && selectedProject && (
+          <ProjectPage
+            projectName={selectedProject}
+            units={properties.filter(p => (p.compound || '') === selectedProject)}
+            onBack={() => handleNav('listings')}
+            onOpenProperty={openProperty}
+            onView3D={open3D}
+            onToggleFavorite={toggleFavorite}
+            userFavorites={userFavorites}
+            onToggleCompare={toggleCompare}
+            compareIds={compareIds}
+            t={t}
+            isRtl={isRtl}
+          />
+        )}
+
         {currentPage === 'yalla-sahel' && (() => {
           const coastalKeywords = /ساحل|sahel|north coast|الساحل|مارينا|marina|marassi|مراسي|راس الحكمة|ras el|hacienda|هاسيندا|العلمين|alamein|بورتو|porto|جايا|جاردينيا|سيدي عبد|فوكا|fouka/i;
           // Explicitly flagged units always belong here; the keyword/type heuristics
@@ -4394,7 +4610,7 @@ export default function App() {
                 <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(circle at 20% 30%, white 1.5px, transparent 1.5px)', backgroundSize: '42px 42px' }} />
                 <div className="relative max-w-6xl mx-auto px-4 py-20 text-center">
                   <div className="text-6xl mb-4">🌊</div>
-                  <h1 className="text-4xl md:text-6xl font-heading font-black mb-4">{isRtl ? 'يلا ساحل' : 'Yalla Sahel'}</h1>
+                  <h1 className="text-4xl md:text-6xl font-heading font-black mb-4">{isRtl ? 'ساحل حتتي' : 'Sahel Hettety'}</h1>
                   <p className="text-lg md:text-2xl font-bold text-white/90 max-w-3xl mx-auto mb-3">{isRtl ? 'شاليهات الساحل الشمالي — تلف جواها 3D قبل ما تحجز.' : 'North Coast chalets — walk through them in 3D before you book.'}</p>
                   <p className="text-white/80 max-w-2xl mx-auto mb-8">{isRtl ? 'لا نصب، لا صور مخدوعة. معاينة حقيقية، حجز أسرع، وثقة كاملة.' : 'No scams, no misleading photos. Real 3D preview, faster booking, full trust.'}</p>
                   <div className="flex flex-wrap gap-3 justify-center">
@@ -4473,6 +4689,7 @@ export default function App() {
               property={prop}
               onBack={() => handleNav('listings')}
               onPurchase={(id) => { setPaymentProperty(prop); handleNav('payment'); }}
+              onOpenProject={openProject}
               t={t}
               isRtl={isRtl}
             />

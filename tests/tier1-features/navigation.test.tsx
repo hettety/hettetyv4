@@ -51,14 +51,14 @@ describe('Tier 1 — Navigation & View Switching', () => {
     expect(screen.getByText(/Securely manage your personal legal documents/i)).toBeInTheDocument();
   });
 
-  it('switches view to Yalla Sahel coastal hub when 🌊 Yalla Sahel is clicked', () => {
+  it('switches view to Sahel Hettety coastal hub when 🌊 Sahel Hettety is clicked', () => {
     render(<App />);
 
-    const sahelNavBtns = screen.getAllByRole('button', { name: /Yalla Sahel/i });
+    const sahelNavBtns = screen.getAllByRole('button', { name: /Sahel Hettety/i });
     fireEvent.click(sahelNavBtns[0]);
 
     expect(window.location.hash).toBe('#yalla-sahel');
-    expect(screen.getByText('Yalla Sahel')).toBeInTheDocument();
+    expect(screen.getByText('Sahel Hettety')).toBeInTheDocument();
     expect(screen.getByText(/North Coast chalets/i)).toBeInTheDocument();
   });
 
