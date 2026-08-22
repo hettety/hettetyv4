@@ -12,6 +12,7 @@ export function createGeminiProvider(): Provider {
 
   return {
     name: 'gemini',
+    supportsPdf: true, // Gemini accepts PDFs inline
     defaultModel: process.env.AI_MODEL || 'gemini-2.5-flash',
     fallbackModel: process.env.AI_FALLBACK_MODEL || 'gemini-2.0-flash',
 

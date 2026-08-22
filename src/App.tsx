@@ -934,7 +934,7 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
 - A licensed Egyptian real estate lawyer for legal matters.
 - A certified financial advisor for investment decisions.`;
         chatConfigRef.current = { systemInstruction };
-        chatRef.current = createChat({ config: { systemInstruction } });
+        chatRef.current = createChat({ task: 'chat', config: { systemInstruction } });
       }
     } catch (e) {
       console.error("Failed to initialize AI chat", e);
@@ -980,6 +980,7 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
             try {
               const history = messages.map(m => ({ role: (m.role === 'model' ? 'model' : 'user') as 'model' | 'user', parts: [{ text: m.text }] }));
               chatRef.current = createChat({
+                task: 'chat',
                 history,
                 config: { systemInstruction: chatConfigRef.current.systemInstruction },
               });
@@ -1793,6 +1794,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
 - 3D Viewing (Special Capability): You can launch an immersive 3D gallery of this property's photos. When the user asks to see the apartment in 3D, take a virtual tour, walk through it, or says things like "عرضلي الشقة 3D" / "عايز أشوفها مجسمة" / "warini el sha2a 3D", reply with a short enthusiastic confirmation in the user's language and append the exact token [SHOW_3D] at the very end of your reply.`;
 
         const response = await generateContentResilient({
+          task: 'chat',
           contents: newMessages.map(m => ({ role: m.role === 'model' ? 'model' : 'user', parts: [{ text: m.text }] })),
           config: {
             systemInstruction: systemPrompt
@@ -3654,6 +3656,7 @@ export default function App() {
       `;
 
       const response = await generateContentResilient({
+        task: 'search',
         contents: prompt,
         config: {
           responseMimeType: 'application/json',

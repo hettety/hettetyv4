@@ -16,7 +16,14 @@ export interface Message {
   parts: Part[];
 }
 
+/** The five things this app asks a model to do. Each can use its own provider. */
+export type AITask = 'chat' | 'search' | 'describe' | 'brochure' | 'ocr';
+
+export const AI_TASKS: AITask[] = ['chat', 'search', 'describe', 'brochure', 'ocr'];
+
 export interface AIRequest {
+  /** Which job this is — drives per-task provider routing. */
+  task?: AITask;
   /** Conversation so far. The last message is the current turn. */
   contents: Message[];
   /** System prompt / persona. */
@@ -56,6 +63,8 @@ export class ProviderError extends Error {
 
 export interface Provider {
   readonly name: string;
+  /** Can this provider accept non-image inline data (i.e. PDFs)? */
+  readonly supportsPdf: boolean;
   /** Model used when the request doesn't override it. */
   readonly defaultModel: string;
   /** A cheaper/stabler model to retry on when the primary is overloaded. */

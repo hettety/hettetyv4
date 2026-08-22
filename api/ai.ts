@@ -2,31 +2,25 @@
  * POST /api/ai — the app's single AI entry point.
  *
  * The browser posts a provider-neutral request here; this function holds the
- * vendor key server-side and forwards it to whichever provider AI_PROVIDER
- * names. Switching vendors is an env-var change, and the key is never shipped
- * in the Vite bundle.
+ * vendor keys server-side and routes each request to the provider configured for
+ * that task. Vendors are env-var config, and no key ships in the Vite bundle.
  *
- * Server env:
- *   AI_PROVIDER        gemini (default) | nvidia | openrouter | together | groq | openai
- *   AI_MODEL           override the provider's default model
- *   AI_FALLBACK_MODEL  retried once when the primary is overloaded
- *   GEMINI_API_KEY     for AI_PROVIDER=gemini
- *   NVIDIA_API_KEY     for AI_PROVIDER=nvidia   (or AI_API_KEY + AI_BASE_URL for any gateway)
+ * Global env:
+ *   AI_PROVIDER   gemini (default) | nvidia | openrouter | together | groq | openai
+ *   AI_MODEL      override the provider's default model
+ *   <VENDOR>_API_KEY  e.g. GEMINI_API_KEY, NVIDIA_API_KEY, GROQ_API_KEY
+ *
+ * Per-task routing (all optional — see _lib/router.ts):
+ *   AI_TASK_CHAT_PROVIDER / _MODEL       conversational assistant
+ *   AI_TASK_SEARCH_PROVIDER / _MODEL     natural-language search -> JSON
+ *   AI_TASK_DESCRIBE_PROVIDER / _MODEL   listing description writer
+ *   AI_TASK_BROCHURE_PROVIDER / _MODEL   brochure import (needs PDF support)
+ *   AI_TASK_OCR_PROVIDER / _MODEL        registry-number extraction from a deed
  */
-import { createGeminiProvider } from './_lib/gemini';
-import { createOpenAICompatibleProvider, OPENAI_COMPATIBLE_PROVIDERS } from './_lib/openaiCompatible';
-import { AIRequest, Message, Provider, ProviderError, isTransientStatus } from './_lib/types';
+import { resolve } from './_lib/router';
+import { AI_TASKS, AIRequest, Message, ProviderError, isTransientStatus } from './_lib/types';
 
 const MAX_BODY_CHARS = 12_000_000; // ~9MB of base64 — a brochure PDF fits, abuse doesn't.
-
-function selectProvider(): Provider {
-  const name = (process.env.AI_PROVIDER || 'gemini').toLowerCase().trim();
-  if (name === 'gemini') return createGeminiProvider();
-  if (OPENAI_COMPATIBLE_PROVIDERS.includes(name) || process.env.AI_BASE_URL) {
-    return createOpenAICompatibleProvider(name);
-  }
-  throw new ProviderError(`Unknown AI_PROVIDER "${name}"`, 500, false);
-}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -64,7 +58,11 @@ function validate(body: any): AIRequest {
   if (body.responseMimeType && body.responseMimeType !== 'text/plain' && body.responseMimeType !== 'application/json') {
     throw new ProviderError('`responseMimeType` must be text/plain or application/json', 400);
   }
+  if (body.task && !AI_TASKS.includes(body.task)) {
+    throw new ProviderError(`Unknown task "${body.task}"`, 400);
+  }
   return {
+    task: body.task,
     contents,
     systemInstruction: typeof body.systemInstruction === 'string' ? body.systemInstruction : undefined,
     responseMimeType: body.responseMimeType,
@@ -88,8 +86,7 @@ export default async function handler(req: any, res: any) {
     const parsed = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body;
     const aiReq = validate(parsed);
 
-    const provider = selectProvider();
-    const primary = aiReq.model || provider.defaultModel;
+    const { provider, model: primary, note } = resolve(aiReq);
 
     let text: string;
     let used = primary;
@@ -106,7 +103,7 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    return res.status(200).json({ text, provider: provider.name, model: used });
+    return res.status(200).json({ text, provider: provider.name, model: used, task: aiReq.task, note });
   } catch (err: any) {
     const status = err instanceof ProviderError ? err.status : 500;
     // Misconfiguration returns 500 but is NOT worth retrying, so trust the

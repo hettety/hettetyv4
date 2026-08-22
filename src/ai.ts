@@ -22,7 +22,11 @@ export type Part = { text: string } | { inlineData: { mimeType: string; data: st
 export interface Message { role: 'user' | 'model'; parts: Part[] }
 
 /** Vendor-SDK-shaped params, kept so call sites read the same as before. */
+/** Which job this call is — lets the server route it to the right provider. */
+export type AITask = 'chat' | 'search' | 'describe' | 'brochure' | 'ocr';
+
 export interface GenerateParams {
+  task?: AITask;
   contents: string | Message[] | { role?: string; parts: Part[] }[];
   config?: {
     systemInstruction?: string;
@@ -89,6 +93,7 @@ export async function generateContent(params: GenerateParams): Promise<GenerateR
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      task: params.task,
       contents: normaliseContents(params.contents),
       systemInstruction: params.config?.systemInstruction,
       responseMimeType: params.config?.responseMimeType,
@@ -125,13 +130,14 @@ export async function generateContentResilient(params: GenerateParams): Promise<
  * History lives here in the browser and is replayed to the stateless endpoint
  * on every turn.
  */
-export function createChat(opts: { config?: { systemInstruction?: string }; history?: Message[]; model?: string } = {}) {
+export function createChat(opts: { config?: { systemInstruction?: string }; history?: Message[]; model?: string; task?: AITask } = {}) {
   const history: Message[] = [...(opts.history || [])];
   return {
     get history() { return [...history]; },
     async sendMessage({ message }: { message: string }): Promise<GenerateResult> {
       const turn: Message = { role: 'user', parts: [{ text: message }] };
       const result = await generateContent({
+        task: opts.task ?? 'chat',
         contents: [...history, turn],
         config: { systemInstruction: opts.config?.systemInstruction },
         model: opts.model,

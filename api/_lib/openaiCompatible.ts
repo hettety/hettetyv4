@@ -85,6 +85,7 @@ export function createOpenAICompatibleProvider(providerName: string): Provider {
 
   return {
     name: providerName,
+    supportsPdf: false, // the OpenAI vision schema is images-only
     defaultModel: process.env.AI_MODEL || preset?.model || '',
     fallbackModel: process.env.AI_FALLBACK_MODEL,
 

@@ -211,7 +211,7 @@ export const AddListingPage = ({ onAdd, onAddMany, t, isRtl, isAdmin, isSuperAdm
     try {
       setGeneratingDesc(true);
       const prompt = `Write a succinct, professional real estate description for a property in ${formData.location} with ${formData.bedrooms} bedrooms, ${formData.bathrooms} bathrooms, an area of ${formData.area} sqm, priced at ${formData.price} EGP. Status: ${formData.status}. ${isRtl ? 'Write it in Arabic.' : 'Write it in English.'}`;
-      const response = await generateContentResilient({ contents: prompt });
+      const response = await generateContentResilient({ task: 'describe', contents: prompt });
       setFormData(prev => ({ ...prev, description: response.text || "" }));
     } catch (e) {
       console.error("Description generation failed", e);
@@ -258,6 +258,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
  "description": string (rich — EOI/maintenance, project story and any details not captured above, in the brochure's own language)
 }`;
       const response = await generateContentResilient({
+        task: 'brochure',
         contents: [{ role: 'user', parts: [ { text: prompt }, { inlineData: { data: base64, mimeType: file.type } } ] }],
         config: { responseMimeType: 'application/json' },
       });
@@ -358,6 +359,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
       // await the read so any failure below is caught and the spinner always stops
       const base64 = (await fileToDataUrl(file)).split(',')[1];
       const response = await generateContentResilient({
+        task: 'ocr',
         contents: [
           { role: 'user', parts: [
             { text: "Extract the official Registry Number (رقم المشهر او رقم الشهر العقاري) from this real estate deed/document. Return only the extracted number. If not found, return 'NOT_FOUND'." },
