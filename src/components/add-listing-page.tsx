@@ -102,16 +102,24 @@ const fileToDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
  * property document, which blows past Firestore's 1MB document limit as soon
  * as a few photos are attached — the listing save would simply fail.
  */
-// On the free Spark plan Storage isn't enabled, and uploadBytes can hang for a
-// long time before failing — which made uploads feel frozen. We race it against
-// a short timeout so we bail to the base64 fallback fast.
-const STORAGE_TIMEOUT_MS = 8000;
+// On the free Spark plan Storage isn't enabled and uploadBytes can hang for a
+// long time before failing, so an upload is raced against a deadline. The
+// deadline has to scale with the file: a flat 8s is fine for probing whether a
+// bucket exists but guarantees failure for a 10MB deed on a mobile connection,
+// and the base64 fallback it drops into cannot hold one anyway.
+const STORAGE_PROBE_MS = 8000;                       // enough to learn the bucket is missing
+const STORAGE_MS_PER_MB = 20000;                     // ~0.4 Mbps floor, generous for 3G
+export const uploadDeadline = (bytes: number) =>
+  STORAGE_PROBE_MS + Math.ceil(bytes / (1024 * 1024)) * STORAGE_MS_PER_MB;
 
 const withTimeout = <T,>(promise: Promise<T>, ms: number) =>
   Promise.race([
     promise,
     new Promise<never>((_, reject) => setTimeout(() => reject(new Error('storage-timeout')), ms)),
   ]);
+
+/** A timeout means a slow network, not a missing bucket. */
+const isMissingBucket = (err: unknown) => (err as Error)?.message !== 'storage-timeout';
 
 const uploadToStorage = async (file: Blob, originalName: string) => {
   const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80);
@@ -120,7 +128,7 @@ const uploadToStorage = async (file: Blob, originalName: string) => {
   // can only be swept with the Admin SDK.
   const uid = auth.currentUser?.uid || 'anonymous';
   const storageRef = ref(storage, `properties/${uid}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`);
-  await withTimeout(uploadBytes(storageRef, file), STORAGE_TIMEOUT_MS);
+  await withTimeout(uploadBytes(storageRef, file), uploadDeadline(file.size));
   return getDownloadURL(storageRef);
 };
 
@@ -142,21 +150,28 @@ const MAX_MEDIA_ITEMS = 20;
 const MAX_LEGAL_DOCS = 10;
 const MAX_PAYMENT_PLANS = 10;
 const FALLBACK_VIDEO_LIMIT = 500 * 1024;
+// Must stay under storage.rules' 80MB ceiling for video/*.
+const MAX_VIDEO_BYTES = 80 * 1024 * 1024;
 
-// Storage hosts the file when available, so we can afford much better quality
-// than the 0.08MB/800px settings needed to squeeze base64 into Firestore.
-const STORAGE_COMPRESSION = { maxSizeMB: 0.5, maxWidthOrHeight: 1920, useWebWorker: true };
+// Storage hosts the file, so quality is bounded by what a phone will download,
+// not by Firestore's 1MB document limit. storage.rules allows 15MB per image.
+const STORAGE_COMPRESSION = { maxSizeMB: 2.5, maxWidthOrHeight: 2560, useWebWorker: true };
+// A 360 photo is stretched around a whole sphere, so 2560px across leaves only
+// about seven pixels per degree — visibly soft. These get their own budget.
+const PANORAMA_COMPRESSION = { maxSizeMB: 6, maxWidthOrHeight: 5120, useWebWorker: true };
+// Only reachable when Storage is unavailable: base64 has to fit inside the
+// Firestore document alongside everything else.
 const FIRESTORE_COMPRESSION = { maxSizeMB: 0.08, maxWidthOrHeight: 800, useWebWorker: true };
 
 /** Compresses and stores an image, preferring Storage with a base64 fallback. */
-const storeImage = async (file: File): Promise<string> => {
+const storeImage = async (file: File, options = STORAGE_COMPRESSION): Promise<string> => {
   if (!storageUnavailable) {
     try {
-      const compressed = await imageCompression(file, STORAGE_COMPRESSION);
+      const compressed = await imageCompression(file, options);
       return await uploadToStorage(compressed, file.name);
     } catch (err) {
       console.warn('Storage upload failed — falling back to inline base64 (Storage needs the Blaze plan)', err);
-      storageUnavailable = true;
+      if (isMissingBucket(err)) storageUnavailable = true;
     }
   }
   const compressed = await imageCompression(file, FIRESTORE_COMPRESSION);
@@ -167,7 +182,13 @@ const storeImage = async (file: File): Promise<string> => {
 const storeDocument = async (file: File): Promise<string> => {
   if (!storageUnavailable) {
     try { return await uploadToStorage(file, file.name); }
-    catch (err) { console.warn('Storage document upload failed — base64 fallback', err); storageUnavailable = true; }
+    catch (err) {
+      console.warn('Storage document upload failed — base64 fallback', err);
+      // A slow upload must not convince the rest of the session that Storage is
+      // gone — a PDF cannot survive the base64 path.
+      if (isMissingBucket(err)) storageUnavailable = true;
+      else throw err;
+    }
   }
   return fileToDataUrl(file);
 };
@@ -546,7 +567,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
     let failures = 0;
     let done = 0;
     await Promise.all(files.map(async (file) => {
-      try { results.push(await storeImage(file)); }
+      try { results.push(await storeImage(file, PANORAMA_COMPRESSION)); }
       catch (err) { failures++; console.error('Panorama upload failed', err); }
       done++; setUploadProgress(5 + Math.round((done / files.length) * 90));
     }));
@@ -583,9 +604,10 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    // Storage upload lifts the old 500KB ceiling that base64-in-Firestore imposed
-    if (file.size > 50 * 1024 * 1024) {
-      alert(isRtl ? 'حجم الفيديو يجب أن يكون أقل من 50 ميجابايت.' : 'Video must be under 50MB.');
+    // storage.rules allows 80MB for a video; anything larger is refused there
+    // with an error the user cannot read, so stop it here with one they can.
+    if (file.size > MAX_VIDEO_BYTES) {
+      alert(isRtl ? 'حجم الفيديو لازم يكون أقل من 80 ميجابايت.' : 'Video must be under 80MB.');
       return;
     }
     setUploading(true);
@@ -601,7 +623,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
     } catch (err) {
       if ((err as Error).message !== 'storage-unavailable') {
         console.warn('Storage video upload failed — trying base64 fallback', err);
-        storageUnavailable = true;
+        if (isMissingBucket(err)) storageUnavailable = true;
       }
       // Without Storage the video has to live inside the Firestore document,
       // which only leaves room for very small clips.
