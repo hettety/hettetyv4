@@ -17,6 +17,7 @@
  *   AI_TASK_BROCHURE_PROVIDER / _MODEL   brochure import (needs PDF support)
  *   AI_TASK_OCR_PROVIDER / _MODEL        registry-number extraction from a deed
  */
+import { resolveFileUrls } from './_lib/fetchFile.js';
 import { resolve } from './_lib/router.js';
 import { AI_TASKS, AIRequest, Message, ProviderError, isTransientStatus } from './_lib/types.js';
 
@@ -57,6 +58,11 @@ function validate(body: any): AIRequest {
     if (!Array.isArray(m.parts) || m.parts.length === 0) {
       throw new ProviderError('Each message needs a non-empty `parts` array', 400);
     }
+    for (const part of m.parts) {
+      if (part && 'fileUrl' in part && (typeof (part as any).fileUrl?.url !== 'string')) {
+        throw new ProviderError('`fileUrl` needs a `url` string', 400);
+      }
+    }
   }
   if (body.responseMimeType && body.responseMimeType !== 'text/plain' && body.responseMimeType !== 'application/json') {
     throw new ProviderError('`responseMimeType` must be text/plain or application/json', 400);
@@ -88,6 +94,9 @@ export default async function handler(req: any, res: any) {
     }
     const parsed = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body;
     const aiReq = validate(parsed);
+    // Any fileUrl becomes inline bytes here, so routing and every provider below
+    // see one shape: a message made of text and inline data.
+    aiReq.contents = await resolveFileUrls(aiReq.contents);
 
     const { provider, model: primary, note } = resolve(aiReq);
 

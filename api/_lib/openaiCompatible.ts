@@ -43,6 +43,11 @@ function toOpenAIContent(parts: Part[]): string | any[] {
 
   return parts.map((p) => {
     if ('text' in p) return { type: 'text', text: p.text };
+    // fileUrl parts are resolved to inlineData in api/ai.ts before any provider
+    // runs, so reaching this branch with one means the handler was bypassed.
+    if (!('inlineData' in p)) {
+      throw new ProviderError('Unresolved file reference reached the provider', 500, false);
+    }
     const { mimeType, data } = p.inlineData;
     // PDFs are not supported by the OpenAI vision schema — most gateways only
     // accept images. Fail loudly rather than silently sending something invalid.

@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { generateContentResilient, aiErrorMessage } from '../ai';
-import { storage, ref, uploadBytes, getDownloadURL, auth } from '../firebase';
+import { storage, ref, uploadBytes, getDownloadURL, deleteObject, auth } from '../firebase';
 import { Property } from '../types';
 
 /**
@@ -157,6 +157,26 @@ const MAX_VIDEO_BYTES = 80 * 1024 * 1024;
 // FUNCTION_PAYLOAD_TOO_LARGE. base64 costs 4/3, and the prompt rides along, so
 // this is what actually fits.
 const MAX_AI_FILE_BYTES = Math.floor(2.8 * 1024 * 1024);
+// storage.rules accepts a PDF up to 15MB, and the function fetches it itself, so
+// the inbound-body cap does not apply to anything sent this way.
+const MAX_AI_VIA_STORAGE_BYTES = 15 * 1024 * 1024;
+
+/**
+ * Puts a file in Storage so the AI function can fetch it, and hands back a way to
+ * remove it again. A brochure is read once and is not part of the listing.
+ */
+const stageForAI = async (file: File) => {
+  const uid = auth.currentUser?.uid || 'anonymous';
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80);
+  const path = `properties/${uid}/ai-${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`;
+  const objectRef = ref(storage, path);
+  await withTimeout(uploadBytes(objectRef, file), uploadDeadline(file.size));
+  const url = await getDownloadURL(objectRef);
+  return {
+    url,
+    discard: () => deleteObject(objectRef).catch(err => console.warn('Could not remove staged brochure:', err)),
+  };
+};
 // A brochure is mostly text, so it has to stay legible after compression.
 const BROCHURE_COMPRESSION = { maxSizeMB: 2.5, maxWidthOrHeight: 2400, useWebWorker: true };
 
@@ -335,16 +355,26 @@ export const AddListingPage = ({ onAdd, onAddMany, onUpdate, mode = 'create', in
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    const fitted = await fitForAI(file);
-    if ('tooBig' in fitted) {
+    if (file.size > MAX_AI_VIA_STORAGE_BYTES) {
       alert(isRtl
-        ? `البروشور ${mb(fitted.tooBig)} ميجا، والحد الأقصى ${mb(MAX_AI_FILE_BYTES)} ميجا. صغّر الـ PDF، أو ارفع صورة للصفحة اللي فيها الأسعار والمساحات.`
-        : `That brochure is ${mb(fitted.tooBig)}MB and the limit is ${mb(MAX_AI_FILE_BYTES)}MB. Compress the PDF, or upload a photo of the page with the prices and areas.`);
+        ? `البروشور ${mb(file.size)} ميجا، والحد الأقصى ${mb(MAX_AI_VIA_STORAGE_BYTES)} ميجا. صغّر الملف أو ارفع الصفحات اللي فيها الأسعار والمساحات بس.`
+        : `That brochure is ${mb(file.size)}MB and the limit is ${mb(MAX_AI_VIA_STORAGE_BYTES)}MB. Compress it, or upload just the pages with the prices and areas.`);
       return;
     }
+    const fitted = await fitForAI(file);
     setImporting(true);
+    // Small enough to inline goes straight up; anything larger is staged in
+    // Storage and fetched by the function, which the body cap does not limit.
+    let staged: { url: string; discard: () => Promise<void> } | null = null;
     try {
-      const base64 = (await fileToDataUrl(fitted.file)).split(',')[1];
+      let filePart: Record<string, unknown>;
+      if ('tooBig' in fitted) {
+        staged = await stageForAI(file);
+        filePart = { fileUrl: { url: staged.url, mimeType: file.type } };
+      } else {
+        const base64 = (await fileToDataUrl(fitted.file)).split(',')[1];
+        filePart = { inlineData: { data: base64, mimeType: fitted.file.type } };
+      }
       const prompt = `You are a real-estate data extractor. Read this property brochure/flyer (it may be Arabic, English or Franco) and extract ONE listing as JSON.
 If it lists multiple unit types, pick the entry/smallest unit as the base, and summarise ALL unit types (with their areas, starting prices and payment plans) inside "description".
 Return ONLY valid JSON (no markdown), omitting any key you can't find:
@@ -375,7 +405,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
 }`;
       const response = await generateContentResilient({
         task: 'brochure',
-        contents: [{ role: 'user', parts: [ { text: prompt }, { inlineData: { data: base64, mimeType: fitted.file.type } } ] }],
+        contents: [{ role: 'user', parts: [ { text: prompt }, filePart as any ] }],
         config: { responseMimeType: 'application/json' },
       });
       const raw = (response.text || '').trim().replace(/^```json\s*/i, '').replace(/```$/, '').trim();
@@ -454,6 +484,8 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
       console.error('Brochure import failed', err);
       alert(aiErrorMessage(err, isRtl));
     } finally {
+      // The brochure was only ever a source to read; it is not part of the listing.
+      await staged?.discard();
       setImporting(false);
     }
   };

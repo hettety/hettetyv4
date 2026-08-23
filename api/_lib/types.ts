@@ -6,10 +6,19 @@
  * environment-variable change, not an app rewrite.
  */
 
-/** A chunk of a message: either text or an inline binary (image / PDF). */
+/**
+ * A chunk of a message: text, an inline binary, or a file the server fetches.
+ *
+ * fileUrl exists because Vercel rejects an inbound request body over ~4.5MB
+ * before the function runs, which caps an inlined file at roughly 2.8MB. A URL
+ * costs a few hundred bytes and the function does the download itself, so a
+ * 15MB brochure works. The URL is resolved to inlineData before any provider
+ * sees it — providers still only ever receive inline bytes.
+ */
 export type Part =
   | { text: string }
-  | { inlineData: { mimeType: string; data: string } }; // data = base64, no data: prefix
+  | { inlineData: { mimeType: string; data: string } } // data = base64, no data: prefix
+  | { fileUrl: { url: string; mimeType: string } };
 
 export interface Message {
   role: 'user' | 'model';
