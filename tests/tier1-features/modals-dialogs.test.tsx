@@ -118,9 +118,12 @@ describe('Tier 1 — Modals, Dialogs & Accessibility Drawers', () => {
     expect(screen.getByText(property.title)).toBeInTheDocument();
     expect(screen.getByTestId('mock-r3f-canvas')).toBeInTheDocument();
 
-    // Mode switch button exists when both images and panoramas exist
-    const depthBtn = screen.getByRole('button', { name: /Depth Photos/i });
+    // Mode switch button exists when both images and panoramas exist. The label
+    // is "photo relief", not "3D": the mode builds a relief from the photo and
+    // does not measure the room.
+    const depthBtn = screen.getByRole('button', { name: /photo relief/i });
     fireEvent.click(depthBtn);
+    expect(screen.queryByRole('button', { name: /Depth Photos/i })).toBeNull();
 
     // Close on Escape key
     fireEvent.keyDown(window, { key: 'Escape', code: 'Escape' });

@@ -1,11 +1,10 @@
 /**
- * Property3DViewer — turns a flat property photo into an explorable 3D scene.
+ * Property3DViewer — turns a flat property photo into an explorable scene.
  *
- * Each photo is mapped onto a finely-subdivided plane and displaced along its
- * depth cues (the image's own luminance drives a height map), so brighter/closer
- * parts of the room pop forward. The visitor can then orbit the photo to view it
- * from other angles, with real parallax between near and far surfaces — instead
- * of just staring at a flat picture. Arrows switch between the property's photos.
+ * Two modes. A 360° panorama is a real look-around: an equirectangular photo
+ * painted inside a sphere with the camera at its centre. The "depth" mode is not
+ * a measurement of the room — it is a relief built from the photo, so the visitor
+ * can move around it and get parallax. It is presented as that, not as a survey.
  *
  * Used by the standalone 3D tour page, the property detail page and the AI
  * assistant (when a user asks to "see the apartment in 3D").
@@ -14,55 +13,197 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
-import { X, ChevronLeft, ChevronRight, Box, RotateCcw, Move3d, Layers } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Box, RotateCcw, Move3d, Layers, Loader2 } from 'lucide-react';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 
-/** Loads a texture imperatively so a failed image degrades gracefully instead of crashing the canvas. */
-function useImageTexture(url: string) {
-  const [texture, setTexture] = useState<THREE.Texture | null>(null);
-  const [aspect, setAspect] = useState(1.5);
+/**
+ * Loads an image element for a texture.
+ *
+ * crossOrigin is attempted first because it keeps the canvas untainted, but it
+ * fails outright on any host that does not return CORS headers — and Firebase
+ * Storage only returns them once a CORS policy has been applied to the bucket,
+ * which is easy to forget. Falling back to a plain load means a missing policy
+ * costs nothing here: nothing in this viewer reads pixels back.
+ */
+function loadImageElement(url: string): Promise<HTMLImageElement> {
+  const attempt = (useCors: boolean) =>
+    new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      if (useCors) img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error(useCors ? 'cors' : 'load'));
+      img.src = url;
+    });
+  return attempt(true).catch(() => attempt(false));
+}
+
+/** Square edge of the generated depth map. Small on purpose — it is a shape, not detail. */
+const DEPTH_MAP_SIZE = 96;
+
+/**
+ * Builds the height map the relief is displaced by.
+ *
+ * Using the photo's own luminance as height — the obvious shortcut — gets the
+ * room backwards: a window is the brightest thing in most interior photos and
+ * also the furthest away, so it balloons toward the viewer while the dark corners
+ * sink. Instead the shape is mostly a radial well, so the middle of the frame
+ * recedes and the edges stay forward. That reads as looking *into* a room. A
+ * little smoothed luminance is mixed in for surface texture, and the border is
+ * pinned flat so the plane cannot tear at its edge.
+ */
+export function computeHeightField(lum: Float32Array, n: number): Float32Array {
+  const out = new Float32Array(n * n);
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const i = y * n + x;
+      // Distance from centre, 0 in the middle to 1 at the corners.
+      const nx = (x / (n - 1)) * 2 - 1;
+      const ny = (y / (n - 1)) * 2 - 1;
+      const r = Math.min(1, Math.sqrt(nx * nx + ny * ny) / Math.SQRT2);
+      const well = Math.pow(r, 1.5);               // centre recedes, edges forward
+      let h = 0.78 * well + 0.22 * lum[i];         // gentle texture from the photo
+      // Pin the outer band flat so the mesh edge stays square.
+      const edge = Math.min(x, y, n - 1 - x, n - 1 - y) / (n * 0.12);
+      if (edge < 1) h = h * edge + 1.0 * (1 - edge);
+      out[i] = h;
+    }
+  }
+  return out;
+}
+
+function buildDepthMap(img: HTMLImageElement): THREE.DataTexture | null {
+  const n = DEPTH_MAP_SIZE;
+  const canvas = document.createElement('canvas');
+  canvas.width = n;
+  canvas.height = n;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null; // no 2D canvas (e.g. jsdom) — the relief just stays flat
+
+  ctx.drawImage(img, 0, 0, n, n);
+  let pixels: Uint8ClampedArray;
+  try {
+    pixels = ctx.getImageData(0, 0, n, n).data;
+  } catch {
+    return null; // tainted canvas: fall back to a flat plane rather than throwing
+  }
+
+  // Luminance, then a couple of box-blur passes so single bright pixels do not
+  // become spikes on a 220-segment plane.
+  let lum = new Float32Array(n * n);
+  for (let i = 0; i < n * n; i++) {
+    lum[i] = (0.2126 * pixels[i * 4] + 0.7152 * pixels[i * 4 + 1] + 0.0722 * pixels[i * 4 + 2]) / 255;
+  }
+  for (let pass = 0; pass < 2; pass++) {
+    const next = new Float32Array(n * n);
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        let sum = 0;
+        let count = 0;
+        for (let dy = -2; dy <= 2; dy++) {
+          for (let dx = -2; dx <= 2; dx++) {
+            const yy = y + dy;
+            const xx = x + dx;
+            if (yy < 0 || yy >= n || xx < 0 || xx >= n) continue;
+            sum += lum[yy * n + xx];
+            count++;
+          }
+        }
+        next[y * n + x] = sum / count;
+      }
+    }
+    lum = next;
+  }
+
+  const height = computeHeightField(lum, n);
+  const data = new Uint8Array(n * n * 4);
+  for (let i = 0; i < n * n; i++) {
+    const v = Math.max(0, Math.min(255, Math.round(height[i] * 255)));
+    data[i * 4] = v;
+    data[i * 4 + 1] = v;
+    data[i * 4 + 2] = v;
+    data[i * 4 + 3] = 255;
+  }
+
+  const tex = new THREE.DataTexture(data, n, n, THREE.RGBAFormat);
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+type LoadState = 'loading' | 'ready' | 'error';
+
+/** Colour map plus a generated height map, with the load state the UI reports. */
+function useSceneTextures(url: string, wantDepth: boolean) {
+  const [state, setState] = useState<{ color: THREE.Texture | null; depth: THREE.DataTexture | null; aspect: number; status: LoadState }>(
+    { color: null, depth: null, aspect: 1.5, status: 'loading' }
+  );
 
   useEffect(() => {
     let disposed = false;
-    const loader = new THREE.TextureLoader();
-    loader.setCrossOrigin('anonymous');
-    loader.load(
-      url,
-      (tex) => {
-        if (disposed) { tex.dispose(); return; }
-        tex.colorSpace = THREE.SRGBColorSpace;
-        tex.anisotropy = 8;
-        if (tex.image?.width && tex.image?.height) {
-          setAspect(tex.image.width / tex.image.height);
-        }
-        setTexture(tex);
-      },
-      undefined,
-      () => { /* keep placeholder on load error */ }
-    );
+    setState((s) => ({ ...s, status: 'loading' }));
+
+    loadImageElement(url)
+      .then((img) => {
+        if (disposed) return;
+        const color = new THREE.Texture(img);
+        color.colorSpace = THREE.SRGBColorSpace;
+        color.minFilter = THREE.LinearMipmapLinearFilter;
+        color.magFilter = THREE.LinearFilter;
+        color.generateMipmaps = true;
+        color.needsUpdate = true;
+        const depth = wantDepth ? buildDepthMap(img) : null;
+        setState({
+          color,
+          depth,
+          aspect: img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 1.5,
+          status: 'ready',
+        });
+      })
+      .catch(() => {
+        if (!disposed) setState((s) => ({ ...s, status: 'error' }));
+      });
+
     return () => {
       disposed = true;
-      setTexture((prev) => { prev?.dispose(); return null; });
+      setState((prev) => {
+        prev.color?.dispose();
+        prev.depth?.dispose();
+        return { color: null, depth: null, aspect: prev.aspect, status: 'loading' };
+      });
     };
-  }, [url]);
+  }, [url, wantDepth]);
 
-  return { texture, aspect };
+  return state;
 }
 
 const PLANE_HEIGHT = 3;
-const DEPTH_SCALE = 0.55;
+const DEPTH_SCALE = 0.5;
 
-/**
- * The photo as a displaced 3D relief. The same texture is used both as the
- * colour map and as the displacement (height) map, so the picture's lighter
- * regions are pushed toward the viewer — giving genuine parallax when orbited.
- */
-const DepthPhoto = ({ url }: { url: string }) => {
-  const { texture, aspect } = useImageTexture(url);
+/** Fewer segments on a phone: this plane is subdivided every frame it is drawn. */
+function planeSegments() {
+  if (typeof navigator === 'undefined') return 160;
+  const cores = (navigator as any).hardwareConcurrency || 4;
+  const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches;
+  if (coarse && cores <= 4) return 96;
+  if (coarse) return 140;
+  return 200;
+}
+
+const DepthPhoto = ({ url, onState }: { url: string; onState: (s: LoadState) => void }) => {
+  const { color, depth, aspect, status } = useSceneTextures(url, true);
   const groupRef = useRef<THREE.Group>(null);
   const width = PLANE_HEIGHT * Math.min(Math.max(aspect, 0.6), 2.4);
+  const segments = useMemo(() => planeSegments(), []);
+  const { gl } = useThree();
 
-  // Subtle "breathing" sway so the depth reads even before the user interacts.
+  useEffect(() => { onState(status); }, [status, onState]);
+
+  useEffect(() => {
+    if (color) color.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy());
+  }, [color, gl]);
+
+  // A slow sway so the relief reads before anyone touches it.
   useFrame((state) => {
     if (groupRef.current) {
       const t = state.clock.elapsedTime;
@@ -73,22 +214,20 @@ const DepthPhoto = ({ url }: { url: string }) => {
 
   return (
     <group ref={groupRef}>
-      {/* Soft frame behind the relief */}
       <mesh position={[0, 0, -0.06]}>
         <boxGeometry args={[width + 0.12, PLANE_HEIGHT + 0.12, 0.08]} />
         <meshStandardMaterial color="#0b1220" metalness={0.5} roughness={0.4} />
       </mesh>
-      {/* Displaced photo */}
       <mesh>
-        <planeGeometry args={[width, PLANE_HEIGHT, 220, 220]} />
-        {texture ? (
+        <planeGeometry args={[width, PLANE_HEIGHT, segments, segments]} />
+        {color ? (
           <meshStandardMaterial
-            map={texture}
-            displacementMap={texture}
-            displacementScale={DEPTH_SCALE}
-            displacementBias={-DEPTH_SCALE / 2}
+            map={color}
+            displacementMap={depth || undefined}
+            displacementScale={depth ? DEPTH_SCALE : 0}
+            displacementBias={depth ? -DEPTH_SCALE * 0.55 : 0}
             roughness={0.85}
-            metalness={0.0}
+            metalness={0}
             side={THREE.DoubleSide}
           />
         ) : (
@@ -99,46 +238,43 @@ const DepthPhoto = ({ url }: { url: string }) => {
   );
 };
 
-/** Immersive 360° look-around: the panorama is painted on the inside of a sphere with the camera at its centre. */
-const PanoramaSphere = ({ url }: { url: string }) => {
-  const { texture } = useImageTexture(url);
+const PanoramaSphere = ({ url, onState }: { url: string; onState: (s: LoadState) => void }) => {
+  const { color, status } = useSceneTextures(url, false);
   const meshRef = useRef<THREE.Mesh>(null);
-  // Slow idle spin so it's obviously interactive
+  useEffect(() => { onState(status); }, [status, onState]);
   useFrame(() => {
     if (meshRef.current) meshRef.current.rotation.y += 0.0006;
   });
-  if (!texture) return null;
+  if (!color) return null;
   return (
     <mesh ref={meshRef} scale={[-1, 1, 1]}>
       <sphereGeometry args={[10, 64, 40]} />
-      <meshBasicMaterial map={texture} side={THREE.BackSide} toneMapped={false} />
+      <meshBasicMaterial map={color} side={THREE.BackSide} toneMapped={false} />
     </mesh>
   );
 };
 
-const PanoramaScene = ({ url }: { url: string }) => {
+const PanoramaScene = ({ url, onState }: { url: string; onState: (s: LoadState) => void }) => {
   const { camera } = useThree();
   useEffect(() => { camera?.position?.set?.(0, 0, 0.1); }, [url, camera]);
   return (
     <>
-      <PanoramaSphere key={url} url={url} />
+      <PanoramaSphere key={url} url={url} onState={onState} />
       <OrbitControls enablePan={false} enableZoom rotateSpeed={-0.35} minDistance={0.1} maxDistance={8} />
     </>
   );
 };
 
-const Scene = ({ url, autoRotate }: { url: string; autoRotate: boolean }) => {
+const Scene = ({ url, autoRotate, onState }: { url: string; autoRotate: boolean; onState: (s: LoadState) => void }) => {
   const { camera } = useThree();
-  useEffect(() => {
-    camera?.position?.set?.(0, 0, 4);
-  }, [url, camera]);
+  useEffect(() => { camera?.position?.set?.(0, 0, 4); }, [url, camera]);
 
   return (
     <>
       <ambientLight intensity={0.9} />
       <directionalLight position={[2, 3, 4]} intensity={1.1} />
       <directionalLight position={[-3, -1, 2]} intensity={0.4} color="#cbd5e1" />
-      <DepthPhoto key={url} url={url} />
+      <DepthPhoto key={url} url={url} onState={onState} />
       <OrbitControls
         enablePan={false}
         enableZoom
@@ -166,17 +302,19 @@ export interface Property3DViewerProps {
 const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, panoramas, title, onClose, isRtl }) => {
   const validImages = useMemo(() => images.filter(Boolean), [images]);
   const validPanoramas = useMemo(() => (panoramas || []).filter(Boolean), [panoramas]);
-  // Prefer the immersive 360° look-around when panoramas are available.
   const [mode, setMode] = useState<'pano' | 'depth'>(validPanoramas.length ? 'pano' : 'depth');
   const list = mode === 'pano' ? validPanoramas : validImages;
   const [index, setIndex] = useState(0);
   const [autoRotate, setAutoRotate] = useState(true);
+  const [loadState, setLoadState] = useState<LoadState>('loading');
 
   const containerRef = useFocusTrap<HTMLDivElement>(true, onClose);
 
+  // A photo that never loaded used to leave a grey slab with no explanation.
+  const current = list[Math.min(index, Math.max(list.length - 1, 0))];
+
   const next = () => { setIndex((i) => (i + 1) % list.length); setAutoRotate(true); };
   const prev = () => { setIndex((i) => (i === 0 ? list.length - 1 : i - 1)); setAutoRotate(true); };
-
   const switchMode = (m: 'pano' | 'depth') => { setMode(m); setIndex(0); setAutoRotate(true); };
 
   useEffect(() => {
@@ -187,7 +325,7 @@ const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, panoramas, 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [list.length, onClose]);
+  }, [list.length, mode]);
 
   if (validImages.length === 0 && validPanoramas.length === 0) {
     return (
@@ -224,12 +362,11 @@ const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, panoramas, 
       className="fixed inset-0 z-[70] bg-black flex flex-col animate-fade-in"
       dir={isRtl ? 'rtl' : 'ltr'}
     >
-      {/* Toolbar */}
       <div className="absolute top-0 w-full p-4 landscape:p-2 flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none">
         <div className="text-white pointer-events-auto">
           <h3 className="font-bold text-base sm:text-lg flex items-center gap-2">
             <Box size={20} className="text-accent-500" aria-hidden="true" />
-            {mode === 'pano' ? (isRtl ? 'جولة 360°' : '360° Tour') : (isRtl ? 'عرض ثلاثي الأبعاد' : '3D Depth View')}
+            {mode === 'pano' ? (isRtl ? 'جولة 360°' : '360° Tour') : (isRtl ? 'معاينة مجسّمة للصورة' : 'Photo relief view')}
           </h3>
           {title && <p className="text-xs sm:text-sm text-white/80">{title}</p>}
         </div>
@@ -243,7 +380,6 @@ const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, panoramas, 
         </button>
       </div>
 
-      {/* Mode switch (only when both panoramas and photos exist) */}
       {validPanoramas.length > 0 && validImages.length > 0 && (
         <div className="absolute top-20 landscape:top-14 left-1/2 -translate-x-1/2 z-10 flex bg-white/10 backdrop-blur border border-white/20 rounded-full p-1 shadow-lg">
           <button
@@ -261,21 +397,20 @@ const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, panoramas, 
             type="button"
             onClick={() => switchMode('depth')}
             aria-pressed={mode === 'depth'}
-            aria-label={isRtl ? 'التبديل إلى صور بعمق' : 'Switch to Depth Photos'}
+            aria-label={isRtl ? 'التبديل إلى الصور المجسّمة' : 'Switch to photo relief'}
             className={`min-h-[40px] px-4 py-2 rounded-full text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-400 ${
               mode === 'depth' ? 'bg-brand-600 text-white' : 'text-white/80 hover:text-white'
             }`}
           >
-            <Layers size={14} aria-hidden="true" /> {isRtl ? 'صور بعمق' : 'Depth Photos'}
+            <Layers size={14} aria-hidden="true" /> {isRtl ? 'صور مجسّمة' : 'Photo relief'}
           </button>
         </div>
       )}
 
-      {/* 3D Scene */}
       {mode === 'pano' ? (
         <Canvas camera={{ position: [0, 0, 0.1], fov: 75 }} className="flex-1" gl={{ antialias: true }}>
           <color attach="background" args={['#05080f']} />
-          <PanoramaScene url={list[index]} />
+          <PanoramaScene url={current} onState={setLoadState} />
         </Canvas>
       ) : (
         <Canvas
@@ -286,11 +421,29 @@ const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, panoramas, 
         >
           <color attach="background" args={['#05080f']} />
           <fog attach="fog" args={['#05080f', 6, 16]} />
-          <Scene url={list[index]} autoRotate={autoRotate} />
+          <Scene url={current} autoRotate={autoRotate} onState={setLoadState} />
         </Canvas>
       )}
 
-      {/* Bottom controls */}
+      {/* A large photo takes a moment; silence used to look like a broken viewer. */}
+      {loadState !== 'ready' && (
+        <div className="absolute inset-0 z-[5] flex flex-col items-center justify-center pointer-events-none text-white/80 gap-3">
+          {loadState === 'loading' ? (
+            <>
+              <Loader2 className="w-8 h-8 animate-spin" aria-hidden="true" />
+              <p className="text-sm">{isRtl ? 'جاري تحميل الصورة…' : 'Loading the photo…'}</p>
+            </>
+          ) : (
+            <>
+              <Box className="w-10 h-10 opacity-40" aria-hidden="true" />
+              <p className="text-sm max-w-xs text-center px-6">
+                {isRtl ? 'تعذّر تحميل الصورة دي. جرّب صورة تانية.' : 'That photo could not be loaded. Try another one.'}
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="absolute bottom-0 w-full p-4 sm:p-6 landscape:p-2 flex items-center justify-center gap-4 bg-gradient-to-t from-black/80 to-transparent z-10">
         {list.length > 1 && (
           <button
@@ -334,7 +487,7 @@ const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, panoramas, 
         <span>
           {mode === 'pano'
             ? (isRtl ? 'اسحب للالتفاف 360° داخل الغرفة • عجلة الفأرة للتقريب' : 'Drag to look around 360° • Scroll to zoom')
-            : (isRtl ? 'اسحب لرؤية الصورة من زوايا مختلفة • عجلة الفأرة للتقريب' : 'Drag to view from different angles • Scroll to zoom')}
+            : (isRtl ? 'اسحب لرؤية الصورة من زوايا مختلفة — دي معاينة مجسّمة للصورة نفسها، مش مسح للمكان' : 'Drag to view from other angles — this is a relief built from the photo, not a scan of the room')}
         </span>
       </p>
     </div>
