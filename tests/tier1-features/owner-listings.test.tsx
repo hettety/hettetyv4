@@ -407,6 +407,8 @@ describe('Tier 1 — Material-field contract (client and rules must agree)', () 
       'title', 'price', 'currency', 'location', 'area', 'areaTo', 'status',
       'propertyType', 'compound', 'developer', 'contactPhone', 'legalDocs',
       'registrationNumber', 'courtSignatureValidity', 'isResale',
+      // Area a unit is sold on, and the fee attached to its price.
+      'gardenArea', 'roofArea', 'maintenanceFee',
     ]);
   });
 });

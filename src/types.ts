@@ -35,6 +35,22 @@ export interface Property {
   verifiedBy?: string;     // Reviewer email — written by an admin only
   verifiedAt?: string;     // ISO timestamp of the review
   reviewNote?: string;     // What the reviewer saw / what needs fixing
+
+  // ---- Unit detail, as developer brochures actually express it ----
+  gardenArea?: number;     // Private garden in m² — a separate column in unit tables
+  roofArea?: number;       // Private roof/terrace in m²
+  unitModel?: string;      // The developer's own code: "T-51B", "نموذج ب٣", "Loft A"
+  buildingType?: string;   // "Building A", "Loft", "S-Villa B"
+  floorsDescription?: string; // "G+6", "٥ أدوار + أرضي"
+  maintenanceFee?: number; // Percent of unit price, payable on delivery
+  phase?: string;          // Phase / zone / منطقة within the project
+
+  // ---- Project-level facts, shared by every unit in a compound ----
+  projectAreaFeddan?: number;  // Total project size in feddan
+  greenSpacePercent?: number;  // Share of the project that is open/green
+  financing?: string[];        // e.g. mortgage initiative, social housing fund
+  masterPlanUrl?: string;      // The master-plan drawing
+  floorPlanUrls?: string[];    // Floor plans / unit layouts
   rejectedAt?: string;     // Set when a reviewer pulls the listing. Owner-immutable:
                            // an owner may edit and resubmit, but not un-pull it.
   imageUrl: string;

@@ -81,6 +81,14 @@ const safeTourUrl = (raw: string | undefined): string | null => {
 };
 
 /** Suffix appended to a price for rental periods (e.g. "/night"). */
+/**
+ * Developer brochures routinely carry no prices at all — every one of the five
+ * we tested had none. A listing priced 0 means "ask", not free.
+ */
+const priceLabel = (p: Property, isRtl: boolean) =>
+  !p.price ? (isRtl ? 'السعر عند الطلب' : 'Price on request')
+           : `${p.price.toLocaleString()} ${p.currency || 'EGP'}`;
+
 const pricePeriodSuffix = (period: string | undefined, isRtl: boolean) => {
   switch (period) {
     case 'night': return isRtl ? ' / ليلة' : ' / night';
@@ -359,7 +367,7 @@ const PropertyCard: React.FC<{
     }}
     role={onClick ? 'button' : undefined}
     tabIndex={onClick ? 0 : undefined}
-    aria-label={onClick ? `${property.title}, ${property.price.toLocaleString()} ${property.currency || 'EGP'}` : undefined}
+    aria-label={onClick ? `${property.title}, ${priceLabel(property, isRtl)}` : undefined}
     className={`group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl dark:shadow-none transition-all duration-300 overflow-hidden flex flex-col h-full animate-fade-in focus:outline-none focus:ring-2 focus:ring-brand-500 ${onClick ? 'cursor-pointer' : ''}`}
   >
     <div className="relative h-64 overflow-hidden">
@@ -425,7 +433,7 @@ const PropertyCard: React.FC<{
       <div className="flex justify-between items-start mb-2">
         <h3 className="text-lg font-heading font-bold text-slate-900 dark:text-white line-clamp-1">{property.title}</h3>
         <span className="text-brand-600 dark:text-brand-400 font-bold whitespace-nowrap">
-          {property.price.toLocaleString()} {property.currency || 'EGP'}<span className="text-[10px] text-slate-600 dark:text-slate-400 font-medium">{pricePeriodSuffix(property.pricePeriod, isRtl)}</span>
+          {priceLabel(property, isRtl)}{property.price ? <span className="text-[10px] text-slate-600 dark:text-slate-400 font-medium">{pricePeriodSuffix(property.pricePeriod, isRtl)}</span> : null}
         </span>
       </div>
       <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -2247,7 +2255,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
               </div>
             </div>
             <div className="text-right bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex sm:flex-col justify-between items-center sm:items-end gap-2 w-full sm:w-auto">
-              <div className="text-2xl font-black text-brand-600 dark:text-brand-400">{property.price.toLocaleString()} {property.currency || 'EGP'}<span className="text-xs text-slate-400 font-bold">{pricePeriodSuffix(property.pricePeriod, isRtl)}</span></div>
+              <div className="text-2xl font-black text-brand-600 dark:text-brand-400">{priceLabel(property, isRtl)}{property.price ? <span className="text-xs text-slate-400 font-bold">{pricePeriodSuffix(property.pricePeriod, isRtl)}</span> : null}</div>
               <div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">{property.status === 'For Sale' ? (isRtl ? 'للبيع' : 'For Sale') : (isRtl ? 'للإيجار' : 'For Rent')}</div>
             </div>
           </div>
@@ -3052,7 +3060,7 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
                               {p.title}
                             </button>
                             <p className="text-sm text-slate-500 dark:text-slate-400">
-                              {p.price?.toLocaleString()} {p.currency || 'EGP'} • {p.location}
+                              {priceLabel(p, isRtl)} • {p.location}
                             </p>
                             <div className="flex items-center gap-2 mt-2 flex-wrap">
                               <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${state === 'Live' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>

@@ -16,6 +16,7 @@ export const MATERIAL_LISTING_FIELDS = [
   'title', 'price', 'currency', 'location', 'area', 'areaTo', 'status',
   'propertyType', 'compound', 'developer', 'contactPhone', 'legalDocs',
   'registrationNumber', 'courtSignatureValidity', 'isResale',
+  'gardenArea', 'roofArea', 'maintenanceFee',
 ] as const;
 
 /**
@@ -306,6 +307,7 @@ export const AddListingPage = ({ onAdd, onAddMany, onUpdate, mode = 'create', in
   const [generatingDesc, setGeneratingDesc] = useState(false);
   const [extractingOCR, setExtractingOCR] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [importNote, setImportNote] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
   // The four fields the property can't be saved without (Firestore rules also
@@ -355,25 +357,38 @@ export const AddListingPage = ({ onAdd, onAddMany, onUpdate, mode = 'create', in
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    if (file.size > MAX_AI_VIA_STORAGE_BYTES) {
-      alert(isRtl
-        ? `البروشور ${mb(file.size)} ميجا، والحد الأقصى ${mb(MAX_AI_VIA_STORAGE_BYTES)} ميجا. صغّر الملف أو ارفع الصفحات اللي فيها الأسعار والمساحات بس.`
-        : `That brochure is ${mb(file.size)}MB and the limit is ${mb(MAX_AI_VIA_STORAGE_BYTES)}MB. Compress it, or upload just the pages with the prices and areas.`);
-      return;
-    }
-    const fitted = await fitForAI(file);
     setImporting(true);
-    // Small enough to inline goes straight up; anything larger is staged in
-    // Storage and fetched by the function, which the body cap does not limit.
     let staged: { url: string; discard: () => Promise<void> } | null = null;
     try {
-      let filePart: Record<string, unknown>;
-      if ('tooBig' in fitted) {
-        staged = await stageForAI(file);
-        filePart = { fileUrl: { url: staged.url, mimeType: file.type } };
+      // A PDF is read locally and reduced to the pages that carry unit data. On a
+      // real 237-page catalogue that is 12 pages and about 1.3MB, from 39MB — so
+      // size stops being the constraint, and the extraction stops competing with
+      // 225 pages of brand story. Rendering the pages also avoids Arabic text
+      // layers, which return digits out of order.
+      let fileParts: Record<string, unknown>[];
+      if (file.type === 'application/pdf') {
+        const { pickBrochurePages } = await import('../lib/brochurePages');
+        const picked = await pickBrochurePages(file);
+        if (!picked.images.length) {
+          alert(isRtl ? 'مقدرناش نقرا الـ PDF ده.' : 'That PDF could not be read.');
+          setImporting(false);
+          return;
+        }
+        setImportNote(isRtl
+          ? `بنقرا ${picked.images.length} صفحة من ${picked.totalPages} — الصفحات اللي فيها الوحدات والمساحات.`
+          : `Reading ${picked.images.length} of ${picked.totalPages} pages — the ones with units and areas.`);
+        fileParts = picked.images.map(dataUrl => ({
+          inlineData: { data: dataUrl.split(',')[1], mimeType: 'image/jpeg' },
+        }));
       } else {
-        const base64 = (await fileToDataUrl(fitted.file)).split(',')[1];
-        filePart = { inlineData: { data: base64, mimeType: fitted.file.type } };
+        const fitted = await fitForAI(file);
+        if ('tooBig' in fitted) {
+          staged = await stageForAI(file);
+          fileParts = [{ fileUrl: { url: staged.url, mimeType: file.type } }];
+        } else {
+          const base64 = (await fileToDataUrl(fitted.file)).split(',')[1];
+          fileParts = [{ inlineData: { data: base64, mimeType: fitted.file.type } }];
+        }
       }
       const prompt = `You are a real-estate data extractor. Read this property brochure/flyer (it may be Arabic, English or Franco) and extract ONE listing as JSON.
 If it lists multiple unit types, pick the entry/smallest unit as the base, and summarise ALL unit types (with their areas, starting prices and payment plans) inside "description".
@@ -405,7 +420,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
 }`;
       const response = await generateContentResilient({
         task: 'brochure',
-        contents: [{ role: 'user', parts: [ { text: prompt }, filePart as any ] }],
+        contents: [{ role: 'user', parts: [ { text: prompt }, ...(fileParts as any[]) ] }],
         config: { responseMimeType: 'application/json' },
       });
       const raw = (response.text || '').trim().replace(/^```json\s*/i, '').replace(/```$/, '').trim();
@@ -487,6 +502,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
       // The brochure was only ever a source to read; it is not part of the listing.
       await staged?.discard();
       setImporting(false);
+      setImportNote('');
     }
   };
 
@@ -990,6 +1006,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                     <div className="flex-1">
                       <h3 className="font-bold text-slate-900 dark:text-white">{isRtl ? '✨ استيراد ذكي من بروشور' : '✨ AI Import from Brochure'}</h3>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">{isRtl ? 'ارفع بروشور المشروع (PDF أو صورة) والذكاء الاصطناعي هيقرا كل حاجة ويملأ البيانات تلقائيًا — راجعها وعدّل قبل النشر.' : 'Upload the project brochure (PDF or image) and AI reads everything and auto-fills the fields — review before publishing.'}</p>
+                      {importNote && <p className="text-xs font-bold text-brand-600 dark:text-brand-400 mt-2">{importNote}</p>}
                       <input type="file" accept="application/pdf,image/*" onChange={handleBrochureImport} className="hidden" id="brochure-import" disabled={importing} />
                       <label htmlFor="brochure-import" className={`inline-flex mt-3 items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-colors ${importing ? 'bg-slate-200 dark:bg-slate-700 text-slate-500 cursor-wait' : 'bg-brand-600 hover:bg-brand-700 text-white cursor-pointer'}`}>
                         {importing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}

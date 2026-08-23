@@ -81,7 +81,10 @@ service cloud.firestore {
     }
 
     function isValidProperty(data) {
-      return data.keys().hasOnly(['title', 'price', 'location', 'bedrooms', 'bathrooms', 'area', 'propertyType', 'compound', 'developer', 'deliveryDate', 'finishing', 'floor', 'view', 'furnished', 'contactPhone', 'amenities', 'areaTo', 'paymentPlans', 'currency', 'pricePeriod', 'guests', 'village', 'yallaSahel', 'lat', 'lng', 'imageUrl', 'images', 'panoramas', 'videoUrl', 'digitalTwinUrl', 'status', 'availability', 'isVerified', 'verificationStatus', 'paymentMethods', 'publishDate', 'unitCode', 'legalDocs', 'authorUid', 'description', 'registrationNumber', 'courtSignatureValidity', 'isResale', 'listingState', 'verifiedBy', 'verifiedAt', 'reviewNote', 'rejectedAt']) &&
+      return data.keys().hasOnly(['title', 'price', 'location', 'bedrooms', 'bathrooms', 'area', 'propertyType', 'compound', 'developer', 'deliveryDate', 'finishing', 'floor', 'view', 'furnished', 'contactPhone', 'amenities', 'areaTo', 'paymentPlans', 'currency', 'pricePeriod', 'guests', 'village', 'yallaSahel', 'lat', 'lng', 'imageUrl', 'images', 'panoramas', 'videoUrl', 'digitalTwinUrl', 'status', 'availability', 'isVerified', 'verificationStatus', 'paymentMethods', 'publishDate', 'unitCode', 'legalDocs', 'authorUid', 'description', 'registrationNumber', 'courtSignatureValidity', 'isResale', 'listingState', 'verifiedBy', 'verifiedAt', 'reviewNote', 'rejectedAt',
+                                'gardenArea', 'roofArea', 'unitModel', 'buildingType', 'floorsDescription',
+                                'maintenanceFee', 'phase', 'projectAreaFeddan', 'greenSpacePercent',
+                                'financing', 'masterPlanUrl', 'floorPlanUrls']) &&
              data.keys().hasAll(['title', 'price', 'location', 'status']) &&
              data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
              data.price is number && data.price >= 0 &&
@@ -132,7 +135,19 @@ service cloud.firestore {
              (!('reviewNote' in data) || (data.reviewNote is string && data.reviewNote.size() < 2000)) &&
              // Set by an admin on rejection and never writable by the owner, so a
              // pulled listing cannot quietly return to the public grid on a resubmit.
-             (!('rejectedAt' in data) || (data.rejectedAt is string && data.rejectedAt.size() < 50));
+             (!('rejectedAt' in data) || (data.rejectedAt is string && data.rejectedAt.size() < 50)) &&
+             (!('gardenArea' in data) || data.gardenArea is number) &&
+             (!('roofArea' in data) || data.roofArea is number) &&
+             (!('unitModel' in data) || (data.unitModel is string && data.unitModel.size() < 80)) &&
+             (!('buildingType' in data) || (data.buildingType is string && data.buildingType.size() < 80)) &&
+             (!('floorsDescription' in data) || (data.floorsDescription is string && data.floorsDescription.size() < 60)) &&
+             (!('maintenanceFee' in data) || data.maintenanceFee is number) &&
+             (!('phase' in data) || (data.phase is string && data.phase.size() < 80)) &&
+             (!('projectAreaFeddan' in data) || data.projectAreaFeddan is number) &&
+             (!('greenSpacePercent' in data) || data.greenSpacePercent is number) &&
+             (!('financing' in data) || (data.financing is list && data.financing.size() <= 10)) &&
+             (!('masterPlanUrl' in data) || (data.masterPlanUrl is string && data.masterPlanUrl.size() < 2000000)) &&
+             (!('floorPlanUrls' in data) || (data.floorPlanUrls is list && data.floorPlanUrls.size() <= 20));
     }
 
     function isValidNotification(data) {
@@ -195,7 +210,10 @@ service cloud.firestore {
               'pricePeriod', 'guests', 'village', 'yallaSahel', 'imageUrl', 'images',
               'panoramas', 'videoUrl', 'digitalTwinUrl', 'status', 'availability',
               'legalDocs', 'registrationNumber', 'courtSignatureValidity', 'isResale',
-              'listingState', 'isVerified', 'verificationStatus'];
+              'listingState', 'isVerified', 'verificationStatus',
+              'gardenArea', 'roofArea', 'unitModel', 'buildingType', 'floorsDescription',
+              'maintenanceFee', 'phase', 'projectAreaFeddan', 'greenSpacePercent',
+              'financing', 'masterPlanUrl', 'floorPlanUrls'];
     }
 
     // Changing any of these invalidates whatever a reviewer previously saw, so the
@@ -204,7 +222,9 @@ service cloud.firestore {
     function materialListingKeys() {
       return ['title', 'price', 'currency', 'location', 'area', 'areaTo', 'status',
               'propertyType', 'compound', 'developer', 'contactPhone', 'legalDocs',
-              'registrationNumber', 'courtSignatureValidity', 'isResale'];
+              'registrationNumber', 'courtSignatureValidity', 'isResale',
+              // Sold-on area and the fees attached to the price: same class as price.
+              'gardenArea', 'roofArea', 'maintenanceFee'];
     }
 
     function listingChangedKeys() {
