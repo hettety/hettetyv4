@@ -383,7 +383,7 @@ const PropertyCard: React.FC<{
 {/* The badge follows verificationStatus alone. A stale isVerified: true on a
           listing a reviewer later rejected must never keep showing green. And an
           unreviewed listing says so, rather than saying nothing. */}
-      <div className={`absolute top-4 ${isRtl ? 'left-14' : 'right-12'} ${listingReviewInfo(property, t).chip} px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm`}>
+      <div className={`absolute top-4 ${isRtl ? 'left-[72px]' : 'right-[72px]'} ${listingReviewInfo(property, t).chip} px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm`}>
         {property.verificationStatus === 'Verified' && <ShieldCheck size={12} aria-hidden="true" />}
         {listingReviewInfo(property, t).label}
       </div>
@@ -931,7 +931,7 @@ const AIChat = ({ t, isRtl, properties, userName, onShow3D }: { t: any, isRtl: b
   useEffect(() => {
     try {
       {
-        const systemInstruction = `You are HETTETY AI, the official real estate assistant for HETTETY — Egypt's premier verified property platform. Your goal is to guide users through property data with the expertise of a seasoned broker and the precision of a financial analyst.
+        const systemInstruction = `You are HETTETY AI, the official real estate assistant for HETTETY, an Egyptian property platform. HETTETY reviews the documents sellers upload and labels each listing with what was checked; it does not certify ownership or perform title searches. Never describe a listing as legally safe, guaranteed, or verified beyond that. Your goal is to guide users through property data with the expertise of a seasoned broker and the precision of a financial analyst.
 
 ## Tone & Voice
 - Professional & Insightful: Don't just give facts; provide context (e.g., price per meter trends in New Cairo vs. Sheikh Zayed).
@@ -944,8 +944,8 @@ const AIChat = ({ t, isRtl, properties, userName, onShow3D }: { t: any, isRtl: b
 - Market Awareness: Understand the impact of currency fluctuations and developer reputation on property value.
 
 ## Interaction Rules
-- When asked "Is this a good investment?": Analyze the property's price vs. the area's average, mention the developer's track record, and highlight the legal status.
-- Proactive: If a user asks about a property, suggest checking its legal verification status on HETTETY.
+- When asked "Is this a good investment?": Analyze the property's price vs. the area's average and mention the developer's track record. Do not assert anything about its legal status.
+- Proactive: If a user asks about a property, tell them whether its documents have been reviewed, and that ownership still has to be confirmed at the Real Estate Publicity Department (الشهر العقاري).
 - Language: Always reply in the exact language the user writes in (Egyptian Arabic, Franco-Arabic, or English).
 
 ## Identity & Boundaries
@@ -1259,7 +1259,7 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
           <div className="flex items-center gap-2">
              <div className="px-3 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 text-[10px] font-black border border-emerald-100 dark:border-emerald-900/50 flex items-center gap-1.5 tracking-wider uppercase">
                <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></div>
-               {isRtl ? 'بيانات معتمدة' : 'CERTIFIED DATA'}
+               {isRtl ? 'بيانات البائعين' : 'SELLER-POSTED DATA'}
              </div>
           </div>
         </header>
@@ -1361,7 +1361,9 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
             </div>
             
             <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center mt-4">
-              HETTETY AI may provide market analysis. Always verify legal information with our <span className="text-brand-600 dark:text-brand-400 font-bold underline cursor-pointer">Verification Service</span>.
+              {isRtl
+                ? 'حتتي AI بيحلل بيانات البائعين. أي كلام قانوني لازم تتأكد منه بنفسك في الشهر العقاري.'
+                : 'HETTETY AI analyses seller-posted data. Confirm anything legal yourself at the Real Estate Publicity Department.'}
             </p>
           </div>
         </div>
@@ -1378,19 +1380,19 @@ If a user has a complex legal dispute, a payment issue, or needs urgent support,
 const docReviewInfo = (doc: UserDocument, t: any) => {
   switch (doc.reviewStatus) {
     case 'InReview':
-      return { key: 'InReview', label: t.doc_status_inreview, desc: t.doc_status_inreview_desc,
+      return { label: t.doc_status_inreview, desc: t.doc_status_inreview_desc,
                chip: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800',
                icon: 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' };
     case 'Checked':
-      return { key: 'Checked', label: t.doc_status_checked, desc: t.doc_status_checked_desc,
+      return { label: t.doc_status_checked, desc: t.doc_status_checked_desc,
                chip: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800',
                icon: 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' };
     case 'NeedsAttention':
-      return { key: 'NeedsAttention', label: t.doc_status_attention, desc: t.doc_status_attention_desc,
+      return { label: t.doc_status_attention, desc: t.doc_status_attention_desc,
                chip: 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800',
                icon: 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' };
     default:
-      return { key: 'Uploaded', label: t.doc_status_uploaded, desc: t.doc_status_uploaded_desc,
+      return { label: t.doc_status_uploaded, desc: t.doc_status_uploaded_desc,
                chip: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700',
                icon: 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400' };
   }
@@ -1527,8 +1529,12 @@ const LegalCenter = ({ t, isRtl, userEmail }: { t: any, isRtl: boolean, userEmai
       // Delete the file first. If that fails, keep the Firestore row: dropping it
       // would leave a live download URL behind with nothing pointing at it. A file
       // that is already gone is not a failure — otherwise the row is undeletable.
-      if (docData.storagePath) {
-        await deleteObject(ref(storage, docData.storagePath)).catch((err: any) => {
+      // Documents uploaded before storagePath was recorded still have an object;
+      // the download URL is the only pointer to it, and this row is about to
+      // destroy that URL.
+      const path = docData.storagePath || storagePathFromUrl(docData.content);
+      if (path) {
+        await deleteObject(ref(storage, path)).catch((err: any) => {
           if (err?.code !== 'storage/object-not-found') throw err;
         });
       }
@@ -2016,8 +2022,9 @@ Status: ${property.status}
 Availability: ${property.availability || 'Available'}
 Payment Methods: ${property.paymentMethods?.join(', ') || 'Not specified'}
 Unit Code: ${property.unitCode || 'N/A'}
-Registry Number (raqm el shahr el 3aqary): ${property.registrationNumber || 'Not available'}
-Court Signature Validity (s7t tawqe3 el ma7kama): ${property.courtSignatureValidity ? 'Yes/Valid' : 'No/Pending'}
+Registry Number AS TYPED BY THE SELLER, unverified by HETTETY: ${property.registrationNumber || 'Not provided'}
+Court Signature — the seller ticked a checkbox, nobody checked it: ${property.courtSignatureValidity ? 'seller ticked it' : 'not ticked'}
+Document review state: ${property.verificationStatus === 'Verified' ? 'a HETTETY reviewer read the documents the seller uploaded — this is NOT proof of authenticity or of registration with the Real Estate Publicity Department' : 'no reviewer has looked at this listing yet'}
 Resale: ${property.isResale ? 'Yes, this is a resale property.' : 'No, direct sale.'}
 Description: ${property.description || 'N/A'}
 Images: ${property.images?.length ? property.images.join(', ') : property.imageUrl} (If the user asks to see the apartment / shape of the apartment / sor el shaqa, you MUST output ALL these images exactly in markdown format like this: ![Apartment](URL1) ![Apartment](URL2) etc.)
@@ -2028,7 +2035,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
 - Brand Aligned: Minimalist, clear, and high-end.
 
 ## Interaction Rules
-- When asked "Is this a good investment?": Analyze the price vs. area average, and explicitly highlight the Legal Safety based on the Registry Number and Court Signature Validity status.
+- When asked "Is this a good investment?": Analyze the price vs. area average. Never vouch for the property's legal safety: the registry number and court-signature box are the seller's own claims. Say what the document review state is, and that confirming ownership requires a search at the Real Estate Publicity Department (الشهر العقاري).
 - Multi-Modal: Use data from images (like floor plans, if available) to explain spatial efficiency.
 - Language: Keep your answers helpful and in the exact language the user speaks (English, Egyptian Arabic, Franco). Do not invent information not in the data provided.
 - 3D Viewing (Special Capability): You can launch an immersive 3D gallery of this property's photos. When the user asks to see the apartment in 3D, take a virtual tour, walk through it, or says things like "عرضلي الشقة 3D" / "عايز أشوفها مجسمة" / "warini el sha2a 3D", reply with a short enthusiastic confirmation in the user's language and append the exact token [SHOW_3D] at the very end of your reply.`;
@@ -2345,7 +2352,11 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
 
           {/* Legal & details */}
           <div>
-            <h3 className="font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><Shield size={18} className="text-brand-500" /> {isRtl ? 'التفاصيل القانونية' : 'Legal Details'}</h3>
+            <h3 className="font-bold text-slate-900 dark:text-white mb-1 flex items-center gap-2"><Shield size={18} className="text-brand-500" aria-hidden="true" /> {isRtl ? 'التفاصيل القانونية' : 'Legal Details'}</h3>
+            {/* Everything in this block is typed in by whoever posted the listing.
+                Presenting it as a platform finding is how a green "Valid" ends up
+                standing in for a court nobody contacted. */}
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">{t.listing_seller_stated}</p>
             <div className="grid sm:grid-cols-2 gap-3">
               <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-xl text-sm">
                 <span className="text-slate-500 dark:text-slate-400">{isRtl ? 'رقم الشهر العقاري' : 'Registry Number'}</span>
@@ -2353,7 +2364,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
               </div>
               <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-xl text-sm">
                 <span className="text-slate-500 dark:text-slate-400">{isRtl ? 'صحة توقيع المحكمة' : 'Court Signature'}</span>
-                <span className={`font-bold ${property.courtSignatureValidity ? 'text-green-600 dark:text-green-400' : 'text-slate-900 dark:text-white'}`}>{property.courtSignatureValidity ? (isRtl ? 'صحيح' : 'Valid') : (isRtl ? 'غير محدد' : 'Pending')}</span>
+                <span className="font-bold text-slate-900 dark:text-white">{property.courtSignatureValidity ? (isRtl ? 'البائع بيقول: صحيح' : 'Seller says: valid') : (isRtl ? 'غير محدد' : 'Not stated')}</span>
               </div>
               <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-xl text-sm">
                 <span className="text-slate-500 dark:text-slate-400">{isRtl ? 'نوع البيع' : 'Sale Type'}</span>
@@ -2599,14 +2610,14 @@ const storagePathFromUrl = (url?: string): string | null => {
 const listingReviewInfo = (p: Property, t: any) => {
   if (p.verificationStatus === 'Verified') {
     return { label: t.listing_review_done, note: t.listing_review_note,
-             chip: 'bg-green-500 text-white', verified: true };
+             chip: 'bg-green-500 text-white' };
   }
   if (p.verificationStatus === 'Rejected') {
     return { label: t.listing_review_rejected, note: p.reviewNote || '',
-             chip: 'bg-red-500 text-white', verified: false };
+             chip: 'bg-red-500 text-white' };
   }
   return { label: t.listing_review_pending, note: '',
-           chip: 'bg-slate-500/90 text-white', verified: false };
+           chip: 'bg-slate-500/90 text-white' };
 };
 
 const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFavorites, allProperties, onToggleFavorite, open3D, onOpenProperty, onEditListing, refreshProperties }: { t: any, isRtl: boolean, onBrowse: () => void, onLogout: () => void, onLogin: () => void, userEmail: string | null, userFavorites: string[], allProperties: Property[], onToggleFavorite: (id: string) => void, open3D: (id: string) => void, onOpenProperty: (id: string) => void, onEditListing?: (id: string) => void, refreshProperties?: () => Promise<void> }) => {
@@ -2642,7 +2653,11 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
    * removed from the browser, so the owner is told rather than reassured.
    */
   const deleteListing = async (p: Property) => {
-    const urls = [p.imageUrl, ...(p.images || []), ...(p.panoramas || []), p.videoUrl].filter(Boolean) as string[];
+    // legalDocs belongs here above all: a title deed left in Storage after the
+    // listing is gone is unreachable, undeletable, and still world-readable —
+    // and deleting the document destroys the only record of its URL.
+    const urls = [p.imageUrl, ...(p.images || []), ...(p.panoramas || []), ...(p.legalDocs || []), p.videoUrl]
+      .filter(Boolean) as string[];
     const paths = urls.map(storagePathFromUrl).filter(Boolean) as string[];
     const legacy = paths.filter(path => !path.startsWith(`properties/${auth.currentUser?.uid}/`));
     const warning = legacy.length
@@ -2656,25 +2671,37 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
 
     setListingBusy(p.id);
     setListingError(null);
+    const removable = paths.filter(path => !legacy.includes(path));  // rules refuse the legacy prefix
+    let removed = 0;
     try {
-      for (const path of paths) {
-        if (legacy.includes(path)) continue;   // rules refuse these; skip rather than fail the whole delete
-        await deleteObject(ref(storage, path)).catch((err: any) => {
-          if (err?.code === 'storage/object-not-found') return;  // already gone
-          console.error('Storage delete failed for', path, err);
-          throw err;
-        });
-      }
+      // Files first and in parallel: a serial loop over 40+ objects widens the
+      // window in which a mid-flight failure strands the listing.
+      await Promise.all(removable.map(path =>
+        deleteObject(ref(storage, path))
+          .then(() => { removed += 1; })
+          .catch((err: any) => {
+            if (err?.code === 'storage/object-not-found') return;  // already gone
+            console.error('Storage delete failed for', path, err);
+            throw err;
+          })
+      ));
       await deleteDoc(doc(db, 'properties', p.id));
-      await refreshProperties?.();
     } catch (err) {
       console.error('Listing delete failed:', err);
-      setListingError(isRtl
-        ? 'تعذّر حذف الإعلان. ما اتشالش حاجة — جرّب تاني.'
-        : 'Could not delete the listing. Nothing was removed — please try again.');
+      // Never claim nothing happened when files are already gone.
+      setListingError(removed > 0
+        ? (isRtl
+            ? `تعذّر حذف الإعلان بالكامل. ${removed} من ملفاته اتشالوا فعلاً — جرّب تاني عشان يتشال الباقي.`
+            : `Could not finish deleting the listing. ${removed} of its files were already removed — try again to finish.`)
+        : (isRtl
+            ? 'تعذّر حذف الإعلان. ما اتشالش حاجة — جرّب تاني.'
+            : 'Could not delete the listing. Nothing was removed — please try again.'));
+      return;
     } finally {
       setListingBusy(null);
     }
+    // Outside the try: a failed refetch is a stale screen, not a failed delete.
+    await refreshProperties?.().catch(err => console.warn('Refresh after delete failed:', err));
   };
 
   const favoriteProperties = allProperties.filter(p => userFavorites.includes(p.id));
@@ -2725,7 +2752,14 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
     if (!auth.currentUser) return;
     setSaving(true);
     try {
-      await updateDoc(doc(db, 'users', auth.currentUser.uid), editForm);
+      // setDoc(merge) rather than updateDoc: an account whose /users document was
+      // never written has nothing to update, and the failure surfaced nowhere.
+      await setDoc(doc(db, 'users', auth.currentUser.uid), {
+        ...editForm,
+        uid: auth.currentUser.uid,
+        email: auth.currentUser.email || editForm.email || '',
+        role: 'user',
+      }, { merge: true });
       setProfile(editForm);
       setIsEditing(false);
     } catch (err) {
@@ -3025,8 +3059,13 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
                                 {stateLabel}
                               </span>
                               <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${rev.chip}`}>{rev.label}</span>
+                              {p.rejectedAt && p.verificationStatus !== 'Verified' && (
+                                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                                  {isRtl ? 'مخفي لحد المراجعة' : 'Held until reviewed'}
+                                </span>
+                              )}
                             </div>
-                            {p.verificationStatus === 'Rejected' && p.reviewNote && (
+                            {p.reviewNote && (
                               <p className="mt-2 text-xs text-red-600 dark:text-red-400">
                                 <strong>{t.doc_review_note}:</strong> {p.reviewNote}
                               </p>
@@ -3321,8 +3360,12 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
         isVerified: status === 'Verified',
         verifiedBy: auth.currentUser?.email || '',
         verifiedAt: new Date().toISOString(),
-        reviewNote: note || '',
       };
+      // Only overwrite the note when this verdict carries one — otherwise a
+      // Verify click would silently erase the reason a listing was pulled.
+      if (note !== undefined) patch.reviewNote = note;
+      if (status === 'Rejected') patch.rejectedAt = new Date().toISOString();
+      if (status === 'Verified') patch.rejectedAt = '';   // approved: the pull is lifted
       await updateDoc(doc(db, 'properties', propId), patch);
       setAllProperties(prev => prev.map(p => p.id === propId ? { ...p, ...patch } as Property : p));
 
@@ -3345,6 +3388,10 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
       }
     } catch (error) {
       console.error("Error verifying property:", error);
+      // Silence here left the admin staring at a row that never changed.
+      alert(isRtl
+        ? 'تعذّر حفظ القرار. الإعلان زي ما هو — جرّب تاني.'
+        : 'Could not save the verdict. The listing is unchanged — please try again.');
     } finally {
       setUpdating(null);
     }
@@ -3553,17 +3600,48 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                         </div>
                       </td>
                       <td className="px-8 py-6 text-slate-600 dark:text-slate-400 text-sm">{prop.location}</td>
-                      <td className="px-8 py-6 text-slate-400 dark:text-slate-500 text-xs">{prop.publishDate}</td>
+                      <td className="px-8 py-6 text-slate-400 dark:text-slate-500 text-xs">
+                        <div>{prop.publishDate}</div>
+                        {/* The verdict says "a reviewer read the documents this seller
+                            uploaded". The reviewer has to be able to open them. */}
+                        {prop.legalDocs?.length ? (
+                          <div className="mt-1 flex flex-col gap-0.5">
+                            {prop.legalDocs.map((docUrl, i) => (
+                              <a key={i} href={docUrl} target="_blank" rel="noopener noreferrer" className="text-brand-600 dark:text-brand-400 font-bold hover:underline">
+                                {isRtl ? `مستند ${i + 1}` : `Document ${i + 1}`}
+                              </a>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="mt-1 font-bold text-amber-600 dark:text-amber-400">
+                            {isRtl ? 'مفيش مستندات' : 'No documents'}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-8 py-6 text-right">
                         <div className="flex justify-end gap-2">
                           <button 
                             onClick={() => handleVerifyProperty(prop.id, 'Verified')}
-                            className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-600 dark:hover:bg-green-600 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                            disabled={!prop.legalDocs?.length}
+                            title={!prop.legalDocs?.length ? (isRtl ? 'الإعلان ده مرفقش أي مستندات' : 'This listing has no documents attached') : undefined}
+                            className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-600 dark:hover:bg-green-600 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-green-100"
                           >
                             {isRtl ? 'توثيق' : 'Verify'}
                           </button>
                           <button 
-                            onClick={() => handleVerifyProperty(prop.id, 'Rejected')}
+                            onClick={() => {
+                              // A rejection with no reason leaves the owner staring at
+                              // a red chip and nothing else.
+                              const note = window.prompt(isRtl
+                                ? 'اكتب سبب الرفض — هيوصل لصاحب الإعلان.'
+                                : "Why is this being rejected? The owner will see this.");
+                              if (note === null) return;          // cancelled
+                              if (!note.trim()) {
+                                alert(isRtl ? 'لازم تكتب سبب.' : 'A reason is required.');
+                                return;
+                              }
+                              handleVerifyProperty(prop.id, 'Rejected', note.trim());
+                            }}
                             className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-600 dark:hover:bg-red-600 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer"
                           >
                             {isRtl ? 'رفض' : 'Reject'}
@@ -3676,7 +3754,7 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                 value={reviewNote}
                 onChange={(e) => setReviewNote(e.target.value)}
                 rows={2}
-                maxLength={2000}
+                maxLength={1999}
                 placeholder={isRtl ? 'اكتب اللي شفته بالظبط.' : 'Write exactly what you saw.'}
                 className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500"
               />
@@ -3686,10 +3764,10 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                     {isRtl ? 'بدء المراجعة' : 'Start review'}
                   </button>
                 )}
-                <button onClick={() => handleReviewDoc(reviewingDoc, 'NeedsAttention', reviewNote)} disabled={updating === reviewingDoc.id} className="px-4 py-2 rounded-lg text-xs font-bold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-600 hover:text-white transition-all cursor-pointer disabled:opacity-50">
+                <button onClick={() => handleReviewDoc(reviewingDoc, 'NeedsAttention', reviewNote)} disabled={updating === reviewingDoc.id || !reviewFileUrl} className="px-4 py-2 rounded-lg text-xs font-bold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-600 hover:text-white transition-all cursor-pointer disabled:opacity-50">
                   {isRtl ? 'يحتاج إجراء' : 'Needs attention'}
                 </button>
-                <button onClick={() => handleReviewDoc(reviewingDoc, 'Checked', reviewNote)} disabled={updating === reviewingDoc.id} className="px-4 py-2 rounded-lg text-xs font-bold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-600 hover:text-white transition-all cursor-pointer disabled:opacity-50">
+                <button onClick={() => handleReviewDoc(reviewingDoc, 'Checked', reviewNote)} disabled={updating === reviewingDoc.id || !reviewFileUrl} className="px-4 py-2 rounded-lg text-xs font-bold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-600 hover:text-white transition-all cursor-pointer disabled:opacity-50">
                   {isRtl ? 'تمت المراجعة' : 'Mark reviewed'}
                 </button>
               </div>
@@ -3698,6 +3776,13 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                   ? '«تمت المراجعة» معناها إنك قريت النسخة دي. مش شهادة بصحة المستند ولا بتسجيله في الشهر العقاري.'
                   : '"Reviewed" means you read this copy. It is not a certificate of authenticity, nor of registration with the Real Estate Publicity Department.'}
               </p>
+              {!reviewFileUrl && (
+                <p className="text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                  {isRtl
+                    ? 'مينفعش تسجّل مراجعة لملف ما اتفتحش. مستندات المستخدمين مفتوحة للحسابات الرئيسية بس (SUPER_ADMIN_EMAILS).'
+                    : 'You cannot record a review of a file that did not open. User documents are readable only by the accounts in SUPER_ADMIN_EMAILS.'}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -4385,8 +4470,14 @@ export default function App() {
   // What a visitor is allowed to see. `properties` stays complete because My
   // Listings needs the owner's own drafts. This is a UI-level hide, not a privacy
   // boundary — the collection is world-readable by design so the list query works.
-  const publicProperties = properties.filter(p =>
-    (p.listingState || 'Live') === 'Live' && p.verificationStatus !== 'Rejected');
+  const publicProperties = properties.filter(p => {
+    if ((p.listingState || 'Live') !== 'Live') return false;
+    if (p.verificationStatus === 'Rejected') return false;
+    // Once a reviewer has pulled a listing, editing it puts it back in the queue —
+    // not back in front of buyers. Only a reviewer's approval does that.
+    if (p.rejectedAt && p.verificationStatus !== 'Verified') return false;
+    return true;
+  });
 
   let filteredProperties = publicProperties.filter(p => {
     const matchesPrice = (minPrice === '' || p.price >= Number(minPrice)) &&
@@ -4804,7 +4895,7 @@ export default function App() {
             <Features t={t} />
             <div className="bg-slate-100 dark:bg-slate-900/50 py-10">
                <Experience3DPage
-                 properties={properties}
+                 properties={publicProperties}
                  loading={loadingProps}
                  onView3D={open3D}
                  onBrowse={() => handleNav('listings')}
@@ -4821,7 +4912,7 @@ export default function App() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
                 {loadingProps 
                   ? [1,2,3].map(i => <div key={i} className="h-96 bg-slate-200 rounded-2xl animate-pulse"></div>)
-                  : properties.slice(0, 3).map(p => (
+                  : publicProperties.slice(0, 3).map(p => (
                     <PropertyCard 
                       key={p.id} 
                       property={p} 
@@ -5054,7 +5145,7 @@ export default function App() {
         )}
 
         {currentPage === 'manage-users' && isAdmin && <AdminDashboard isRtl={isRtl} isSuperAdmin={isSuperAdmin} />}
-        {currentPage === 'ai-chat' && <div className="bg-slate-100 h-full py-8"><AIChat t={t} isRtl={isRtl} properties={properties} userName={userName} onShow3D={open3D} /></div>}
+        {currentPage === 'ai-chat' && <div className="bg-slate-100 h-full py-8"><AIChat t={t} isRtl={isRtl} properties={publicProperties} userName={userName} onShow3D={open3D} /></div>}
         {currentPage === 'legal' && <LegalCenter t={t} isRtl={isRtl} userEmail={userEmail} />}
         {currentPage === 'about' && <AboutPage onCta={() => handleNav('register')} t={t} isRtl={isRtl} />}
         {currentPage === 'terms' && <TermsPage t={t} isRtl={isRtl} />}
@@ -5098,7 +5189,7 @@ export default function App() {
                   <div className="text-6xl mb-4">🌊</div>
                   <h1 className="text-4xl md:text-6xl font-heading font-black mb-4">{isRtl ? 'ساحل حتتي' : 'Sahel Hettety'}</h1>
                   <p className="text-lg md:text-2xl font-bold text-white/90 max-w-3xl mx-auto mb-3">{isRtl ? 'شاليهات الساحل الشمالي — تلف جواها 3D قبل ما تحجز.' : 'North Coast chalets — walk through them in 3D before you book.'}</p>
-                  <p className="text-white/80 max-w-2xl mx-auto mb-8">{isRtl ? 'لا نصب، لا صور مخدوعة. معاينة حقيقية، حجز أسرع، وثقة كاملة.' : 'No scams, no misleading photos. Real 3D preview, faster booking, full trust.'}</p>
+                  <p className="text-white/80 max-w-2xl mx-auto mb-8">{isRtl ? 'معاينة ثلاثية الأبعاد وتواصل مباشر مع صاحب الوحدة. بص على شارة المراجعة في كل شاليه قبل ما تحجز.' : 'A 3D walkthrough and direct contact with the owner. Check the review badge on each chalet before you book.'}</p>
                   <div className="flex flex-wrap gap-3 justify-center">
                     <button onClick={() => document.getElementById('sahel-units')?.scrollIntoView({ behavior: 'smooth' })} className="bg-white text-brand-700 font-black px-8 py-3.5 rounded-full shadow-lg hover:scale-105 transition-transform">{isRtl ? 'شوف الشاليهات المتاحة' : 'Browse chalets'}</button>
                     <button onClick={() => { setPrefillSahel(true); handleNav('add-listing'); }} className="bg-white/20 backdrop-blur border border-white/40 text-white font-bold px-8 py-3.5 rounded-full hover:bg-white/30 transition-colors">{isRtl ? 'عندك شاليه؟ أجّره معانا' : 'List your chalet'}</button>
@@ -5110,7 +5201,7 @@ export default function App() {
                 {[
                   { icon: '🏠', ti: isRtl ? 'معاينة 3D' : '3D Preview', d: isRtl ? 'لف جوه الشاليه وشوف الفيو قبل الحجز' : 'Walk inside and see the view before booking' },
                   { icon: '⚡', ti: isRtl ? 'حجز أسرع' : 'Faster booking', d: isRtl ? 'تواصل واتساب/اتصال مباشر مع المالك' : 'Direct WhatsApp/call with the owner' },
-                  { icon: '⭐', ti: isRtl ? 'تقييمات حقيقية' : 'Real reviews', d: isRtl ? 'آراء ناس سكنت فعلاً' : 'Ratings from real guests' },
+                  { icon: '⭐', ti: isRtl ? 'تقييمات' : 'Reviews', d: isRtl ? 'آراء المستخدمين — إحنا ما بنتأكدش إنهم سكنوا' : "Ratings from signed-in users — we can't confirm they stayed" },
                 ].map((c, i) => (
                   <div key={i} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-6 text-center shadow-sm">
                     <div className="text-4xl mb-3">{c.icon}</div>
@@ -5183,7 +5274,7 @@ export default function App() {
         })()}
         {currentPage === '3d-experience' && (
           <Experience3DPage
-            properties={properties}
+            properties={publicProperties}
             loading={loadingProps}
             onView3D={open3D}
             onBrowse={() => handleNav('listings')}
@@ -5278,6 +5369,11 @@ export default function App() {
             firestore.rules is the actual gate. */}
         {currentPage === 'edit-listing' && editingPropertyId && (() => {
           const prop = properties.find(pr => pr.id === editingPropertyId);
+          // On a fresh load properties is still empty; saying "no longer exists"
+          // before the fetch resolves is just wrong.
+          if (loadingProps) {
+            return <div className="py-24 text-center"><Loader2 className="animate-spin mx-auto text-brand-500 w-8 h-8" aria-hidden="true" /></div>;
+          }
           if (!prop) {
             return (
               <div className="max-w-lg mx-auto px-4 py-24 text-center animate-fade-in">

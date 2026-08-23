@@ -32,10 +32,11 @@ export interface Property {
   // NOTE: this is a UI-level hide, not a privacy boundary — the properties collection
   // is world-readable, so a Draft is hidden, never secret.
   listingState?: 'Draft' | 'Live' | 'Removed';
-  storagePaths?: string[]; // Storage object paths for this listing's media, so a delete can clean up
   verifiedBy?: string;     // Reviewer email — written by an admin only
   verifiedAt?: string;     // ISO timestamp of the review
   reviewNote?: string;     // What the reviewer saw / what needs fixing
+  rejectedAt?: string;     // Set when a reviewer pulls the listing. Owner-immutable:
+                           // an owner may edit and resubmit, but not un-pull it.
   imageUrl: string;
   images?: string[];
   panoramas?: string[]; // Equirectangular 360° photos for the immersive look-around viewer
@@ -117,8 +118,6 @@ export interface UserDocument {
   reviewedBy?: string;            // reviewer email — admin-written only
   reviewedAt?: string;            // ISO timestamp
   reviewNote?: string;            // what the reviewer saw / what needs fixing
-  aiSummary?: string;             // JSON string from an admin-triggered machine read
-  aiRunAt?: string;               // ISO timestamp of that read
   uploadDate: string;
   accessStatus?: 'Locked' | 'Requested' | 'Granted';
   size?: number;

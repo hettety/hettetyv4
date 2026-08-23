@@ -81,7 +81,7 @@ service cloud.firestore {
     }
 
     function isValidProperty(data) {
-      return data.keys().hasOnly(['title', 'price', 'location', 'bedrooms', 'bathrooms', 'area', 'propertyType', 'compound', 'developer', 'deliveryDate', 'finishing', 'floor', 'view', 'furnished', 'contactPhone', 'amenities', 'areaTo', 'paymentPlans', 'currency', 'pricePeriod', 'guests', 'village', 'yallaSahel', 'lat', 'lng', 'imageUrl', 'images', 'panoramas', 'videoUrl', 'digitalTwinUrl', 'status', 'availability', 'isVerified', 'verificationStatus', 'paymentMethods', 'publishDate', 'unitCode', 'legalDocs', 'authorUid', 'description', 'registrationNumber', 'courtSignatureValidity', 'isResale', 'listingState', 'storagePaths', 'verifiedBy', 'verifiedAt', 'reviewNote']) &&
+      return data.keys().hasOnly(['title', 'price', 'location', 'bedrooms', 'bathrooms', 'area', 'propertyType', 'compound', 'developer', 'deliveryDate', 'finishing', 'floor', 'view', 'furnished', 'contactPhone', 'amenities', 'areaTo', 'paymentPlans', 'currency', 'pricePeriod', 'guests', 'village', 'yallaSahel', 'lat', 'lng', 'imageUrl', 'images', 'panoramas', 'videoUrl', 'digitalTwinUrl', 'status', 'availability', 'isVerified', 'verificationStatus', 'paymentMethods', 'publishDate', 'unitCode', 'legalDocs', 'authorUid', 'description', 'registrationNumber', 'courtSignatureValidity', 'isResale', 'listingState', 'verifiedBy', 'verifiedAt', 'reviewNote', 'rejectedAt']) &&
              data.keys().hasAll(['title', 'price', 'location', 'status']) &&
              data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
              data.price is number && data.price >= 0 &&
@@ -127,10 +127,12 @@ service cloud.firestore {
              (!('courtSignatureValidity' in data) || data.courtSignatureValidity is bool) &&
              (!('isResale' in data) || data.isResale is bool) &&
              (!('listingState' in data) || data.listingState in ['Draft', 'Live', 'Removed']) &&
-             (!('storagePaths' in data) || (data.storagePaths is list && data.storagePaths.size() <= 60)) &&
              (!('verifiedBy' in data) || (data.verifiedBy is string && data.verifiedBy.size() < 255)) &&
              (!('verifiedAt' in data) || (data.verifiedAt is string && data.verifiedAt.size() < 50)) &&
-             (!('reviewNote' in data) || (data.reviewNote is string && data.reviewNote.size() < 2000));
+             (!('reviewNote' in data) || (data.reviewNote is string && data.reviewNote.size() < 2000)) &&
+             // Set by an admin on rejection and never writable by the owner, so a
+             // pulled listing cannot quietly return to the public grid on a resubmit.
+             (!('rejectedAt' in data) || (data.rejectedAt is string && data.rejectedAt.size() < 50));
     }
 
     function isValidNotification(data) {
@@ -145,7 +147,7 @@ service cloud.firestore {
 
     function isValidUserDocument(data) {
       return data.keys().hasOnly(['fileId', 'name', 'type', 'status', 'uploadDate', 'accessStatus', 'size', 'content', 'ownerUid', 'storagePath',
-                                 'reviewStatus', 'reviewedBy', 'reviewedAt', 'reviewNote', 'aiSummary', 'aiRunAt']) &&
+                                 'reviewStatus', 'reviewedBy', 'reviewedAt', 'reviewNote']) &&
              data.keys().hasAll(['name', 'ownerUid', 'content']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 255 &&
              data.ownerUid is string &&
@@ -160,9 +162,7 @@ service cloud.firestore {
              (!('reviewStatus' in data) || data.reviewStatus in ['Uploaded', 'InReview', 'Checked', 'NeedsAttention']) &&
              (!('reviewedBy' in data) || (data.reviewedBy is string && data.reviewedBy.size() < 255)) &&
              (!('reviewedAt' in data) || (data.reviewedAt is string && data.reviewedAt.size() < 50)) &&
-             (!('reviewNote' in data) || (data.reviewNote is string && data.reviewNote.size() < 2000)) &&
-             (!('aiSummary' in data) || (data.aiSummary is string && data.aiSummary.size() < 20000)) &&
-             (!('aiRunAt' in data) || (data.aiRunAt is string && data.aiRunAt.size() < 50));
+             (!('reviewNote' in data) || (data.reviewNote is string && data.reviewNote.size() < 2000));
     }
 
     function isValidChatSession(data) {
@@ -186,14 +186,16 @@ service cloud.firestore {
     // publishDate, unitCode, verifiedBy, verifiedAt and reviewNote — those belong
     // to the platform, not to the seller.
     function ownerEditableListingKeys() {
-      return ['title', 'description', 'price', 'currency', 'location', 'lat', 'lng',
+      // lat/lng are deliberately absent: the wizard never writes them, and moving
+      // a reviewed listing's pin to another governorate is not a cosmetic edit.
+      return ['title', 'description', 'price', 'currency', 'location',
               'bedrooms', 'bathrooms', 'area', 'areaTo', 'propertyType', 'compound',
               'developer', 'deliveryDate', 'finishing', 'floor', 'view', 'furnished',
               'contactPhone', 'amenities', 'paymentPlans', 'paymentMethods',
               'pricePeriod', 'guests', 'village', 'yallaSahel', 'imageUrl', 'images',
               'panoramas', 'videoUrl', 'digitalTwinUrl', 'status', 'availability',
               'legalDocs', 'registrationNumber', 'courtSignatureValidity', 'isResale',
-              'listingState', 'storagePaths', 'isVerified', 'verificationStatus'];
+              'listingState', 'isVerified', 'verificationStatus'];
     }
 
     // Changing any of these invalidates whatever a reviewer previously saw, so the
@@ -234,7 +236,11 @@ service cloud.firestore {
                       (isAuthenticated()
                         && request.resource.data.authorUid == request.auth.uid
                         && request.resource.data.verificationStatus == 'Pending'
-                        && request.resource.data.isVerified == false)
+                        && request.resource.data.isVerified == false
+                        // The audit trail is the platform's. Without this a seller
+                        // can create a listing already carrying a fabricated
+                        // reviewer and timestamp, which they then cannot remove.
+                        && !request.resource.data.keys().hasAny(['verifiedBy', 'verifiedAt', 'reviewNote', 'rejectedAt']))
                     );
       // Admins edit anything. A listing's own author may edit their own listing,
       // but only the fields above, and never upward: touching a material field
@@ -272,7 +278,7 @@ service cloud.firestore {
                     && request.resource.data.ownerUid == request.auth.uid
                     && isValidUserDocument(request.resource.data)
                     && request.resource.data.get('reviewStatus', 'Uploaded') == 'Uploaded'
-                    && !request.resource.data.keys().hasAny(['status', 'reviewedBy', 'reviewedAt', 'reviewNote', 'aiSummary', 'aiRunAt']);
+                    && !request.resource.data.keys().hasAny(['status', 'reviewedBy', 'reviewedAt', 'reviewNote']);
       // Only a reviewer decides a verdict. The owner may rename their file and
       // nothing else — to fix a problem they delete and re-upload.
       allow update: if isValidUserDocument(request.resource.data)

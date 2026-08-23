@@ -22,6 +22,17 @@ export const MATERIAL_LISTING_FIELDS = [
  * Collapses the several ways this form represents "empty" (undefined, '', 0,
  * false, []) so an untouched optional field never looks like an edit.
  */
+/** What the edit form shows for a field the stored listing never had. */
+const FIELD_DEFAULTS: Record<string, unknown> = {
+  currency: 'EGP',
+  propertyType: 'Apartment',
+  pricePeriod: 'total',
+  status: 'For Sale',
+  availability: 'Available',
+  bedrooms: 1,
+  bathrooms: 1,
+};
+
 export const normalizeField = (v: unknown): string => {
   if (v === undefined || v === null || v === '' || v === false || v === 0) return '';
   if (Array.isArray(v)) return v.length ? JSON.stringify(v) : '';
@@ -127,6 +138,9 @@ const FALLBACK_MAX_IMAGES = 6;
 // Firestore's isValidProperty caps images[] and panoramas[] at 20 each — exceeding
 // it rejects the whole listing, so the UI must never let it happen.
 const MAX_MEDIA_ITEMS = 20;
+// Firestore's isValidProperty caps legalDocs and paymentPlans at 10 each.
+const MAX_LEGAL_DOCS = 10;
+const MAX_PAYMENT_PLANS = 10;
 const FALLBACK_VIDEO_LIMIT = 500 * 1024;
 
 // Storage hosts the file when available, so we can afford much better quality
@@ -399,9 +413,27 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
     // 1) Persist the document itself so it's never lost (was previously discarded).
     try {
       const url = await storeDocument(file);
-      setLegalDocs(prev => [...prev, url]);
+      // isValidProperty caps legalDocs at 10; going over makes every later save
+      // fail with a generic error the user cannot act on.
+      let capped = false;
+      setLegalDocs(prev => {
+        if (prev.length >= MAX_LEGAL_DOCS) { capped = true; return prev; }
+        return [...prev, url];
+      });
+      if (capped) {
+        alert(isRtl
+          ? `الحد الأقصى ${MAX_LEGAL_DOCS} مستندات.`
+          : `You can attach at most ${MAX_LEGAL_DOCS} documents.`);
+      }
     } catch (docErr) {
       console.error('Failed to store legal document', docErr);
+      // Carrying on would let the OCR below fill in a registry number for a
+      // document that was never stored — a legal claim with nothing behind it.
+      alert(isRtl
+        ? 'تعذّر رفع المستند، فما اتقراش. جرّب تاني.'
+        : 'The document could not be uploaded, so nothing was read from it. Please try again.');
+      setExtractingOCR(false);
+      return;
     }
     // 2) OCR the registry number from it.
     try {
@@ -640,8 +672,13 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
     if (!isEdit) {
       newProperty.unitCode = unitCode;
       newProperty.publishDate = publishDate;
-      newProperty.isVerified = (isAdmin || isSuperAdmin);
-      newProperty.verificationStatus = (isAdmin || isSuperAdmin) ? 'Verified' : 'Pending';
+      // Every listing starts unreviewed, including an admin's own. Stamping it
+      // 'Verified' at creation is the same auto-stamp that was removed from
+      // documents: it puts "a reviewer read the seller's documents" on a listing
+      // where no reviewer acted and there may be no documents at all. An admin
+      // marks it reviewed from the Verifications queue, deliberately.
+      newProperty.isVerified = false;
+      newProperty.verificationStatus = 'Pending';
     }
 
     // On create, omitting an empty optional keeps the document small. On edit the
@@ -682,9 +719,14 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
         // edit and downgrade a listing nobody meaningfully touched.
         const patch: Record<string, unknown> = {};
         Object.keys(newProperty).forEach(k => {
-          if (normalizeField((initialProperty as any)[k]) !== normalizeField(newProperty[k])) {
-            patch[k] = newProperty[k];
-          }
+          const before = (initialProperty as any)[k];
+          const after = newProperty[k];
+          if (normalizeField(before) === normalizeField(after)) return;
+          // The form cannot represent "absent", so it shows a default. Writing that
+          // default back over a field that was never set is not an edit — and for a
+          // material field it would wrongly cost the listing its review.
+          if (before === undefined && normalizeField(after) === normalizeField(FIELD_DEFAULTS[k])) return;
+          patch[k] = after;
         });
         if (Object.keys(patch).length === 0) {
           setSuccessMessage(isRtl ? 'مفيش تعديلات تتحفظ.' : 'Nothing changed.');
@@ -721,11 +763,9 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
         setSuccessMessage(isRtl ? `تم نشر ${list.length} وحدات من المشروع بنجاح.` : `Published ${list.length} project units successfully.`);
       } else {
         await onAdd(newProperty);
-        setSuccessMessage(isAdmin || isSuperAdmin
-          ? (isRtl ? 'اتنشر العقار على المنصة.' : 'Property published to the platform.')
-          : (isRtl
-              ? 'إعلانك منشور. لسه ما اتراجعتش مستنداته — هنبلّغك أول ما حد من الفريق يراجعها.'
-              : "Your listing is live. Its documents have not been reviewed yet \u2014 we'll tell you once a reviewer has looked at them."));
+        setSuccessMessage(isRtl
+          ? 'إعلانك منشور. لسه ما اتراجعتش مستنداته — هيفضل «لم تتم المراجعة» لحد ما حد من الفريق يراجعها.'
+          : "Your listing is live. Its documents have not been reviewed yet \u2014 it stays \u201cnot reviewed\u201d until a reviewer looks at them.");
       }
       setFormData({
         title: '', description: '', price: '', location: '', bedrooms: '1', bathrooms: '1', area: '', areaTo: '',
@@ -876,13 +916,13 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
 
                 <div className="grid md:grid-cols-2 gap-6">
                     <div className="col-span-1 md:col-span-2">
-                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'عنوان العقار' : 'Property Title'} <span className="text-red-500">*</span></label>
-                        <input required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white" placeholder={isRtl ? 'مثال: شقة 150م بالتجمع الخامس' : 'e.g. Luxury Villa in New Cairo'} />
+                        <label htmlFor="listing-title" className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'عنوان العقار' : 'Property Title'} <span className="text-red-500">*</span></label>
+                        <input required id="listing-title" maxLength={199} value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white" placeholder={isRtl ? 'مثال: شقة 150م بالتجمع الخامس' : 'e.g. Luxury Villa in New Cairo'} />
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'السعر' : 'Price'} <span className="text-red-500">*</span></label>
+                        <label htmlFor="listing-price" className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'السعر' : 'Price'} <span className="text-red-500">*</span></label>
                         <div className="flex gap-2">
-                          <input required type="text" inputMode="numeric" value={formData.price} onChange={e => { const val = toLatinDigits(e.target.value).replace(/[^0-9]/g, ''); setFormData({...formData, price: val}); }} className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white" placeholder="0" />
+                          <input required type="text" inputMode="numeric" id="listing-price" value={formData.price} onChange={e => { const val = toLatinDigits(e.target.value).replace(/[^0-9]/g, ''); setFormData({...formData, price: val}); }} className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white" placeholder="0" />
                           <select value={formData.currency} onChange={e => setFormData({...formData, currency: e.target.value as 'EGP' | 'USD'})} className="px-3 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white font-bold">
                             <option value="EGP">{isRtl ? 'ج.م' : 'EGP'}</option>
                             <option value="USD">USD</option>
@@ -891,27 +931,27 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                         {formattedPrice && <p className="text-xs font-bold text-brand-600 dark:text-brand-400 mt-1.5">{formattedPrice} {formData.currency === 'USD' ? 'USD' : (isRtl ? 'جنيه' : 'EGP')}</p>}
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'الموقع' : 'Location'} <span className="text-red-500">*</span></label>
-                        <input required value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white" placeholder={isRtl ? 'مثال: التجمع الخامس، القاهرة' : 'e.g. New Cairo, Cairo'} />
+                        <label htmlFor="listing-location" className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'الموقع' : 'Location'} <span className="text-red-500">*</span></label>
+                        <input required id="listing-location" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none transition-all text-slate-900 dark:text-white" placeholder={isRtl ? 'مثال: التجمع الخامس، القاهرة' : 'e.g. New Cairo, Cairo'} />
                     </div>
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                     <div>
-                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'الغرف' : 'Beds'}</label>
-                        <input required type="number" min="0" value={formData.bedrooms} onChange={e => setFormData({...formData, bedrooms: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
+                        <label htmlFor="listing-beds" className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'الغرف' : 'Beds'}</label>
+                        <input required type="number" min="0" id="listing-beds" value={formData.bedrooms} onChange={e => setFormData({...formData, bedrooms: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'الحمامات' : 'Baths'}</label>
-                        <input required type="number" min="0" value={formData.bathrooms} onChange={e => setFormData({...formData, bathrooms: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
+                        <label htmlFor="listing-baths" className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'الحمامات' : 'Baths'}</label>
+                        <input required type="number" min="0" id="listing-baths" value={formData.bathrooms} onChange={e => setFormData({...formData, bathrooms: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'المساحة من (م²)' : 'Area from (m²)'} <span className="text-red-500">*</span></label>
-                        <input required type="number" min="1" value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
+                        <label htmlFor="listing-area" className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'المساحة من (م²)' : 'Area from (m²)'} <span className="text-red-500">*</span></label>
+                        <input required type="number" min="1" id="listing-area" value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" />
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'إلى (اختياري)' : 'to (optional)'}</label>
-                        <input type="number" min="0" value={formData.areaTo} onChange={e => setFormData({...formData, areaTo: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" placeholder={isRtl ? 'للمشاريع' : 'for projects'} />
+                        <label htmlFor="listing-area-to" className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'إلى (اختياري)' : 'to (optional)'}</label>
+                        <input type="number" min="0" id="listing-area-to" value={formData.areaTo} onChange={e => setFormData({...formData, areaTo: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" placeholder={isRtl ? 'للمشاريع' : 'for projects'} />
                     </div>
                 </div>
 
@@ -972,7 +1012,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                     </div>
                     <div>
                        <label className={labelCls}>{isRtl ? 'رقم التواصل (اتصال + واتساب)' : 'Contact Phone (call + WhatsApp)'}</label>
-                       <input type="tel" value={formData.contactPhone} onChange={e => setFormData({...formData, contactPhone: toLatinDigits(e.target.value)})} className={inputCls} placeholder="+20 1XX XXX XXXX" dir="ltr" />
+                       <input type="tel" maxLength={29} value={formData.contactPhone} onChange={e => setFormData({...formData, contactPhone: toLatinDigits(e.target.value)})} className={inputCls} placeholder="+20 1XX XXX XXXX" dir="ltr" />
                     </div>
                 </div>
 
@@ -981,17 +1021,17 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                     <div className="grid md:grid-cols-2 gap-6 mb-6">
                       <div>
                         <label className={labelCls}>{isRtl ? 'الكمبوند / المشروع' : 'Compound / Project'}</label>
-                        <input value={formData.compound} onChange={e => setFormData({...formData, compound: e.target.value})} className={inputCls} placeholder={isRtl ? 'مثال: ماونتن فيو iCity' : 'e.g. Mountain View iCity'} />
+                        <input maxLength={119} value={formData.compound} onChange={e => setFormData({...formData, compound: e.target.value})} className={inputCls} placeholder={isRtl ? 'مثال: ماونتن فيو iCity' : 'e.g. Mountain View iCity'} />
                       </div>
                       <div>
                         <label className={labelCls}>{isRtl ? 'المطوّر' : 'Developer'}</label>
-                        <input value={formData.developer} onChange={e => setFormData({...formData, developer: e.target.value})} className={inputCls} placeholder={isRtl ? 'مثال: ماونتن فيو' : 'e.g. Mountain View'} />
+                        <input maxLength={119} value={formData.developer} onChange={e => setFormData({...formData, developer: e.target.value})} className={inputCls} placeholder={isRtl ? 'مثال: ماونتن فيو' : 'e.g. Mountain View'} />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                       <div>
                         <label className={labelCls}>{isRtl ? 'الاستلام' : 'Delivery'}</label>
-                        <input value={formData.deliveryDate} onChange={e => setFormData({...formData, deliveryDate: e.target.value})} className={inputCls} placeholder={isRtl ? 'جاهز / 2027' : 'Ready / 2027'} />
+                        <input maxLength={49} value={formData.deliveryDate} onChange={e => setFormData({...formData, deliveryDate: e.target.value})} className={inputCls} placeholder={isRtl ? 'جاهز / 2027' : 'Ready / 2027'} />
                       </div>
                       <div>
                         <label className={labelCls}>{isRtl ? 'التشطيب' : 'Finishing'}</label>
@@ -1001,11 +1041,11 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                       </div>
                       <div>
                         <label className={labelCls}>{isRtl ? 'الدور' : 'Floor'}</label>
-                        <input value={formData.floor} onChange={e => setFormData({...formData, floor: e.target.value})} className={inputCls} placeholder={isRtl ? 'أرضي / 3' : 'Ground / 3'} />
+                        <input maxLength={29} value={formData.floor} onChange={e => setFormData({...formData, floor: e.target.value})} className={inputCls} placeholder={isRtl ? 'أرضي / 3' : 'Ground / 3'} />
                       </div>
                       <div>
                         <label className={labelCls}>{isRtl ? 'الفيو' : 'View'}</label>
-                        <input value={formData.view} onChange={e => setFormData({...formData, view: e.target.value})} className={inputCls} placeholder={isRtl ? 'حديقة / بحر' : 'Garden / Sea'} />
+                        <input maxLength={59} value={formData.view} onChange={e => setFormData({...formData, view: e.target.value})} className={inputCls} placeholder={isRtl ? 'حديقة / بحر' : 'Garden / Sea'} />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
@@ -1024,7 +1064,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                       </div>
                       <div>
                         <label className={labelCls}>{isRtl ? 'القرية / المنتجع' : 'Village / Resort'}</label>
-                        <input value={formData.village} onChange={e => setFormData({...formData, village: e.target.value})} className={inputCls} placeholder={isRtl ? 'مثال: مراسي، هاسيندا' : 'e.g. Marassi, Hacienda'} />
+                        <input maxLength={119} value={formData.village} onChange={e => setFormData({...formData, village: e.target.value})} className={inputCls} placeholder={isRtl ? 'مثال: مراسي، هاسيندا' : 'e.g. Marassi, Hacienda'} />
                       </div>
                     </div>
                     <label className="flex items-center gap-3 cursor-pointer mt-4 w-fit">
@@ -1070,7 +1110,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                 <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
                     <div className="flex justify-between items-center mb-3">
                       <label className="text-sm font-bold text-slate-700 dark:text-slate-300">{isRtl ? 'خطط السداد (اختياري)' : 'Payment Plans (optional)'}</label>
-                      <button type="button" onClick={() => setPaymentPlans(prev => [...prev, { downPayment: '', years: '', note: '' }])} className="text-xs bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-3 py-1 rounded-lg font-bold flex items-center gap-1"><PlusCircle size={14} /> {isRtl ? 'أضف خطة' : 'Add plan'}</button>
+                      <button type="button" disabled={paymentPlans.length >= MAX_PAYMENT_PLANS} onClick={() => setPaymentPlans(prev => prev.length >= MAX_PAYMENT_PLANS ? prev : [...prev, { downPayment: '', years: '', note: '' }])} className="text-xs bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-3 py-1 rounded-lg font-bold flex items-center gap-1 disabled:opacity-40 cursor-pointer"><PlusCircle size={14} aria-hidden="true" /> {isRtl ? 'أضف خطة' : 'Add plan'}</button>
                     </div>
                     {paymentPlans.length === 0 && <p className="text-xs text-slate-400 dark:text-slate-500">{isRtl ? 'مثال: 10% مقدم وتقسيط على 8 سنين مع خصم 10%.' : 'e.g. 10% down, 8 years, 10% discount.'}</p>}
                     <div className="space-y-3">
@@ -1299,7 +1339,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                 <div className="grid md:grid-cols-2 gap-6">
                     <div>
                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{isRtl ? 'رقم الشهر العقاري' : 'Registry Number'}</label>
-                        <input value={formData.registrationNumber} onChange={e => setFormData({...formData, registrationNumber: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" placeholder={isRtl ? 'اختياري' : 'Optional'} />
+                        <input maxLength={99} value={formData.registrationNumber} onChange={e => setFormData({...formData, registrationNumber: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-slate-900 dark:text-white" placeholder={isRtl ? 'اختياري' : 'Optional'} />
                     </div>
                 </div>
                 

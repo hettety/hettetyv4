@@ -161,7 +161,9 @@ describe('Tier 1 — Document review (no self-asserted verification)', () => {
     render(<App />);
 
     expect(screen.queryByText(/No other users can see your documents/i)).toBeNull();
-    // The honest version says staff can open them.
-    expect(screen.getByText(/HETTETY staff can read them/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Only you and a HETTETY reviewer can open them/i)).toBeNull();
+    // The stored URL is a bearer token that never expires — say so.
+    expect(screen.getByText(/HETTETY staff can open them/i)).toBeInTheDocument();
+    expect(screen.getByText(/anyone who obtains a file's direct link can too/i)).toBeInTheDocument();
   });
 });
