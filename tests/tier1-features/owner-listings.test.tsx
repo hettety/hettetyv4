@@ -16,6 +16,11 @@ const openMyListings = async () => {
   fireEvent.click(tab);
 };
 
+/** The auth listener writes lastLoginAt, so call[0] is not reliably the listing. */
+const listingPatch = (spy: { mock: { calls: unknown[][] } }) =>
+  spy.mock.calls.map(c => c[1] as Record<string, unknown>)
+    .find(patch => patch && !('lastLoginAt' in patch)) as Record<string, unknown>;
+
 /** The wizard opens on step 1; Save lives on the last step. */
 const gotoLastStep = async () => {
   fireEvent.click(screen.getByRole('tab', { name: /Legal Docs/i }));
@@ -201,7 +206,7 @@ describe('Tier 1 — Owner listing management', () => {
     fireEvent.click(await gotoLastStep());
 
     await waitFor(() => expect(updateDoc).toHaveBeenCalled());
-    const patch = updateDoc.mock.calls[0][1] as unknown as Record<string, unknown>;
+    const patch = listingPatch(updateDoc);
     expect(patch.description).toBe('Third floor, quiet street. Newly painted.');
     expect(patch).not.toHaveProperty('verificationStatus');
     expect(patch).not.toHaveProperty('isVerified');
@@ -217,7 +222,7 @@ describe('Tier 1 — Owner listing management', () => {
     fireEvent.click(await gotoLastStep());
 
     await waitFor(() => expect(updateDoc).toHaveBeenCalled());
-    const patch = updateDoc.mock.calls[0][1] as unknown as Record<string, unknown>;
+    const patch = listingPatch(updateDoc);
     expect(patch.price).toBe(3100000);
     expect(patch.verificationStatus).toBe('Pending');
     expect(patch.isVerified).toBe(false);
@@ -243,7 +248,7 @@ describe('Tier 1 — Owner listing management', () => {
     fireEvent.click(await gotoLastStep());
 
     await waitFor(() => expect(updateDoc).toHaveBeenCalled());
-    const patch = updateDoc.mock.calls[0][1] as unknown as Record<string, unknown>;
+    const patch = listingPatch(updateDoc);
     expect(patch).toEqual({ description: 'Third floor. Newly painted.' });
   });
 
@@ -257,7 +262,7 @@ describe('Tier 1 — Owner listing management', () => {
     fireEvent.click(await gotoLastStep());
 
     await waitFor(() => expect(updateDoc).toHaveBeenCalled());
-    const patch = updateDoc.mock.calls[0][1] as unknown as Record<string, unknown>;
+    const patch = listingPatch(updateDoc);
     // updateDoc merges, so omitting the key would leave the old number in place.
     expect(patch.contactPhone).toBe('');
     // contactPhone is material: swapping the number on a reviewed listing is the
@@ -352,6 +357,39 @@ describe("Tier 1 — Nobody publishes their own listing as reviewed", () => {
     // auto-stamp that was removed from documents.
     expect(payload.verificationStatus).toBe('Pending');
     expect(payload.isVerified).toBe(false);
+  });
+});
+
+describe('Tier 1 — An admin can correct any listing', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem('hettety_consent', JSON.stringify({ necessary: true }));
+    (firebase.auth as any).currentUser = { uid: 'admin-uid', email: 'admin@example.test' };
+    vi.spyOn(firebase, 'onAuthStateChanged').mockImplementation(((_a: any, cb: any) => {
+      cb({ uid: 'admin-uid', email: 'admin@example.test', displayName: 'Admin' });
+      return vi.fn();
+    }) as any);
+    vi.spyOn(firebase, 'getDoc').mockResolvedValue({ exists: () => true, data: () => ({ role: 'admin', name: 'Admin' }) } as any);
+    vi.spyOn(firebase, 'updateDoc').mockResolvedValue(undefined as any);
+    withProperties([mine(), theirs]);
+  });
+
+  afterEach(() => {
+    (firebase.auth as any).currentUser = null;
+    // This block makes the user an admin; leaving that in place would quietly
+    // invalidate every ownership test that runs after it.
+    vi.spyOn(firebase, 'getDoc').mockResolvedValue({ exists: () => false, data: () => ({}) } as any);
+  });
+
+  it('opens the editor for a listing somebody else posted', async () => {
+    // Verified on production: all 9 live listings belong to two accounts, neither
+    // of them the signed-in admin, so there was no path at all to fix a typo —
+    // while firestore.rules has always allowed an admin that write.
+    window.location.hash = '#edit-listing/theirs-1';
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'Edit listing' }, { timeout: 10000 })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Someone Else Villa')).toBeInTheDocument();
   });
 });
 

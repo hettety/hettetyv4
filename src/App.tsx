@@ -3883,6 +3883,14 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                           )}
                           <button
                             type="button"
+                            onClick={() => { window.location.hash = `edit-listing/${prop.id}`; }}
+                            aria-label={isRtl ? `تعديل العقار ${prop.title}` : `Edit property ${prop.title}`}
+                            className="bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 hover:bg-brand-600 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
+                          >
+                            {isRtl ? 'تعديل' : 'Edit'}
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => handleDeleteProperty(prop.id)}
                             disabled={updating === prop.id}
                             aria-label={isRtl ? `حذف العقار ${prop.title}` : `Delete property ${prop.title}`}
@@ -5384,7 +5392,11 @@ export default function App() {
               </div>
             );
           }
-          if (!auth.currentUser || prop.authorUid !== auth.currentUser.uid) {
+          // Admins may correct any listing — firestore.rules already allows it, and
+          // there is otherwise no way to fix a typo in a listing someone else posted.
+          // The verification downgrade on a material change applies to them too, so
+          // a badge never outlives the content it was granted for.
+          if (!auth.currentUser || (prop.authorUid !== auth.currentUser.uid && !isAdmin)) {
             return (
               <div className="max-w-lg mx-auto px-4 py-24 text-center animate-fade-in">
                 <LockIcon size={40} className="mx-auto mb-4 text-slate-300 dark:text-slate-700" aria-hidden="true" />
