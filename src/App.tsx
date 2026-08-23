@@ -3462,8 +3462,28 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
     }
   };
 
+  /** Take a listing off the public site without destroying it. Reversible. */
+  const handleHideProperty = async (propId: string, next: 'Live' | 'Removed') => {
+    setUpdating(propId);
+    try {
+      await updateDoc(doc(db, 'properties', propId), { listingState: next });
+      setAllProperties(prev => prev.map(p => p.id === propId ? { ...p, listingState: next } : p));
+    } catch (error) {
+      console.error('Error changing listing state:', error);
+      alert(isRtl ? 'تعذّر تغيير حالة الإعلان.' : 'Could not change the listing state.');
+    } finally {
+      setUpdating(null);
+    }
+  };
+
   const handleDeleteProperty = async (propId: string) => {
-    if (!window.confirm(isRtl ? 'متأكد إنك عايز تحذف العقار ده نهائيًا؟' : 'Permanently delete this property?')) return;
+    const prop = allProperties.find(p => p.id === propId);
+    const name = prop?.title || propId;
+    // A listing deleted here is unrecoverable — there is no trash and no undo.
+    // Name what is going, and point at the reversible option first.
+    if (!window.confirm(isRtl
+      ? `حذف «${name}» نهائيًا؟\n\nمفيش تراجع ومفيش سلة محذوفات — الإعلان وبياناته هيروحوا خالص.\nلو عايز تشيله من الموقع بس، اقفل واستخدم «إخفاء» — دي بترجع.`
+      : `Permanently delete "${name}"?\n\nThere is no undo and no trash — the listing and its data are gone.\nIf you only want it off the site, cancel and use Hide instead — that is reversible.`)) return;
     setUpdating(propId);
     try {
       await deleteDoc(doc(db, 'properties', propId));
@@ -3881,6 +3901,14 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                               {isRtl ? 'توثيق' : 'Verify'}
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => handleHideProperty(prop.id, (prop.listingState || 'Live') === 'Live' ? 'Removed' : 'Live')}
+                            disabled={updating === prop.id}
+                            className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-700 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap disabled:opacity-50"
+                          >
+                            {(prop.listingState || 'Live') === 'Live' ? (isRtl ? 'إخفاء' : 'Hide') : (isRtl ? 'إظهار' : 'Show')}
+                          </button>
                           <button
                             type="button"
                             onClick={() => { window.location.hash = `edit-listing/${prop.id}`; }}
