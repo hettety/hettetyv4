@@ -20,7 +20,10 @@
 import { resolve } from './_lib/router.js';
 import { AI_TASKS, AIRequest, Message, ProviderError, isTransientStatus } from './_lib/types.js';
 
-const MAX_BODY_CHARS = 12_000_000; // ~9MB of base64 — a brochure PDF fits, abuse doesn't.
+// Vercel rejects a body over ~4.5MB at the edge before this function runs, so a
+// larger ceiling here would just be a number that never applies. Measured on
+// production: 4.0MB passes, 4.4MB returns FUNCTION_PAYLOAD_TOO_LARGE.
+const MAX_BODY_CHARS = 4_000_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

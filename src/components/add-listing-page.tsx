@@ -152,6 +152,31 @@ const MAX_PAYMENT_PLANS = 10;
 const FALLBACK_VIDEO_LIMIT = 500 * 1024;
 // Must stay under storage.rules' 80MB ceiling for video/*.
 const MAX_VIDEO_BYTES = 80 * 1024 * 1024;
+// Vercel rejects a serverless request body over ~4.5MB at the edge, before the
+// function runs — measured on production: 4.0MB passes, 4.4MB returns
+// FUNCTION_PAYLOAD_TOO_LARGE. base64 costs 4/3, and the prompt rides along, so
+// this is what actually fits.
+const MAX_AI_FILE_BYTES = Math.floor(2.8 * 1024 * 1024);
+// A brochure is mostly text, so it has to stay legible after compression.
+const BROCHURE_COMPRESSION = { maxSizeMB: 2.5, maxWidthOrHeight: 2400, useWebWorker: true };
+
+/**
+ * Shrinks an image to fit the request-body limit. PDFs cannot be compressed in
+ * the browser, so those are reported to the caller instead of failing opaquely.
+ */
+const fitForAI = async (file: File): Promise<{ file: File } | { tooBig: number }> => {
+  if (file.size <= MAX_AI_FILE_BYTES) return { file };
+  if (!file.type.startsWith('image/')) return { tooBig: file.size };
+  try {
+    const smaller = await imageCompression(file, BROCHURE_COMPRESSION);
+    if (smaller.size <= MAX_AI_FILE_BYTES) return { file: smaller as File };
+    return { tooBig: smaller.size };
+  } catch {
+    return { tooBig: file.size };
+  }
+};
+
+const mb = (bytes: number) => (bytes / 1024 / 1024).toFixed(1);
 
 // Storage hosts the file, so quality is bounded by what a phone will download,
 // not by Firestore's 1MB document limit. storage.rules allows 15MB per image.
@@ -310,9 +335,16 @@ export const AddListingPage = ({ onAdd, onAddMany, onUpdate, mode = 'create', in
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    const fitted = await fitForAI(file);
+    if ('tooBig' in fitted) {
+      alert(isRtl
+        ? `البروشور ${mb(fitted.tooBig)} ميجا، والحد الأقصى ${mb(MAX_AI_FILE_BYTES)} ميجا. صغّر الـ PDF، أو ارفع صورة للصفحة اللي فيها الأسعار والمساحات.`
+        : `That brochure is ${mb(fitted.tooBig)}MB and the limit is ${mb(MAX_AI_FILE_BYTES)}MB. Compress the PDF, or upload a photo of the page with the prices and areas.`);
+      return;
+    }
     setImporting(true);
     try {
-      const base64 = (await fileToDataUrl(file)).split(',')[1];
+      const base64 = (await fileToDataUrl(fitted.file)).split(',')[1];
       const prompt = `You are a real-estate data extractor. Read this property brochure/flyer (it may be Arabic, English or Franco) and extract ONE listing as JSON.
 If it lists multiple unit types, pick the entry/smallest unit as the base, and summarise ALL unit types (with their areas, starting prices and payment plans) inside "description".
 Return ONLY valid JSON (no markdown), omitting any key you can't find:
@@ -343,7 +375,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
 }`;
       const response = await generateContentResilient({
         task: 'brochure',
-        contents: [{ role: 'user', parts: [ { text: prompt }, { inlineData: { data: base64, mimeType: file.type } } ] }],
+        contents: [{ role: 'user', parts: [ { text: prompt }, { inlineData: { data: base64, mimeType: fitted.file.type } } ] }],
         config: { responseMimeType: 'application/json' },
       });
       const raw = (response.text || '').trim().replace(/^```json\s*/i, '').replace(/```$/, '').trim();
@@ -456,16 +488,25 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
       setExtractingOCR(false);
       return;
     }
-    // 2) OCR the registry number from it.
+    // 2) OCR the registry number from it — the file itself is already saved, so a
+    // document too large to send is only a missed autofill, not a lost document.
+    const fitted = await fitForAI(file);
+    if ('tooBig' in fitted) {
+      setExtractingOCR(false);
+      alert(isRtl
+        ? `المستند اتحفظ. بس حجمه ${mb(fitted.tooBig)} ميجا فما ينفعش نقراه آليًا — اكتب رقم الشهر العقاري بإيدك.`
+        : `The document was saved. At ${mb(fitted.tooBig)}MB it is too large to read automatically — type the registry number yourself.`);
+      return;
+    }
     try {
       // await the read so any failure below is caught and the spinner always stops
-      const base64 = (await fileToDataUrl(file)).split(',')[1];
+      const base64 = (await fileToDataUrl(fitted.file)).split(',')[1];
       const response = await generateContentResilient({
         task: 'ocr',
         contents: [
           { role: 'user', parts: [
             { text: "Extract the official Registry Number (رقم المشهر او رقم الشهر العقاري) from this real estate deed/document. Return only the extracted number. If not found, return 'NOT_FOUND'." },
-            { inlineData: { data: base64, mimeType: file.type } }
+            { inlineData: { data: base64, mimeType: fitted.file.type } }
           ]}
         ]
       });
@@ -768,6 +809,16 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
         return;
       }
       if (unitVariants.length > 0 && onAddMany) {
+        // The project page groups by compound. Without one, each unit is published
+        // as an unrelated listing — which is the opposite of what this panel is for.
+        if (!formData.compound.trim()) {
+          setSubmitting(false);
+          setStep(1);
+          setErrorMsg(isRtl
+            ? 'اكتب اسم الكمبوند / المشروع الأول — هو اللي بيجمع أنواع الوحدات في صفحة واحدة.'
+            : 'Fill in the Compound / Project name first — it is what groups the unit types onto one page.');
+          return;
+        }
         // One listing per unit type, all sharing the project-level data.
         const list = unitVariants.map((v) => {
           const p: any = { ...newProperty };
@@ -978,7 +1029,11 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                 </div>
 
                 {/* Multi-unit projects: one listing per unit type */}
-                {unitVariants.length > 0 && (
+                {/* Always available when creating: the Add button used to live inside
+                    this block, so the only way to get a first unit type was the AI
+                    import. Hidden while editing — one listing is being changed, not
+                    fanned out into several. */}
+                {!isEdit && (
                   <div className="bg-brand-50/60 dark:bg-brand-900/10 border border-brand-200 dark:border-brand-800 rounded-2xl p-5">
                     <div className="flex justify-between items-start mb-3 gap-3">
                       <div>
@@ -987,6 +1042,13 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                       </div>
                       <button type="button" onClick={() => setUnitVariants(prev => [...prev, { title: '', propertyType: 'Apartment', bedrooms: '', bathrooms: '', area: '', areaTo: '', price: '' }])} className="shrink-0 text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg font-bold flex items-center gap-1"><PlusCircle size={14} /> {isRtl ? 'أضف' : 'Add'}</button>
                     </div>
+                    {unitVariants.length === 0 && (
+                      <p className="text-sm text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-dashed border-brand-300 dark:border-brand-800 rounded-xl px-4 py-3">
+                        {isRtl
+                          ? 'عندك مشروع فيه أكتر من مساحة أو أكتر من نوع؟ دوس «أضف» وسجّل كل نوع بمساحته وسعره. هيتنشر إعلان لكل نوع، وكلهم هيتجمعوا في صفحة المشروع — الشقق مع بعض والفلل مع بعض. لازم تملا «الكمبوند / المشروع» في تبويب المعلومات الأساسية عشان يتجمعوا.'
+                          : 'Project with several sizes or unit types? Press Add and enter each one with its area and price. A listing is published per type and they group on the project page — apartments together, villas together. Fill in Compound / Project on the Basic Info step so they group.'}
+                      </p>
+                    )}
                     <div className="space-y-2">
                       {unitVariants.map((v, i) => (
                         <div key={i} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2 items-center bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm">
@@ -1042,12 +1104,12 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                     <p className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">{isRtl ? 'تفاصيل إضافية (اختياري)' : 'Extra details (optional)'}</p>
                     <div className="grid md:grid-cols-2 gap-6 mb-6">
                       <div>
-                        <label className={labelCls}>{isRtl ? 'الكمبوند / المشروع' : 'Compound / Project'}</label>
-                        <input maxLength={119} value={formData.compound} onChange={e => setFormData({...formData, compound: e.target.value})} className={inputCls} placeholder={isRtl ? 'مثال: ماونتن فيو iCity' : 'e.g. Mountain View iCity'} />
+                        <label htmlFor="listing-compound" className={labelCls}>{isRtl ? 'الكمبوند / المشروع' : 'Compound / Project'}</label>
+                        <input id="listing-compound" maxLength={119} value={formData.compound} onChange={e => setFormData({...formData, compound: e.target.value})} className={inputCls} placeholder={isRtl ? 'مثال: ماونتن فيو iCity' : 'e.g. Mountain View iCity'} />
                       </div>
                       <div>
-                        <label className={labelCls}>{isRtl ? 'المطوّر' : 'Developer'}</label>
-                        <input maxLength={119} value={formData.developer} onChange={e => setFormData({...formData, developer: e.target.value})} className={inputCls} placeholder={isRtl ? 'مثال: ماونتن فيو' : 'e.g. Mountain View'} />
+                        <label htmlFor="listing-developer" className={labelCls}>{isRtl ? 'المطوّر' : 'Developer'}</label>
+                        <input id="listing-developer" maxLength={119} value={formData.developer} onChange={e => setFormData({...formData, developer: e.target.value})} className={inputCls} placeholder={isRtl ? 'مثال: ماونتن فيو' : 'e.g. Mountain View'} />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
