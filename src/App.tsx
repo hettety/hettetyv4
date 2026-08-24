@@ -2191,7 +2191,8 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 animate-fade-in">
       <button onClick={onBack} className="flex items-center gap-2 text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 font-bold mb-6 transition-colors cursor-pointer">
-        {isRtl ? <ArrowRight size={18} /> : <ArrowLeft size={18} />} {isRtl ? 'رجوع للعقارات' : 'Back to listings'}
+        {/* Not "back to listings" any more — it returns wherever you came from. */}
+        {isRtl ? <ArrowRight size={18} aria-hidden="true" /> : <ArrowLeft size={18} aria-hidden="true" />} {isRtl ? 'رجوع' : 'Back'}
       </button>
 
       <div className="grid lg:grid-cols-3 gap-8 items-start">
@@ -4292,6 +4293,34 @@ export default function App() {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
 
+  // How many pages this visit has pushed. Only if we pushed at least one is
+  // there somewhere of ours to go back to — otherwise Back would leave the site.
+  const navDepth = useRef(0);
+  // Where the reader was on each page, so returning does not dump them at the top.
+  const scrollByHash = useRef<Record<string, number>>({});
+  const returningViaHistory = useRef(false);
+
+  useEffect(() => {
+    const onPop = () => { returningViaHistory.current = true; };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  /**
+   * Puts the reader back at the height they left a page at. The grid may still be
+   * rendering when this runs, so it retries briefly until the document is tall
+   * enough to hold that position.
+   */
+  const restoreScroll = (y: number) => {
+    if (y <= 0) { window.scrollTo(0, 0); return; }
+    let tries = 0;
+    const settle = () => {
+      window.scrollTo(0, y);
+      if (++tries < 12 && Math.abs(window.scrollY - y) > 4) requestAnimationFrame(settle);
+    };
+    requestAnimationFrame(settle);
+  };
+
   // Hash-based routing
   useEffect(() => {
     const handleHashChange = () => {
@@ -4313,6 +4342,15 @@ export default function App() {
         setCurrentPage(page as Page);
       } else {
         setCurrentPage('home');
+      }
+
+      // Forward navigation starts at the top; coming back resumes where you were.
+      // A hash we have never scrolled on restores to 0, which is the same thing.
+      if (returningViaHistory.current) {
+        returningViaHistory.current = false;
+        restoreScroll(scrollByHash.current[window.location.hash] ?? 0);
+      } else {
+        window.scrollTo(0, 0);
       }
     };
 
@@ -4625,11 +4663,38 @@ export default function App() {
     document.head.appendChild(script);
   }, []);
 
+  /**
+   * The single place a page is pushed. Records where the reader was on the page
+   * they are leaving, so Back can put them there again.
+   */
+  const pushHash = (hash: string) => {
+    scrollByHash.current[window.location.hash] = window.scrollY;
+    navDepth.current += 1;
+    window.location.hash = hash;
+  };
+
+  /**
+   * Back goes where the reader actually came from, not to a fixed page.
+   *
+   * navDepth counts the pages this visit pushed and each Back consumes one. It is
+   * deliberately not driven by popstate: that event is not a dependable
+   * "went back" signal, and treating it as one made every forward navigation
+   * cancel out a push.
+   */
+  const goBack = () => {
+    if (navDepth.current > 0) {
+      navDepth.current -= 1;
+      returningViaHistory.current = true;
+      window.history.back();
+    } else {
+      handleNav('listings');   // arrived on a deep link: nothing of ours behind
+    }
+  };
+
   const handleNav = (page: Page) => {
-    window.location.hash = page;
+    pushHash(page);
     setCurrentPage(page);
     setMobileMenuOpen(false);
-    window.scrollTo(0,0);
   };
 
   const open3D = (id: string) => {
@@ -4640,26 +4705,23 @@ export default function App() {
   // Opens a property's full dedicated page (id encoded in the hash for deep links).
   const openProperty = (id: string) => {
     setSelectedPropertyId(id);
-    window.location.hash = `property/${id}`;
+    pushHash(`property/${id}`);
     setCurrentPage('property');
     setMobileMenuOpen(false);
-    window.scrollTo(0, 0);
   };
 
   // Opens a compound's project page, grouping all of its units in one place.
   const openEditListing = (id: string) => {
     setEditingPropertyId(id);
-    window.location.hash = `edit-listing/${id}`;
+    pushHash(`edit-listing/${id}`);
     setCurrentPage('edit-listing');
-    window.scrollTo(0, 0);
   };
 
   const openProject = (name: string) => {
     setSelectedProject(name);
-    window.location.hash = `project/${encodeURIComponent(name)}`;
+    pushHash(`project/${encodeURIComponent(name)}`);
     setCurrentPage('project');
     setMobileMenuOpen(false);
-    window.scrollTo(0, 0);
   };
 
   const NavLink = ({ page, label }: { page: Page, label: string }) => (
@@ -5233,7 +5295,7 @@ export default function App() {
           <ProjectPage
             projectName={selectedProject}
             units={publicProperties.filter(p => (p.compound || '') === selectedProject)}
-            onBack={() => handleNav('listings')}
+            onBack={goBack}
             onOpenProperty={openProperty}
             onView3D={open3D}
             onToggleFavorite={toggleFavorite}
@@ -5338,7 +5400,7 @@ export default function App() {
             <PropertyDetailPage
               key={prop.id}
               property={prop}
-              onBack={() => handleNav('listings')}
+              onBack={goBack}
               onPurchase={(id) => { setPaymentProperty(prop); handleNav('payment'); }}
               onOpenProject={openProject}
               t={t}
