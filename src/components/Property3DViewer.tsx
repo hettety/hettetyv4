@@ -133,8 +133,15 @@ function buildDepthMap(img: HTMLImageElement): THREE.DataTexture | null {
 
 type LoadState = 'loading' | 'ready' | 'error';
 
-/** Colour map plus a generated height map, with the load state the UI reports. */
-function useSceneTextures(url: string, wantDepth: boolean) {
+/**
+ * Colour map plus a height map, with the load state the UI reports.
+ *
+ * depthUrl is a real predicted depth map when the listing has one. Without it the
+ * relief falls back to the geometric well, which is a guess about room shape
+ * rather than a measurement — better than displacing by brightness, but no
+ * substitute for the real thing.
+ */
+function useSceneTextures(url: string, wantDepth: boolean, depthUrl?: string | null) {
   const [state, setState] = useState<{ color: THREE.Texture | null; depth: THREE.DataTexture | null; aspect: number; status: LoadState }>(
     { color: null, depth: null, aspect: 1.5, status: 'loading' }
   );
@@ -152,13 +159,28 @@ function useSceneTextures(url: string, wantDepth: boolean) {
         color.magFilter = THREE.LinearFilter;
         color.generateMipmaps = true;
         color.needsUpdate = true;
-        const depth = wantDepth ? buildDepthMap(img) : null;
-        setState({
-          color,
-          depth,
-          aspect: img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 1.5,
-          status: 'ready',
-        });
+        const aspect = img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 1.5;
+        if (!wantDepth) {
+          setState({ color, depth: null, aspect, status: 'ready' });
+          return;
+        }
+        if (depthUrl) {
+          // A predicted map: load it as-is, no guessing required.
+          loadImageElement(depthUrl)
+            .then((dimg) => {
+              if (disposed) return;
+              const tex = new THREE.Texture(dimg);
+              tex.minFilter = THREE.LinearFilter;
+              tex.magFilter = THREE.LinearFilter;
+              tex.needsUpdate = true;
+              setState({ color, depth: tex as unknown as THREE.DataTexture, aspect, status: 'ready' });
+            })
+            .catch(() => {
+              if (!disposed) setState({ color, depth: buildDepthMap(img), aspect, status: 'ready' });
+            });
+          return;
+        }
+        setState({ color, depth: buildDepthMap(img), aspect, status: 'ready' });
       })
       .catch(() => {
         if (!disposed) setState((s) => ({ ...s, status: 'error' }));
@@ -172,7 +194,7 @@ function useSceneTextures(url: string, wantDepth: boolean) {
         return { color: null, depth: null, aspect: prev.aspect, status: 'loading' };
       });
     };
-  }, [url, wantDepth]);
+  }, [url, wantDepth, depthUrl]);
 
   return state;
 }
@@ -190,8 +212,8 @@ function planeSegments() {
   return 200;
 }
 
-const DepthPhoto = ({ url, onState }: { url: string; onState: (s: LoadState) => void }) => {
-  const { color, depth, aspect, status } = useSceneTextures(url, true);
+const DepthPhoto = ({ url, depthUrl, onState }: { url: string; depthUrl?: string | null; onState: (s: LoadState) => void }) => {
+  const { color, depth, aspect, status } = useSceneTextures(url, true, depthUrl);
   const groupRef = useRef<THREE.Group>(null);
   const width = PLANE_HEIGHT * Math.min(Math.max(aspect, 0.6), 2.4);
   const segments = useMemo(() => planeSegments(), []);
@@ -240,32 +262,60 @@ const DepthPhoto = ({ url, onState }: { url: string; onState: (s: LoadState) => 
 
 const PanoramaSphere = ({ url, onState }: { url: string; onState: (s: LoadState) => void }) => {
   const { color, status } = useSceneTextures(url, false);
-  const meshRef = useRef<THREE.Mesh>(null);
   useEffect(() => { onState(status); }, [status, onState]);
-  useFrame(() => {
-    if (meshRef.current) meshRef.current.rotation.y += 0.0006;
-  });
   if (!color) return null;
+  // Deliberately still. The room does not turn on its own — the visitor is
+  // standing in it, and only their head moves.
   return (
-    <mesh ref={meshRef} scale={[-1, 1, 1]}>
+    <mesh scale={[-1, 1, 1]}>
       <sphereGeometry args={[10, 64, 40]} />
       <meshBasicMaterial map={color} side={THREE.BackSide} toneMapped={false} />
     </mesh>
   );
 };
 
+const PANO_FOV_MIN = 32;   // zoomed in on a detail
+const PANO_FOV_MAX = 88;   // takes in most of a wall
+const PANO_FOV_DEFAULT = 75;
+
 const PanoramaScene = ({ url, onState }: { url: string; onState: (s: LoadState) => void }) => {
-  const { camera } = useThree();
-  useEffect(() => { camera?.position?.set?.(0, 0, 0.1); }, [url, camera]);
+  const { camera, gl } = useThree();
+
+  useEffect(() => {
+    camera?.position?.set?.(0, 0, 0.1);
+    const cam = camera as THREE.PerspectiveCamera | undefined;
+    if (cam?.isPerspectiveCamera) {
+      cam.fov = PANO_FOV_DEFAULT;
+      cam.updateProjectionMatrix();
+    }
+  }, [url, camera]);
+
+  // Zoom by narrowing the view, not by walking toward the wall. Moving the
+  // camera off centre inside the sphere distorts the whole image.
+  useEffect(() => {
+    const cam = camera as THREE.PerspectiveCamera | undefined;
+    const el = gl?.domElement;
+    if (!cam?.isPerspectiveCamera || !el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      cam.fov = Math.min(PANO_FOV_MAX, Math.max(PANO_FOV_MIN, cam.fov + Math.sign(e.deltaY) * 3));
+      cam.updateProjectionMatrix();
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [camera, gl]);
+
   return (
     <>
       <PanoramaSphere key={url} url={url} onState={onState} />
-      <OrbitControls enablePan={false} enableZoom rotateSpeed={-0.35} minDistance={0.1} maxDistance={8} />
+      {/* No zoom and no pan: the camera stays at the centre of the sphere, which
+          is the only place a panorama looks right from. */}
+      <OrbitControls enablePan={false} enableZoom={false} rotateSpeed={-0.35} />
     </>
   );
 };
 
-const Scene = ({ url, autoRotate, onState }: { url: string; autoRotate: boolean; onState: (s: LoadState) => void }) => {
+const Scene = ({ url, depthUrl, autoRotate, onState }: { url: string; depthUrl?: string | null; autoRotate: boolean; onState: (s: LoadState) => void }) => {
   const { camera } = useThree();
   useEffect(() => { camera?.position?.set?.(0, 0, 4); }, [url, camera]);
 
@@ -274,7 +324,7 @@ const Scene = ({ url, autoRotate, onState }: { url: string; autoRotate: boolean;
       <ambientLight intensity={0.9} />
       <directionalLight position={[2, 3, 4]} intensity={1.1} />
       <directionalLight position={[-3, -1, 2]} intensity={0.4} color="#cbd5e1" />
-      <DepthPhoto key={url} url={url} onState={onState} />
+      <DepthPhoto key={url} url={url} depthUrl={depthUrl} onState={onState} />
       <OrbitControls
         enablePan={false}
         enableZoom
@@ -293,6 +343,8 @@ const Scene = ({ url, autoRotate, onState }: { url: string; autoRotate: boolean;
 
 export interface Property3DViewerProps {
   images: string[];
+  /** Predicted depth maps, index-matched to images. */
+  depthMaps?: string[];
   panoramas?: string[];
   /** A Matterport/Polycam scan, already passed through the URL allowlist. */
   tourUrl?: string | null;
@@ -301,7 +353,7 @@ export interface Property3DViewerProps {
   isRtl?: boolean;
 }
 
-const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, panoramas, tourUrl, title, onClose, isRtl }) => {
+const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, depthMaps, panoramas, tourUrl, title, onClose, isRtl }) => {
   const validImages = useMemo(() => images.filter(Boolean), [images]);
   const validPanoramas = useMemo(() => (panoramas || []).filter(Boolean), [panoramas]);
   const [mode, setMode] = useState<'pano' | 'depth'>(validPanoramas.length ? 'pano' : 'depth');
@@ -435,7 +487,7 @@ const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, panoramas, 
         >
           <color attach="background" args={['#05080f']} />
           <fog attach="fog" args={['#05080f', 6, 16]} />
-          <Scene url={current} autoRotate={autoRotate} onState={setLoadState} />
+          <Scene url={current} depthUrl={(depthMaps || [])[index] || null} autoRotate={autoRotate} onState={setLoadState} />
         </Canvas>
       )}
 

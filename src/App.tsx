@@ -1818,6 +1818,7 @@ const Viewer3D = ({ property, onClose, isRtl }: { property: Property | undefined
     <React.Suspense fallback={<Loading3DFallback />}>
       <Property3DViewer
         images={images}
+        depthMaps={property?.depthMaps}
         panoramas={property?.panoramas}
         tourUrl={property?.digitalTwinUrl ? safeTourUrl(property.digitalTwinUrl) : null}
         title={property?.title}

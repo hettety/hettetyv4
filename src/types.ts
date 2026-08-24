@@ -51,6 +51,12 @@ export interface Property {
   financing?: string[];        // e.g. mortgage initiative, social housing fund
   masterPlanUrl?: string;      // The master-plan drawing
   floorPlanUrls?: string[];    // Floor plans / unit layouts
+  /**
+   * One depth map per entry in images[], as a 128x128 grayscale PNG data URL
+   * where brighter means nearer. Predicted once from the photo and stored, so
+   * the 3D view gets real depth without anyone downloading a model.
+   */
+  depthMaps?: string[];
   rejectedAt?: string;     // Set when a reviewer pulls the listing. Owner-immutable:
                            // an owner may edit and resubmit, but not un-pull it.
   imageUrl: string;

@@ -84,7 +84,7 @@ service cloud.firestore {
       return data.keys().hasOnly(['title', 'price', 'location', 'bedrooms', 'bathrooms', 'area', 'propertyType', 'compound', 'developer', 'deliveryDate', 'finishing', 'floor', 'view', 'furnished', 'contactPhone', 'amenities', 'areaTo', 'paymentPlans', 'currency', 'pricePeriod', 'guests', 'village', 'yallaSahel', 'lat', 'lng', 'imageUrl', 'images', 'panoramas', 'videoUrl', 'digitalTwinUrl', 'status', 'availability', 'isVerified', 'verificationStatus', 'paymentMethods', 'publishDate', 'unitCode', 'legalDocs', 'authorUid', 'description', 'registrationNumber', 'courtSignatureValidity', 'isResale', 'listingState', 'verifiedBy', 'verifiedAt', 'reviewNote', 'rejectedAt',
                                 'gardenArea', 'roofArea', 'unitModel', 'buildingType', 'floorsDescription',
                                 'maintenanceFee', 'phase', 'projectAreaFeddan', 'greenSpacePercent',
-                                'financing', 'masterPlanUrl', 'floorPlanUrls']) &&
+                                'financing', 'masterPlanUrl', 'floorPlanUrls', 'depthMaps']) &&
              data.keys().hasAll(['title', 'price', 'location', 'status']) &&
              data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
              data.price is number && data.price >= 0 &&
@@ -147,7 +147,8 @@ service cloud.firestore {
              (!('greenSpacePercent' in data) || data.greenSpacePercent is number) &&
              (!('financing' in data) || (data.financing is list && data.financing.size() <= 10)) &&
              (!('masterPlanUrl' in data) || (data.masterPlanUrl is string && data.masterPlanUrl.size() < 2000000)) &&
-             (!('floorPlanUrls' in data) || (data.floorPlanUrls is list && data.floorPlanUrls.size() <= 20));
+             (!('floorPlanUrls' in data) || (data.floorPlanUrls is list && data.floorPlanUrls.size() <= 20)) &&
+             (!('depthMaps' in data) || (data.depthMaps is list && data.depthMaps.size() <= 20));
     }
 
     function isValidNotification(data) {
@@ -213,7 +214,7 @@ service cloud.firestore {
               'listingState', 'isVerified', 'verificationStatus',
               'gardenArea', 'roofArea', 'unitModel', 'buildingType', 'floorsDescription',
               'maintenanceFee', 'phase', 'projectAreaFeddan', 'greenSpacePercent',
-              'financing', 'masterPlanUrl', 'floorPlanUrls'];
+              'financing', 'masterPlanUrl', 'floorPlanUrls', 'depthMaps'];
     }
 
     // Changing any of these invalidates whatever a reviewer previously saw, so the
