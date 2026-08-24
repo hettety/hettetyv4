@@ -199,8 +199,37 @@ function useSceneTextures(url: string, wantDepth: boolean, depthUrl?: string | n
   return state;
 }
 
-const PLANE_HEIGHT = 3;
-const DEPTH_SCALE = 0.5;
+export const PLANE_HEIGHT = 3;
+export const DEPTH_SCALE = 0.5;
+
+/**
+ * Past about 20 degrees a displaced photo stops looking like depth and starts
+ * looking like a photo on a tilted board: the plane's own edges come into view
+ * and every depth step drags a smear of stretched pixels behind it. Keeping the
+ * swing small is what makes the parallax read as parallax.
+ */
+export const MAX_AZIMUTH = 0.32;
+export const MAX_POLAR = 0.22;
+
+/** Only genuinely extreme frames are clamped; ordinary photos keep their shape. */
+export const planeAspect = (aspect: number) => Math.min(Math.max(aspect || 1, 0.45), 3.2);
+
+/**
+ * How far back the camera must sit for a plane to fill the canvas it is drawn
+ * on. Fitting on whichever axis is tighter is what stops a portrait photo from
+ * floating in a sea of black on a landscape screen.
+ */
+export function fitDistance(
+  width: number,
+  height: number,
+  fovDeg: number,
+  canvasAspect: number,
+  margin = 1.06,
+): number {
+  const vFov = (fovDeg * Math.PI) / 180;
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(0.2, canvasAspect || 1));
+  return Math.max(height / 2 / Math.tan(vFov / 2), width / 2 / Math.tan(hFov / 2)) * margin;
+}
 
 /** Fewer segments on a phone: this plane is subdivided every frame it is drawn. */
 function planeSegments() {
@@ -212,25 +241,39 @@ function planeSegments() {
   return 200;
 }
 
-const DepthPhoto = ({ url, depthUrl, onState }: { url: string; depthUrl?: string | null; onState: (s: LoadState) => void }) => {
+const DepthPhoto = ({ url, depthUrl, sway, onState, onAspect }: {
+  url: string;
+  depthUrl?: string | null;
+  sway: boolean;
+  onState: (s: LoadState) => void;
+  onAspect: (a: number) => void;
+}) => {
   const { color, depth, aspect, status } = useSceneTextures(url, true, depthUrl);
   const groupRef = useRef<THREE.Group>(null);
-  const width = PLANE_HEIGHT * Math.min(Math.max(aspect, 0.6), 2.4);
+  const width = PLANE_HEIGHT * planeAspect(aspect);
   const segments = useMemo(() => planeSegments(), []);
   const { gl } = useThree();
 
   useEffect(() => { onState(status); }, [status, onState]);
+  useEffect(() => { onAspect(aspect); }, [aspect, onAspect]);
 
   useEffect(() => {
     if (color) color.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy());
   }, [color, gl]);
 
-  // A slow sway so the relief reads before anyone touches it.
-  useFrame((state) => {
-    if (groupRef.current) {
+  // A slow sway so the relief reads before anyone touches it. Turning it off
+  // eases the plane back to square rather than leaving it stopped mid-tilt.
+  useFrame((state, delta) => {
+    const g = groupRef.current;
+    if (!g) return;
+    if (sway) {
       const t = state.clock.elapsedTime;
-      groupRef.current.rotation.y = Math.sin(t * 0.3) * 0.06;
-      groupRef.current.rotation.x = Math.cos(t * 0.22) * 0.025;
+      g.rotation.y = Math.sin(t * 0.3) * 0.06;
+      g.rotation.x = Math.cos(t * 0.22) * 0.025;
+    } else {
+      const ease = Math.min(1, (delta || 0.016) * 4);
+      g.rotation.y += -g.rotation.y * ease;
+      g.rotation.x += -g.rotation.x * ease;
     }
   });
 
@@ -316,26 +359,37 @@ const PanoramaScene = ({ url, onState }: { url: string; onState: (s: LoadState) 
 };
 
 const Scene = ({ url, depthUrl, autoRotate, onState }: { url: string; depthUrl?: string | null; autoRotate: boolean; onState: (s: LoadState) => void }) => {
-  const { camera } = useThree();
-  useEffect(() => { camera?.position?.set?.(0, 0, 4); }, [url, camera]);
+  const { camera, size } = useThree();
+  const [aspect, setAspect] = useState(1.5);
+  const width = PLANE_HEIGHT * planeAspect(aspect);
+  const dist = fitDistance(width, PLANE_HEIGHT, (camera as any)?.fov ?? 50, (size?.width || 1) / (size?.height || 1));
+
+  // setLength, not set: re-fitting on resize or on the next photo keeps whatever
+  // angle the reader had turned the plane to.
+  useEffect(() => {
+    const p = camera?.position;
+    if (!p?.setLength) { camera?.position?.set?.(0, 0, dist); return; }
+    if (p.lengthSq() < 1e-6) p.set(0, 0, dist);
+    else p.setLength(dist);
+  }, [camera, dist, url]);
 
   return (
     <>
       <ambientLight intensity={0.9} />
       <directionalLight position={[2, 3, 4]} intensity={1.1} />
       <directionalLight position={[-3, -1, 2]} intensity={0.4} color="#cbd5e1" />
-      <DepthPhoto key={url} url={url} depthUrl={depthUrl} onState={onState} />
+      <DepthPhoto key={url} url={url} depthUrl={depthUrl} sway={autoRotate} onState={onState} onAspect={setAspect} />
+      {/* autoRotate is deliberately off: against a limit this tight it would
+          swing to the stop and sit there. The sway above is the idle motion. */}
       <OrbitControls
         enablePan={false}
         enableZoom
-        autoRotate={autoRotate}
-        autoRotateSpeed={1.2}
-        minDistance={2.2}
-        maxDistance={6}
-        minPolarAngle={Math.PI / 2 - 0.7}
-        maxPolarAngle={Math.PI / 2 + 0.7}
-        minAzimuthAngle={-0.9}
-        maxAzimuthAngle={0.9}
+        minDistance={dist * 0.55}
+        maxDistance={dist * 1.5}
+        minPolarAngle={Math.PI / 2 - MAX_POLAR}
+        maxPolarAngle={Math.PI / 2 + MAX_POLAR}
+        minAzimuthAngle={-MAX_AZIMUTH}
+        maxAzimuthAngle={MAX_AZIMUTH}
       />
     </>
   );

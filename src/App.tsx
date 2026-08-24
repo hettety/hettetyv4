@@ -2622,7 +2622,9 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
         <React.Suspense fallback={<Loading3DFallback />}>
           <Property3DViewer
             images={displayImages}
+            depthMaps={property.depthMaps}
             panoramas={property.panoramas}
+            tourUrl={property.digitalTwinUrl ? safeTourUrl(property.digitalTwinUrl) : null}
             title={property.title}
             onClose={() => setShow3D(false)}
             isRtl={isRtl}
