@@ -346,6 +346,30 @@ const PropertyImage = ({ src, alt, className, iconSize = 24 }: { src?: string; a
       </div>
 );
 
+/**
+ * What this listing can actually show a buyer, in descending order of how much
+ * of the property it really conveys.
+ *
+ *  walkthrough — a Matterport/Polycam scan: you move through the rooms
+ *  pano        — equirectangular photos: you stand in one spot and look around
+ *  gallery     — several flat photos, shown as a relief you can tilt
+ *  single      — one flat photo; there is nothing to tour
+ */
+export const tourKind = (p: Property): 'walkthrough' | 'pano' | 'gallery' | 'single' => {
+  if (p.digitalTwinUrl && safeTourUrl(p.digitalTwinUrl)) return 'walkthrough';
+  if ((p.panoramas || []).length > 0) return 'pano';
+  const shots = (p.images || []).filter(Boolean);
+  return shots.length > 1 ? 'gallery' : 'single';
+};
+
+const tourLabel = (kind: ReturnType<typeof tourKind>, isRtl: boolean) => {
+  switch (kind) {
+    case 'walkthrough': return isRtl ? 'جولة داخل الوحدة' : 'Walk through it';
+    case 'pano': return isRtl ? 'جولة 360°' : '360° tour';
+    default: return isRtl ? 'معاينة الصور' : 'Photo preview';
+  }
+};
+
 const PropertyCard: React.FC<{
   property: Property;
   onView3D: () => void;
@@ -408,14 +432,18 @@ const PropertyCard: React.FC<{
       )}
       {/* Always visible on touch screens (no hover there); hover-reveal from sm up. */}
       <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/70 to-transparent opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex justify-between items-end">
-        <button 
+        {/* Only offered when there is something to open. A single photo used to
+            carry a "View in 3D" button and deliver one photo tilting. */}
+        {tourKind(property) !== 'single' && (
+        <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); onView3D(); }} 
-          aria-label={isRtl ? 'عرض العقار بتقنية ثلاثية الأبعاد' : 'View property in 3D'}
+          onClick={(e) => { e.stopPropagation(); onView3D(); }}
+          aria-label={`${tourLabel(tourKind(property), !!isRtl)} — ${property.title}`}
           className="bg-white/20 hover:bg-white text-white hover:text-brand-900 backdrop-blur border border-white/50 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-400"
         >
-          <Box size={16} aria-hidden="true" /> {t.prop_view_3d}
+          <Box size={16} aria-hidden="true" /> {tourLabel(tourKind(property), !!isRtl)}
         </button>
+        )}
         {onToggleCompare && (
           <button 
             type="button"
@@ -1791,6 +1819,7 @@ const Viewer3D = ({ property, onClose, isRtl }: { property: Property | undefined
       <Property3DViewer
         images={images}
         panoramas={property?.panoramas}
+        tourUrl={property?.digitalTwinUrl ? safeTourUrl(property.digitalTwinUrl) : null}
         title={property?.title}
         onClose={onClose}
         isRtl={isRtl}

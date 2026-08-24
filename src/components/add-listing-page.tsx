@@ -1389,6 +1389,13 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                       ? 'صور بزاوية 360 (من كاميرا 360 أو وضع البانوراما) — هتظهر كجولة تلف جواها 360 درجة.'
                       : 'Equirectangular 360° shots (from a 360 camera or panorama mode) — shown as a look-around tour.'}
                   </p>
+                  {/* Flat photos cannot be toured. This is the field that makes a
+                      listing genuinely walkable, so say how to fill it. */}
+                  <p className="text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-dashed border-brand-300 dark:border-brand-800 rounded-xl px-4 py-3 mb-3">
+                    {isRtl
+                      ? 'دي الحاجة الوحيدة اللي بتخلّي المشتري يلف جوّه الوحدة فعلاً. صوّرها بتطبيق مجاني زي Google Street View أو Polycam — بيلفّ حوالين نفسه ويطلّع صورة كروية. الصورة العادية مهما كانت حلوة مش بتديك جولة.'
+                      : 'This is the only thing that lets a buyer actually stand inside the unit. Shoot one with a free phone app — Google Street View or Polycam — which spins around and produces a spherical photo. A flat photo, however good, cannot be toured.'}
+                  </p>
                   <input type="file" multiple accept="image/*" onChange={handlePanoramaUpload} className="hidden" id="panorama-upload" disabled={uploading} />
                   <label htmlFor="panorama-upload" className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-2xl cursor-pointer transition-all bg-slate-50 dark:bg-slate-800/30 border-slate-300 dark:border-slate-700 hover:border-brand-500 hover:bg-white dark:hover:bg-slate-800 group">
                     <Box className="text-slate-400 mb-2 group-hover:text-brand-500 transition-colors" size={28} />

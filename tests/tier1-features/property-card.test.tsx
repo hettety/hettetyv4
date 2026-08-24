@@ -89,11 +89,13 @@ describe('Tier 1 — PropertyCard Component Interactions & Visual Badges', () =>
 
     await screen.findByText('Luxury Beachfront Villa');
 
-    const view3dButtons = screen.getAllByRole('button', { name: /View property in 3D/i });
-    expect(view3dButtons.length).toBeGreaterThan(0);
+    // The button is named for what the listing actually holds. prop-1 carries a
+    // Matterport link, so it offers a walkthrough rather than a generic "3D".
+    const tourButtons = screen.getAllByRole('button', { name: /Walk through it|360° tour|Photo preview/i });
+    expect(tourButtons.length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: /View property in 3D/i })).toBeNull();
 
-    // Click View 3D on first card
-    fireEvent.click(view3dButtons[0]);
+    fireEvent.click(tourButtons[0]);
 
     // Hash should change to #3d
     expect(window.location.hash).toBe('#3d');

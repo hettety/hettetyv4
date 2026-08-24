@@ -294,12 +294,14 @@ const Scene = ({ url, autoRotate, onState }: { url: string; autoRotate: boolean;
 export interface Property3DViewerProps {
   images: string[];
   panoramas?: string[];
+  /** A Matterport/Polycam scan, already passed through the URL allowlist. */
+  tourUrl?: string | null;
   title?: string;
   onClose: () => void;
   isRtl?: boolean;
 }
 
-const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, panoramas, title, onClose, isRtl }) => {
+const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, panoramas, tourUrl, title, onClose, isRtl }) => {
   const validImages = useMemo(() => images.filter(Boolean), [images]);
   const validPanoramas = useMemo(() => (panoramas || []).filter(Boolean), [panoramas]);
   const [mode, setMode] = useState<'pano' | 'depth'>(validPanoramas.length ? 'pano' : 'depth');
@@ -380,7 +382,19 @@ const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, panoramas, 
         </button>
       </div>
 
-      {validPanoramas.length > 0 && validImages.length > 0 && (
+      {tourUrl && (
+        <a
+          href={tourUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="absolute top-20 landscape:top-14 left-1/2 -translate-x-1/2 z-20 bg-brand-600 hover:bg-brand-700 text-white px-5 py-2.5 rounded-full text-sm font-bold shadow-lg flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-brand-400"
+        >
+          <Box size={16} aria-hidden="true" />
+          {isRtl ? 'افتح الجولة الحقيقية داخل الوحدة' : 'Open the real walkthrough'}
+        </a>
+      )}
+
+      {validPanoramas.length > 0 && validImages.length > 0 && !tourUrl && (
         <div className="absolute top-20 landscape:top-14 left-1/2 -translate-x-1/2 z-10 flex bg-white/10 backdrop-blur border border-white/20 rounded-full p-1 shadow-lg">
           <button
             type="button"
