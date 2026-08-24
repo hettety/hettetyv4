@@ -219,6 +219,36 @@ export const planeAspect = (aspect: number) => Math.min(Math.max(aspect || 1, 0.
  * on. Fitting on whichever axis is tighter is what stops a portrait photo from
  * floating in a sea of black on a landscape screen.
  */
+/**
+ * Where fog may begin without touching the picture.
+ *
+ * The centre of the plane is the nearest part of it; the corners are further,
+ * and the displaced surface recedes further still. Fog measured against the
+ * centre therefore eats the photograph from its edges inward. This measures
+ * against the furthest corner and leaves a margin behind it.
+ */
+/** Thickness of the plate behind the photo. */
+export const BACKING_DEPTH = 0.08;
+
+/**
+ * Where the backing plate has to sit.
+ *
+ * displacementBias pushes the unlit parts of the photo away from the viewer, so
+ * the surface recedes to -DEPTH_SCALE * 0.55. A plate any nearer than that cuts
+ * straight through the picture and hides everything except whatever happens to
+ * be in the immediate foreground. It has to clear the deepest point, not the
+ * plane's nominal z of zero.
+ */
+export function backingPlateZ(depthScale: number = DEPTH_SCALE, plateDepth: number = BACKING_DEPTH): number {
+  return -(depthScale * 0.55) - plateDepth / 2 - 0.03;
+}
+
+export function fogRange(dist: number, width: number, height: number): [number, number] {
+  const furthestCorner = Math.hypot(width / 2, height / 2, dist + DEPTH_SCALE * 0.55);
+  const near = furthestCorner + 1;
+  return [near, near + 10];
+}
+
 export function fitDistance(
   width: number,
   height: number,
@@ -279,25 +309,25 @@ const DepthPhoto = ({ url, depthUrl, sway, onState, onAspect }: {
 
   return (
     <group ref={groupRef}>
-      <mesh position={[0, 0, -0.06]}>
-        <boxGeometry args={[width + 0.12, PLANE_HEIGHT + 0.12, 0.08]} />
+      <mesh position={[0, 0, backingPlateZ()]}>
+        <boxGeometry args={[width + 0.12, PLANE_HEIGHT + 0.12, BACKING_DEPTH]} />
         <meshStandardMaterial color="#0b1220" metalness={0.5} roughness={0.4} />
       </mesh>
       <mesh>
         <planeGeometry args={[width, PLANE_HEIGHT, segments, segments]} />
-        {color ? (
-          <meshStandardMaterial
-            map={color}
-            displacementMap={depth || undefined}
-            displacementScale={depth ? DEPTH_SCALE : 0}
-            displacementBias={depth ? -DEPTH_SCALE * 0.55 : 0}
-            roughness={0.85}
-            metalness={0}
-            side={THREE.DoubleSide}
-          />
-        ) : (
-          <meshStandardMaterial color="#334155" />
-        )}
+        {/* One element, never two. A meshStandardMaterial multiplies its map by
+            its colour, so colour is always stated: leaving it to whatever the
+            instance happened to be carrying rendered the photo black. */}
+        <meshStandardMaterial
+          map={color || null}
+          color={color ? '#ffffff' : '#334155'}
+          displacementMap={depth || null}
+          displacementScale={depth ? DEPTH_SCALE : 0}
+          displacementBias={depth ? -DEPTH_SCALE * 0.55 : 0}
+          roughness={0.85}
+          metalness={0}
+          side={THREE.DoubleSide}
+        />
       </mesh>
     </group>
   );
@@ -363,6 +393,7 @@ const Scene = ({ url, depthUrl, autoRotate, onState }: { url: string; depthUrl?:
   const [aspect, setAspect] = useState(1.5);
   const width = PLANE_HEIGHT * planeAspect(aspect);
   const dist = fitDistance(width, PLANE_HEIGHT, (camera as any)?.fov ?? 50, (size?.width || 1) / (size?.height || 1));
+  const fog = fogRange(dist, width, PLANE_HEIGHT);
 
   // setLength, not set: re-fitting on resize or on the next photo keeps whatever
   // angle the reader had turned the plane to.
@@ -375,6 +406,9 @@ const Scene = ({ url, depthUrl, autoRotate, onState }: { url: string; depthUrl?:
 
   return (
     <>
+      {/* Behind the plane, not at a fixed distance: fitting the camera to the
+          viewport moves it, and a fixed fog swallowed the picture. */}
+      <fog attach="fog" args={['#05080f', fog[0], fog[1]]} />
       <ambientLight intensity={0.9} />
       <directionalLight position={[2, 3, 4]} intensity={1.1} />
       <directionalLight position={[-3, -1, 2]} intensity={0.4} color="#cbd5e1" />
@@ -540,7 +574,6 @@ const Property3DViewer: React.FC<Property3DViewerProps> = ({ images, depthMaps, 
           onPointerDown={() => setAutoRotate(false)}
         >
           <color attach="background" args={['#05080f']} />
-          <fog attach="fog" args={['#05080f', 6, 16]} />
           <Scene url={current} depthUrl={(depthMaps || [])[index] || null} autoRotate={autoRotate} onState={setLoadState} />
         </Canvas>
       )}

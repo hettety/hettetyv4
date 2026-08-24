@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   fitDistance,
+  fogRange,
+  backingPlateZ,
+  BACKING_DEPTH,
   planeAspect,
   PLANE_HEIGHT,
   DEPTH_SCALE,
@@ -93,5 +96,60 @@ describe('Tier 2 — the orbit stays inside what a depth map can honestly show',
   it('never lets the plane turn far enough to read as a tilted board', () => {
     expect(MAX_AZIMUTH).toBeLessThan(0.35);   // ~20 degrees
     expect(MAX_POLAR).toBeLessThan(MAX_AZIMUTH);
+  });
+});
+
+describe('Tier 2 — fog must sit behind the picture, not on it', () => {
+  /** The furthest point of the displaced plane from a camera on the axis. */
+  const furthest = (dist: number, width: number) =>
+    Math.hypot(width / 2, PLANE_HEIGHT / 2, dist + DEPTH_SCALE * 0.55);
+
+  it('never begins before the furthest corner of the plane', () => {
+    for (const canvas of [0.5, 0.75, 0.942, 1.21, 1.33, 1.78, 1.96, 2.4]) {
+      for (const photo of [0.45, 0.561, 1, 1.683, 1.78, 3.2]) {
+        const width = PLANE_HEIGHT * planeAspect(photo);
+        const dist = fitDistance(width, PLANE_HEIGHT, FOV, canvas);
+        const [near, far] = fogRange(dist, width, PLANE_HEIGHT);
+        expect(near).toBeGreaterThan(furthest(dist, width));
+        expect(far).toBeGreaterThan(near);
+      }
+    }
+  });
+
+  it('shows why a fixed range could not work once the camera moved', () => {
+    // The measured case: a 685x407 photo on a 654x694 canvas put the camera at
+    // 6.09 while fog started at 6, so the plane rendered inside it.
+    const width = PLANE_HEIGHT * planeAspect(685 / 407);
+    const dist = fitDistance(width, PLANE_HEIGHT, FOV, 654.4 / 694.4);
+    expect(dist).toBeCloseTo(6.09, 1);
+
+    const OLD_FOG_NEAR = 6;
+    expect(furthest(dist, width)).toBeGreaterThan(OLD_FOG_NEAR);   // the bug
+    expect(fogRange(dist, width, PLANE_HEIGHT)[0]).toBeGreaterThan(furthest(dist, width));
+  });
+});
+
+describe('Tier 2 — the backing plate must stay behind the picture', () => {
+  it('clears the deepest point the photo can recede to', () => {
+    // displacementBias is negative: unlit, distant parts of the photo are pushed
+    // away from the viewer. A plate in front of that point cuts through the image.
+    for (const scale of [0.2, 0.35, 0.5, 0.8, 1.2]) {
+      const deepest = -(scale * 0.55);
+      const frontFace = backingPlateZ(scale) + BACKING_DEPTH / 2;
+      expect(frontFace).toBeLessThan(deepest);
+    }
+  });
+
+  it('reproduces the geometry that hid all but the foreground', () => {
+    // What shipped: plate centred at -0.06, 0.08 thick, so its face sat at -0.02
+    // while the surface reached -0.275. Everything behind -0.02 was swallowed.
+    const shippedFrontFace = -0.06 + 0.08 / 2;
+    const deepest = -(DEPTH_SCALE * 0.55);
+    expect(shippedFrontFace).toBeGreaterThan(deepest);          // the bug
+    expect(backingPlateZ() + BACKING_DEPTH / 2).toBeLessThan(deepest);
+  });
+
+  it('does not push the plate so far back it stops framing the photo', () => {
+    expect(backingPlateZ()).toBeGreaterThan(-1);
   });
 });
