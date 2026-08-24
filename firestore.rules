@@ -84,7 +84,8 @@ service cloud.firestore {
       return data.keys().hasOnly(['title', 'price', 'location', 'bedrooms', 'bathrooms', 'area', 'propertyType', 'compound', 'developer', 'deliveryDate', 'finishing', 'floor', 'view', 'furnished', 'contactPhone', 'amenities', 'areaTo', 'paymentPlans', 'currency', 'pricePeriod', 'guests', 'village', 'yallaSahel', 'lat', 'lng', 'imageUrl', 'images', 'panoramas', 'videoUrl', 'digitalTwinUrl', 'status', 'availability', 'isVerified', 'verificationStatus', 'paymentMethods', 'publishDate', 'unitCode', 'legalDocs', 'authorUid', 'description', 'registrationNumber', 'courtSignatureValidity', 'isResale', 'listingState', 'verifiedBy', 'verifiedAt', 'reviewNote', 'rejectedAt',
                                 'gardenArea', 'roofArea', 'unitModel', 'buildingType', 'floorsDescription',
                                 'maintenanceFee', 'phase', 'projectAreaFeddan', 'greenSpacePercent',
-                                'financing', 'masterPlanUrl', 'floorPlanUrls', 'depthMaps']) &&
+                                'financing', 'masterPlanUrl', 'floorPlanUrls', 'depthMaps',
+                                'projectPriceFrom', 'priceSource', 'priceAsOf']) &&
              data.keys().hasAll(['title', 'price', 'location', 'status']) &&
              data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
              data.price is number && data.price >= 0 &&
@@ -142,6 +143,10 @@ service cloud.firestore {
              (!('buildingType' in data) || (data.buildingType is string && data.buildingType.size() < 80)) &&
              (!('floorsDescription' in data) || (data.floorsDescription is string && data.floorsDescription.size() < 60)) &&
              (!('maintenanceFee' in data) || data.maintenanceFee is number) &&
+             // Project-level pricing is editorial: reviewers set it, owners cannot.
+             (!('projectPriceFrom' in data) || (data.projectPriceFrom is number && data.projectPriceFrom >= 0)) &&
+             (!('priceSource' in data) || (data.priceSource is string && data.priceSource.size() < 200)) &&
+             (!('priceAsOf' in data) || (data.priceAsOf is string && data.priceAsOf.size() < 40)) &&
              (!('phase' in data) || (data.phase is string && data.phase.size() < 80)) &&
              (!('projectAreaFeddan' in data) || data.projectAreaFeddan is number) &&
              (!('greenSpacePercent' in data) || data.greenSpacePercent is number) &&

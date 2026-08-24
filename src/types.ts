@@ -22,6 +22,12 @@ export interface Property {
   areaTo?: number;         // Upper bound when a unit type spans an area range (area = from)
   paymentPlans?: { downPayment?: number; years?: number; note?: string }[]; // Structured installment plans
   currency?: 'EGP' | 'USD'; // Currency the price is quoted in (label only, no conversion)
+  // The lowest advertised price across the whole project. Shown only where this
+  // unit has no price of its own, and always labelled as the project's floor —
+  // it is never a price for this unit.
+  projectPriceFrom?: number;
+  priceSource?: string;    // Who published it, so the figure can be checked
+  priceAsOf?: string;      // When they published it (YYYY-MM-DD)
   pricePeriod?: 'total' | 'night' | 'week' | 'month'; // How the price is quoted (rentals)
   guests?: number;         // Max guests the unit sleeps (coastal rentals)
   village?: string;        // Coastal village / resort (Marassi, Hacienda, Marina ...)

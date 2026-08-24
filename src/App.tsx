@@ -87,9 +87,34 @@ const safeTourUrl = (raw: string | undefined): string | null => {
  * Developer brochures routinely carry no prices at all — every one of the five
  * we tested had none. A listing priced 0 means "ask", not free.
  */
-const priceLabel = (p: Property, isRtl: boolean) =>
-  !p.price ? (isRtl ? 'السعر عند الطلب' : 'Price on request')
-           : `${p.price.toLocaleString()} ${p.currency || 'EGP'}`;
+/**
+ * What stands where a price would go.
+ *
+ * "Price on request" tells a buyer nothing at all. Where the developer has
+ * published what the project starts at, say that instead — as the project's
+ * floor, never as this unit's price.
+ */
+export const priceLabel = (p: Property, isRtl: boolean) => {
+  if (p.price) return `${p.price.toLocaleString()} ${p.currency || 'EGP'}`;
+  if (p.projectPriceFrom) {
+    const amount = `${p.projectPriceFrom.toLocaleString()} ${p.currency || 'EGP'}`;
+    return isRtl ? `المشروع يبدأ من ${amount}` : `Project from ${amount}`;
+  }
+  return isRtl ? 'السعر عند الطلب' : 'Price on request';
+};
+
+/**
+ * The sentence that keeps the figure honest: whose number it is, when they
+ * published it, and that it is not this unit's price. Nothing to say when the
+ * unit carries its own price, or when we cannot name a source.
+ */
+export const priceProvenance = (p: Property, isRtl: boolean): string | null => {
+  if (p.price || !p.projectPriceFrom || !p.priceSource) return null;
+  const when = p.priceAsOf ? ` — ${p.priceAsOf}` : '';
+  return isRtl
+    ? `أقل سعر معلن في المشروع، مش سعر الوحدة دي. المصدر: ${p.priceSource}${when}`
+    : `Lowest advertised price in the project, not this unit's. Source: ${p.priceSource}${when}`;
+};
 
 const pricePeriodSuffix = (period: string | undefined, isRtl: boolean) => {
   switch (period) {
@@ -2290,7 +2315,11 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
               </div>
             </div>
             <div className="text-right bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex sm:flex-col justify-between items-center sm:items-end gap-2 w-full sm:w-auto">
-              <div className="text-2xl font-black text-brand-600 dark:text-brand-400">{priceLabel(property, isRtl)}{property.price ? <span className="text-xs text-slate-400 font-bold">{pricePeriodSuffix(property.pricePeriod, isRtl)}</span> : null}</div>
+              <div className={`font-black text-brand-600 dark:text-brand-400 ${property.price ? 'text-2xl' : 'text-lg'}`}>{priceLabel(property, isRtl)}{property.price ? <span className="text-xs text-slate-400 font-bold">{pricePeriodSuffix(property.pricePeriod, isRtl)}</span> : null}</div>
+              {/* A figure without its source is a rumour. */}
+              {priceProvenance(property, isRtl) && (
+                <p className="text-[10px] leading-snug text-slate-500 dark:text-slate-400 max-w-[15rem] sm:text-right">{priceProvenance(property, isRtl)}</p>
+              )}
               <div className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">{property.status === 'For Sale' ? (isRtl ? 'للبيع' : 'For Sale') : (isRtl ? 'للإيجار' : 'For Rent')}</div>
             </div>
           </div>
