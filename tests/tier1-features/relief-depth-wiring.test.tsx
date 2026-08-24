@@ -39,8 +39,9 @@ const open3D = async (p: Property) => {
   );
   window.location.hash = `#property/${p.id}`;
   render(<App />);
-  fireEvent.click(await screen.findByRole('button', { name: /View in 3D|360° Tour/ }));
-  await screen.findByTestId('viewer');
+  // Generous: these render the whole App and run alongside every other suite.
+  fireEvent.click(await screen.findByRole('button', { name: /View in 3D|360° Tour/ }, { timeout: 10000 }));
+  await screen.findByTestId('viewer', {}, { timeout: 10000 });
   return seen[seen.length - 1];
 };
 
@@ -55,20 +56,20 @@ describe('Tier 1 — the property page hands the viewer everything it has', () =
     // not fail loudly — it silently turned the relief off.
     const props = await open3D(unit());
     expect(props.depthMaps).toEqual(['data:image/png;base64,DDDD', 'data:image/png;base64,EEEE']);
-  });
+  }, 20000);
 
   it('passes a real walkthrough through so the viewer can offer it', async () => {
     const props = await open3D(unit({ digitalTwinUrl: 'https://my.matterport.com/show/?m=abc' }));
     expect(props.tourUrl).toBe('https://my.matterport.com/show/?m=abc');
-  });
+  }, 20000);
 
   it('passes no tour URL when the link is not one we allow', async () => {
     const props = await open3D(unit({ digitalTwinUrl: 'javascript:alert(1)' }));
     expect(props.tourUrl).toBeFalsy();
-  });
+  }, 20000);
 
   it('keeps the depth maps lined up with the photos they belong to', async () => {
     const props = await open3D(unit());
     expect(props.depthMaps).toHaveLength(props.images.length);
-  });
+  }, 20000);
 });

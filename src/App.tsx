@@ -38,9 +38,11 @@ import CookieConsent from './components/CookieConsent';
 import PremiumHero from './components/PremiumHero';
 import EmptyState from './components/EmptyState';
 import { useFocusTrap } from './hooks/useFocusTrap';
+import { lazyWithReload } from './lib/lazyWithReload';
+import { LoadErrorBoundary } from './components/LoadErrorBoundary';
 
 // Lazy-loaded so the heavy three.js bundle is only fetched when a 3D tour is opened
-const Property3DViewer = React.lazy(() => import('./components/Property3DViewer'));
+const Property3DViewer = lazyWithReload(() => import('./components/Property3DViewer'), 'viewer3d');
 
 const Loading3DFallback = () => (
   <div className="fixed inset-0 z-[70] bg-black flex items-center justify-center">
@@ -1815,17 +1817,19 @@ const Viewer3D = ({ property, onClose, isRtl }: { property: Property | undefined
     : [];
 
   return (
-    <React.Suspense fallback={<Loading3DFallback />}>
-      <Property3DViewer
-        images={images}
-        depthMaps={property?.depthMaps}
-        panoramas={property?.panoramas}
-        tourUrl={property?.digitalTwinUrl ? safeTourUrl(property.digitalTwinUrl) : null}
-        title={property?.title}
-        onClose={onClose}
-        isRtl={isRtl}
-      />
-    </React.Suspense>
+    <LoadErrorBoundary onClose={onClose} isRtl={isRtl}>
+      <React.Suspense fallback={<Loading3DFallback />}>
+        <Property3DViewer
+          images={images}
+          depthMaps={property?.depthMaps}
+          panoramas={property?.panoramas}
+          tourUrl={property?.digitalTwinUrl ? safeTourUrl(property.digitalTwinUrl) : null}
+          title={property?.title}
+          onClose={onClose}
+          isRtl={isRtl}
+        />
+      </React.Suspense>
+    </LoadErrorBoundary>
   );
 };
 
@@ -2619,17 +2623,19 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
       </div>
 
       {show3D && (
-        <React.Suspense fallback={<Loading3DFallback />}>
-          <Property3DViewer
-            images={displayImages}
-            depthMaps={property.depthMaps}
-            panoramas={property.panoramas}
-            tourUrl={property.digitalTwinUrl ? safeTourUrl(property.digitalTwinUrl) : null}
-            title={property.title}
-            onClose={() => setShow3D(false)}
-            isRtl={isRtl}
-          />
-        </React.Suspense>
+        <LoadErrorBoundary onClose={() => setShow3D(false)} isRtl={isRtl}>
+          <React.Suspense fallback={<Loading3DFallback />}>
+            <Property3DViewer
+              images={displayImages}
+              depthMaps={property.depthMaps}
+              panoramas={property.panoramas}
+              tourUrl={property.digitalTwinUrl ? safeTourUrl(property.digitalTwinUrl) : null}
+              title={property.title}
+              onClose={() => setShow3D(false)}
+              isRtl={isRtl}
+            />
+          </React.Suspense>
+        </LoadErrorBoundary>
       )}
     </div>
   );
