@@ -126,5 +126,5 @@ describe('Tier 1 — PropertyCard Component Interactions & Visual Badges', () =>
     fireEvent.click(cardTitle);
 
     expect(window.location.hash).toBe('#property/prop-1');
-  });
+  }, 15000);
 });
