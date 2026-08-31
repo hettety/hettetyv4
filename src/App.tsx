@@ -574,7 +574,7 @@ const AuthForm = ({ type, onSwitch, onSubmit, t, isRtl }: { type: 'login' | 'reg
             uid: user.uid,
             name: user.displayName || '',
             email: user.email || '',
-            role: SUPER_ADMIN_EMAILS.includes(user.email || '') ? 'admin' : 'user',
+            role: SUPER_ADMIN_EMAILS.includes((user.email || '').toLowerCase()) ? 'admin' : 'user',
             createdAt: new Date().toISOString()
           });
         }
@@ -634,7 +634,7 @@ const AuthForm = ({ type, onSwitch, onSubmit, t, isRtl }: { type: 'login' | 'reg
           uid: result.user.uid,
           name: name,
           email: email,
-          role: SUPER_ADMIN_EMAILS.includes(email) ? 'admin' : 'user',
+          role: SUPER_ADMIN_EMAILS.includes(email.toLowerCase()) ? 'admin' : 'user',
           createdAt: new Date().toISOString()
         });
         onSubmit(email);
@@ -2495,7 +2495,7 @@ Images: ${property.images?.length ? property.images.join(', ') : property.imageU
             </div>
           </div>
 
-          {property.status === 'For Sale' && (
+          {property.status === 'For Sale' && property.price > 0 && (
             <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
               <h3 className="font-bold text-slate-900 dark:text-white mb-1 flex items-center gap-2"><DollarSign size={18} className="text-brand-500"/> {isRtl ? 'حاسبة التقسيط (تقديرية)' : 'Installment Estimate'}</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">{isRtl ? 'تقدير بأقساط متساوية بدون فوائد — للاسترشاد فقط، مش سعر رسمي.' : 'Rough equal-installment estimate (no interest) — guidance only, not an official quote.'}</p>
@@ -2834,7 +2834,7 @@ const ProfilePage = ({ t, isRtl, onBrowse, onLogout, onLogin, userEmail, userFav
         ...editForm,
         uid: auth.currentUser.uid,
         email: auth.currentUser.email || editForm.email || '',
-        role: 'user',
+        role: profile?.role || (SUPER_ADMIN_EMAILS.includes((auth.currentUser.email || '').toLowerCase()) ? 'admin' : 'user'),
       }, { merge: true });
       setProfile(editForm);
       setIsEditing(false);
@@ -4172,7 +4172,7 @@ const AdminDashboard = ({ isRtl, isSuperAdmin }: { isRtl: boolean; isSuperAdmin:
                        </span>
                      </td>
                      <td className="px-8 py-6 text-right">
-                       {!SUPER_ADMIN_EMAILS.includes(user.email || '') ? (
+                       {!SUPER_ADMIN_EMAILS.includes((user.email || '').toLowerCase()) ? (
                          <div className="flex justify-end gap-2">
                            <Button
                              onClick={() => toggleRole(user.id, user.role)}
@@ -4495,7 +4495,7 @@ export default function App() {
 
       if (user) {
         setUserEmail(user.email);
-        const isSuper = SUPER_ADMIN_EMAILS.includes(user.email || "");
+        const isSuper = SUPER_ADMIN_EMAILS.includes((user.email || "").toLowerCase());
         setIsSuperAdmin(isSuper);
 
         // Fetch user data from Firestore to get role and name

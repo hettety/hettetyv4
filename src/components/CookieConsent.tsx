@@ -218,7 +218,7 @@ const CookieConsent: React.FC<CookieConsentProps> = ({ t, isRtl, onNavigateToLeg
                     <h3 className="text-slate-900 dark:text-white font-semibold mb-1">{t.consent_analytics}</h3>
                     <p className="text-sm text-slate-600 dark:text-slate-400">{t.consent_analytics_desc}</p>
                   </div>
-                  <div className="relative flex items-center justify-center mt-1 ml-4 flex-shrink-0">
+                  <div className="relative flex items-center justify-center mt-1 ms-4 flex-shrink-0">
                     <input
                       type="checkbox"
                       className="peer sr-only"
@@ -227,8 +227,8 @@ const CookieConsent: React.FC<CookieConsentProps> = ({ t, isRtl, onNavigateToLeg
                     />
                     <div className="w-12 h-6 bg-slate-300 dark:bg-slate-600 rounded-full peer-checked:bg-[#047857] dark:peer-checked:bg-[#10B981] transition-colors relative">
                       <div
-                        className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${
-                          preferences.analytics ? 'translate-x-6' : ''
+                        className={`absolute top-1 ${isRtl ? 'right-1' : 'left-1'} bg-white w-4 h-4 rounded-full transition-transform ${
+                          preferences.analytics ? (isRtl ? '-translate-x-6' : 'translate-x-6') : ''
                         }`}
                       ></div>
                     </div>
@@ -241,7 +241,7 @@ const CookieConsent: React.FC<CookieConsentProps> = ({ t, isRtl, onNavigateToLeg
                     <h3 className="text-slate-900 dark:text-white font-semibold mb-1">{t.consent_marketing}</h3>
                     <p className="text-sm text-slate-600 dark:text-slate-400">{t.consent_marketing_desc}</p>
                   </div>
-                  <div className="relative flex items-center justify-center mt-1 ml-4 flex-shrink-0">
+                  <div className="relative flex items-center justify-center mt-1 ms-4 flex-shrink-0">
                     <input
                       type="checkbox"
                       className="peer sr-only"
@@ -250,8 +250,8 @@ const CookieConsent: React.FC<CookieConsentProps> = ({ t, isRtl, onNavigateToLeg
                     />
                     <div className="w-12 h-6 bg-slate-300 dark:bg-slate-600 rounded-full peer-checked:bg-[#047857] dark:peer-checked:bg-[#10B981] transition-colors relative">
                       <div
-                        className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${
-                          preferences.marketing ? 'translate-x-6' : ''
+                        className={`absolute top-1 ${isRtl ? 'right-1' : 'left-1'} bg-white w-4 h-4 rounded-full transition-transform ${
+                          preferences.marketing ? (isRtl ? '-translate-x-6' : 'translate-x-6') : ''
                         }`}
                       ></div>
                     </div>

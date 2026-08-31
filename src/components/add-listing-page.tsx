@@ -1290,7 +1290,7 @@ Return ONLY valid JSON (no markdown), omitting any key you can't find:
                      <input type="file" multiple accept="image/*" onChange={handleImageUpload} className="hidden" id="multi-image-upload" disabled={uploading}/>
                      <label htmlFor="multi-image-upload" className="cursor-pointer block">
                          <Upload className="text-slate-400 mx-auto mb-4 group-hover:text-brand-500 transition-colors" size={40} />
-                         <h3 className="text-lg font-bold text-slate-700 dark:text-slate-300 mb-1">{isRtl ? 'اسحب ואفلت الصور هنا' : 'Drag & Drop Images here'}</h3>
+                         <h3 className="text-lg font-bold text-slate-700 dark:text-slate-300 mb-1">{isRtl ? 'اسحب وأفلت الصور هنا' : 'Drag & Drop Images here'}</h3>
                          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{isRtl ? 'أو انقر للاستعراض' : 'or click to browse'}</p>
                      </label>
                      {uploading && (
