@@ -1,10 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  Sparkles, DollarSign, TrendingUp,
-  CheckCircle2, AlertTriangle, XCircle,
-  Building2, MapPin,
-  Sliders, RefreshCw, Send, User, Layers,
-  Check, Percent, Landmark, PieChart, MessageSquare, Box, Download
+  Sparkles, Building2, MapPin, Sliders, RefreshCw, Send, User, Layers,
+  Check, Landmark, PieChart, MessageSquare, Box, Download,
+  Compass, ShieldCheck, KeyRound, Clock, Bed, CheckCircle2, AlertTriangle, XCircle, FileText
 } from 'lucide-react';
 import { Property, ChatMessage, ChatSession, AdvisorFinancialProfile, AdvisorPropertyFit, InvestmentPurpose } from '../types';
 import { createChat, extract3DMarker, extractAdvisorState, withRetry, isOverloadedError, aiErrorMessage } from '../ai';
@@ -20,7 +18,7 @@ interface RealEstateAdvisorProps {
   onOpenProperty?: (propertyId: string) => void;
 }
 
-// Default benchmark financial yields by Egyptian district & property classification
+// Benchmark yields by Egyptian district & property classification (preserved for algorithmic ranking)
 export const DISTRICT_BENCHMARKS: Record<string, { rentalYield: number; capitalGrowth: number }> = {
   'New Cairo': { rentalYield: 8.5, capitalGrowth: 20 },
   'التجمع': { rentalYield: 8.5, capitalGrowth: 20 },
@@ -53,7 +51,6 @@ export const getDistrictBenchmark = (location: string, propertyType?: string) =>
     }
   }
 
-  // Commercial & Administrative units enjoy 2.5% - 4% higher rental yields in Egypt
   const normType = (propertyType || '').toLowerCase();
   if (normType.includes('office') || normType.includes('مكتب') || normType.includes('retail') || normType.includes('محل') || normType.includes('تجاري')) {
     return {
@@ -62,7 +59,6 @@ export const getDistrictBenchmark = (location: string, propertyType?: string) =>
     };
   }
 
-  // Coastal chalets have high seasonal yields
   if (normType.includes('chalet') || normType.includes('شاليه')) {
     return {
       rentalYield: Math.max(found.rentalYield, 13.0),
@@ -81,7 +77,7 @@ export const calculatePropertyFit = (
   const price = property.price || property.projectPriceFrom || 0;
   const currency = property.currency || 'EGP';
 
-  // 1. Calculate down payment and installment structure
+  // 1. Payment Plan details from listing
   let downPercent = 15;
   let installmentYears = 6;
 
@@ -99,7 +95,7 @@ export const calculatePropertyFit = (
   const remainingPrincipal = Math.max(0, price - downPaymentRequired);
   const monthlyInstallment = installmentYears > 0 ? Math.round(remainingPrincipal / (installmentYears * 12)) : 0;
 
-  // 2. Yield & ROI metrics
+  // 2. Real Estate Benchmark Metrics
   const benchmark = getDistrictBenchmark(property.location, property.propertyType);
   const rentalYieldPercent = benchmark.rentalYield;
   const capitalAppreciationPercent = benchmark.capitalGrowth;
@@ -108,14 +104,73 @@ export const calculatePropertyFit = (
   const totalAnnualGain = estimatedAnnualRent + Math.round(price * (capitalAppreciationPercent / 100));
   const paybackYears = totalAnnualGain > 0 ? Math.round((price / totalAnnualGain) * 10) / 10 : 10;
 
-  // 3. Score & Suitability
+  // 3. Real Estate Advisory Suitability & Scoring
   const reasons: string[] = [];
-  let score = 100;
+  let score = 95;
 
-  // Budget comparison
+  // District / Location Evaluation
+  if (profile.preferredLocation && profile.preferredLocation !== 'all' && profile.preferredLocation !== 'All') {
+    const locMatch = (property.location || '').toLowerCase().includes(profile.preferredLocation.toLowerCase());
+    if (locMatch) {
+      score += 10;
+      reasons.push(isRtl ? `الموقع يطابق المنطقة المستهدفة بالكامل (${property.location})` : `Location matches preferred target area (${property.location})`);
+    } else {
+      score -= 30;
+      reasons.push(isRtl ? `يقع خارج المنطقة المستهدفة المحددة (${property.location})` : `Located outside target district (${property.location})`);
+    }
+  } else {
+    reasons.push(isRtl ? `موقع مميز واستراتيجي في ${property.location}` : `Strategic prime location in ${property.location}`);
+  }
+
+  // Property Type Evaluation
+  if (profile.propertyType && profile.propertyType !== 'All' && profile.propertyType !== 'all') {
+    const typeMatch = (property.propertyType || '').toLowerCase().includes(profile.propertyType.toLowerCase());
+    if (typeMatch) {
+      score += 10;
+      reasons.push(isRtl ? `نوع الوحدة يطابق اختيارك (${property.propertyType})` : `Property type matches specification (${property.propertyType})`);
+    } else {
+      score -= 20;
+    }
+  }
+
+  // Delivery Timeline Evaluation
+  if (profile.deliveryTimeline && profile.deliveryTimeline !== 'all') {
+    const isReady = property.status === 'ready' || (property.deliveryTimeline && property.deliveryTimeline.toLowerCase().includes('ready'));
+    if (profile.deliveryTimeline === 'ready') {
+      if (isReady) {
+        score += 10;
+        reasons.push(isRtl ? 'جاهز للاستلام الفوري بدون فترات انتظار' : 'Ready to move immediately');
+      } else {
+        score -= 15;
+      }
+    } else if (profile.deliveryTimeline === '1-2years') {
+      reasons.push(isRtl ? 'موعد استلام قريب مع تيسيرات سداد ممتدة' : 'Near-term handover with flexible payment milestones');
+    }
+  }
+
+  // Purpose Evaluation
+  if (profile.purpose === 'coastal') {
+    if (property.yallaSahel || (property.propertyType && property.propertyType.toLowerCase().includes('chalet'))) {
+      score += 15;
+      reasons.push(isRtl ? 'وحدة ساحلية ممتازة للمصايف والعطلات الصيفية' : 'Prime coastal unit for vacation and seasonal enjoyment');
+    }
+  } else if (profile.purpose === 'investment') {
+    reasons.push(isRtl ? 'عقار يتميز بطلب إيجاري قوي وموقع حيوي للمستأجرين' : 'High tenant demand with sustained rental appeal');
+  } else if (profile.purpose === 'residential') {
+    reasons.push(isRtl ? 'بيئة سكنية متكاملة الخدمات مناسبة للأسرة والاستقرار' : 'Family-oriented community with comprehensive amenities');
+  }
+
+  // Interactive 3D Tour Check
+  const has3D = !!(property.panoramas?.length || property.digitalTwinUrl || (property.images && property.images.length > 1));
+  if (has3D) {
+    score += 5;
+    reasons.push(isRtl ? 'متوفر جولة افتراضية 3D لمعاينة تفاصيل الوحدة' : 'Interactive 3D virtual tour available');
+  }
+
+  // Budget comparison (when explicitly provided)
   if (profile.budget > 0 && price > 0) {
     if (price <= profile.budget) {
-      reasons.push(isRtl ? `السعر ضمن ميزانيتك المقدرة (${price.toLocaleString()} ${currency})` : `Price within your target budget (${price.toLocaleString()} ${currency})`);
+      reasons.push(isRtl ? `السعر ضمن النطاق المقدر (${price.toLocaleString()} ${currency})` : `Price within target range (${price.toLocaleString()} ${currency})`);
     } else {
       const diff = price - profile.budget;
       const ratio = diff / profile.budget;
@@ -124,16 +179,14 @@ export const calculatePropertyFit = (
         reasons.push(isRtl ? `أعلى من الميزانية بنسبة طفيفة (${Math.round(ratio * 100)}%) — يمكن تعويضها بالقسط المريح` : `Slightly above budget (${Math.round(ratio * 100)}%) — manageable with installments`);
       } else {
         score -= 35;
-        reasons.push(isRtl ? `يتجاوز الميزانية بـ ${diff.toLocaleString()} ${currency}` : `Exceeds total budget by ${diff.toLocaleString()} ${currency}`);
+        reasons.push(isRtl ? `يتجاوز النطاق بـ ${diff.toLocaleString()} ${currency}` : `Exceeds target budget by ${diff.toLocaleString()} ${currency}`);
       }
     }
   }
 
-  // Down payment comparison
+  // Down Payment & Monthly Capacity Check (when explicitly provided)
   if (profile.downPayment > 0 && downPaymentRequired > 0) {
-    if (downPaymentRequired <= profile.downPayment) {
-      reasons.push(isRtl ? `المقدم المطلوب (${downPaymentRequired.toLocaleString()} ${currency} - ${downPercent}%) متاح بالكامل في كاشك` : `Required down payment (${downPaymentRequired.toLocaleString()} ${currency} - ${downPercent}%) fully covered`);
-    } else {
+    if (downPaymentRequired > profile.downPayment) {
       const downDiff = downPaymentRequired - profile.downPayment;
       if (downDiff <= profile.downPayment * 0.2) {
         score -= 10;
@@ -145,11 +198,8 @@ export const calculatePropertyFit = (
     }
   }
 
-  // Monthly installment comparison
   if (profile.monthlyCapacity > 0 && monthlyInstallment > 0) {
-    if (monthlyInstallment <= profile.monthlyCapacity) {
-      reasons.push(isRtl ? `القسط الشهري (${monthlyInstallment.toLocaleString()} ${currency}/شهر) مناسب لقدرتك المحددة` : `Monthly payment (${monthlyInstallment.toLocaleString()} ${currency}/mo) fits your capacity`);
-    } else {
+    if (monthlyInstallment > profile.monthlyCapacity) {
       const instDiff = monthlyInstallment - profile.monthlyCapacity;
       if (instDiff <= profile.monthlyCapacity * 0.15) {
         score -= 15;
@@ -158,28 +208,6 @@ export const calculatePropertyFit = (
         score -= 35;
         reasons.push(isRtl ? `القسط الشهري (${monthlyInstallment.toLocaleString()} ${currency}) يتخطى قدرتك المريحة` : `Monthly payment (${monthlyInstallment.toLocaleString()} ${currency}) exceeds comfortable limit`);
       }
-    }
-  }
-
-  // Location filter check
-  if (profile.preferredLocation && profile.preferredLocation !== 'all' && profile.preferredLocation !== 'All') {
-    const locMatch = property.location.toLowerCase().includes(profile.preferredLocation.toLowerCase());
-    if (locMatch) {
-      score += 5;
-      reasons.push(isRtl ? `الموقع يطابق المنطقة المستهدفة (${property.location})` : `Location matches preferred area (${property.location})`);
-    } else {
-      score -= 15;
-    }
-  }
-
-  // Purpose check
-  if (profile.purpose === 'coastal' && (property.yallaSahel || property.propertyType === 'Chalet')) {
-    score += 10;
-    reasons.push(isRtl ? 'وحدة ساحلية ممتازة للإيجار الصيفي والعطلات' : 'Prime coastal unit for vacation rental');
-  } else if (profile.purpose === 'investment') {
-    if (rentalYieldPercent >= 9.0) {
-      score += 10;
-      reasons.push(isRtl ? `عائد إيجاري جذاب (${rentalYieldPercent}%) يتفوق على متوسط السوق` : `Attractive rental yield (${rentalYieldPercent}%) beating market average`);
     }
   }
 
@@ -192,7 +220,6 @@ export const calculatePropertyFit = (
   const exceedsMonthly = profile.monthlyCapacity > 0 && monthlyInstallment > profile.monthlyCapacity;
 
   if (finalScore >= 80) {
-    // If any ceiling is exceeded, downgrade to stretch
     category = (exceedsBudget || exceedsDown || exceedsMonthly) ? 'stretch' : 'perfect';
   } else if (finalScore >= 55) {
     category = 'stretch';
@@ -228,16 +255,18 @@ export const RealEstateAdvisor: React.FC<RealEstateAdvisorProps> = ({
   const [activeView, setActiveView] = useState<'split' | 'dashboard' | 'chat'>('split');
   const [fitCategoryFilter, setFitCategoryFilter] = useState<'all' | 'perfect' | 'stretch' | 'mismatch'>('all');
 
-  // User financial profile state
+  // Real estate search & consultation profile (zero hardcoded numbers)
   const [profile, setProfile] = useState<AdvisorFinancialProfile>({
-    budget: 5000000,
-    downPayment: 1000000,
-    monthlyCapacity: 45000,
+    budget: 0,
+    downPayment: 0,
+    monthlyCapacity: 0,
     currency: 'EGP',
-    purpose: 'investment',
+    purpose: 'all',
     preferredLocation: 'all',
     propertyType: 'All',
     deliveryTimeline: 'all',
+    preferredPaymentPlan: 'all',
+    bedrooms: 'all',
   });
 
   // Chat State
@@ -266,19 +295,11 @@ export const RealEstateAdvisor: React.FC<RealEstateAdvisorProps> = ({
     const perfectCount = evaluatedProperties.filter(p => p.category === 'perfect').length;
     const stretchCount = evaluatedProperties.filter(p => p.category === 'stretch').length;
     const mismatchCount = evaluatedProperties.filter(p => p.category === 'mismatch').length;
-    const avgYield = evaluatedProperties.length
-      ? (evaluatedProperties.reduce((acc, curr) => acc + curr.rentalYieldPercent, 0) / evaluatedProperties.length).toFixed(1)
-      : '8.5';
-    const maxYield = evaluatedProperties.length
-      ? Math.max(...evaluatedProperties.map(p => p.rentalYieldPercent)).toFixed(1)
-      : '14.0';
 
     return {
       perfectCount,
       stretchCount,
       mismatchCount,
-      avgYield,
-      maxYield,
       totalCount: evaluatedProperties.length,
     };
   }, [evaluatedProperties]);
@@ -335,40 +356,51 @@ export const RealEstateAdvisor: React.FC<RealEstateAdvisorProps> = ({
 
   // Initialize Real Estate Advisor System Instruction
   useEffect(() => {
-    const systemInstruction = `You are HETTETY Real Estate & Investment Advisor (المستشار العقاري والمالي الرسمي لمنصة حتتي).
-You are a senior real estate financial consultant specialized in the Egyptian market.
+    const systemInstruction = `You are HETTETY Smart Real Estate Advisor (المستشار العقاري الرسمي لمنصة حِتّتي).
+You are a senior, unbiased real estate consultant specialized in the Egyptian real estate market.
 
-## Key Capabilities:
-1. Deep Financial Intelligence:
-   - Calculate cashflow, down payments, installments, and annual rental yields (العائد الإيجاري السنوي).
-   - Understand Egyptian district trends: New Cairo (التجمع الخامس), Sheikh Zayed (الشيخ زايد), North Coast (الساحل الشمالي), New Capital (العاصمة الإدارية), etc.
-   - Advise on residential vs. commercial/administrative yields (commercial usually yields 10-14% vs 7-9% residential).
-2. Two-Way Dashboard Synchronization:
-   - Whenever the user mentions or implies their budget, down payment, monthly payment capability, target district, or investment goal, you MUST extract it.
-   - At the VERY END of your response, ALWAYS append the exact token:
-     [ADVISOR_STATE:{"budget":<number>,"downPayment":<number>,"monthlyCapacity":<number>,"currency":"EGP"|"USD","purpose":"residential"|"investment"|"resale"|"coastal","preferredLocation":"<string>"}]
-     Only include keys you can determine or update.
-3. 3D Tour Launcher:
-   - When the user asks to see or tour a property, append [SHOW_3D:<propertyId>] at the end.
-4. Professional, Encouraging & Trustworthy Tone:
-   - Never say "I cannot provide investment advice." Instead, provide rigorous mathematical analysis based on market data.
-   - Remind users that legal documentation should be verified at the Real Estate Publicity Department (الشهر العقاري).
+## Core Role & Principles:
+1. Pure, Unbiased Real Estate Consulting:
+   - Provide comprehensive real estate guidance: project comparisons, location strategic advantages, developer track records, masterplans, and delivery timelines.
+   - You NEVER fabricate return on investment percentages or financial wealth accumulation promises.
+   - You evaluate properties based on actual physical features: location, finishing quality, developer reliability, amenities, layout, and payment flexibilities.
+2. District & Location Expertise:
+   - Deep knowledge of Egyptian growth corridors: New Cairo (التجمع الخامس / بيت الوطن / التجمع السادس), Sheikh Zayed & October (الشيخ زايد / الحزام الأخضر / حدائق أكتوبر), North Coast (سيدي عبد الرحمن / رأس الحكمة), New Capital (العاصمة الإدارية / الحي السكني R7 / R8 / منطقة الأعمال المركزية CBD), Maadi, and Shorouk/Mostakbal City.
+3. Developer & Project Due Diligence:
+   - Guide clients on verifying construction licenses, land allocation, and registration at the Real Estate Publicity Department (الشهر العقاري).
+   - Advise on evaluating delivery track records and maintenance deposits.
+4. Interactive 3D Tour Launcher:
+   - When the user asks to see or tour a property in 3D, append [SHOW_3D:<propertyId>] at the very end of your response.
+5. Two-Way State Synchronization:
+   - When the user specifies or refines preferences (preferred district, property type, delivery timeline, or purchase objective), you can update the state by appending:
+     [ADVISOR_STATE:{"preferredLocation":"<string>","propertyType":"<string>","deliveryTimeline":"ready"|"1-2years"|"3+years"|"all","purpose":"residential"|"investment"|"resale"|"coastal"|"all"}]
+     Only include keys you can determine.
 
 ${userName ? `The user's name is ${userName}. Address them warmly by name.` : ''}
 
-Current User Profile State:
-${JSON.stringify(profile)}
+Current User Search Preferences:
+${JSON.stringify({
+  location: profile.preferredLocation,
+  propertyType: profile.propertyType,
+  timeline: profile.deliveryTimeline,
+  purpose: profile.purpose,
+  paymentPlan: profile.preferredPaymentPlan,
+  bedrooms: profile.bedrooms
+})}
 
 Available Platform Inventory:
 ${JSON.stringify(properties.map(p => ({
   id: p.id,
   title: p.title,
   price: p.price,
+  currency: p.currency || 'EGP',
   location: p.location,
   type: p.propertyType,
   status: p.status,
-  downPaymentEstimate: Math.round(p.price * 0.15),
-  monthlyInstallmentEstimate: Math.round((p.price * 0.85) / 72),
+  delivery: p.deliveryTimeline || p.status,
+  bedrooms: p.bedrooms,
+  area: p.area,
+  paymentPlans: p.paymentPlans,
   has3D: !!(p.panoramas?.length || p.digitalTwinUrl || (p.images && p.images.length > 1))
 })), null, 2)}
 `;
@@ -458,7 +490,7 @@ ${JSON.stringify(properties.map(p => ({
       console.error("Advisor chat error:", error);
       setMessages(prev => [...prev, {
         role: 'model',
-        text: isRtl ? 'حدث خطأ أثناء معالجة استشارتك. يرجى المحاولة مرة أخرى.' : 'An error occurred while processing your consultation. Please try again.',
+        text: isRtl ? 'حدث خطأ أثناء معالجة استشارتك العقارية. يرجى المحاولة مرة أخرى.' : 'An error occurred while processing your real estate consultation. Please try again.',
         timestamp: new Date()
       }]);
     } finally {
@@ -468,8 +500,8 @@ ${JSON.stringify(properties.map(p => ({
 
   const handleAskAboutUnit = (propFit: AdvisorPropertyFit) => {
     const prompt = isRtl
-      ? `أريد تحليلك الاستشاري لهذه الوحدة: "${propFit.property.title}" في ${propFit.property.location} بسعر ${propFit.property.price.toLocaleString()} ج.م. ما هو تقييمك لعائدها الاستثماري ومدى ملاءمتها لميزانيتي؟`
-      : `I need your advisory evaluation for this unit: "${propFit.property.title}" in ${propFit.property.location} priced at ${propFit.property.price.toLocaleString()} EGP. What is your assessment of its ROI and fit with my budget?`;
+      ? `أريد استشارتك العقارية بخصوص وحدة "${propFit.property.title}" في ${propFit.property.location}. ما هو تقييمك لموقعها، سابقة أعمال المطور، ومطابقتها لمتطلباتي؟`
+      : `I need your real estate consultation regarding "${propFit.property.title}" in ${propFit.property.location}. What is your assessment of its location, developer credibility, and fit for my needs?`;
     
     if (activeView === 'dashboard') {
       setActiveView(window.innerWidth >= 1024 ? 'split' : 'chat');
@@ -479,56 +511,54 @@ ${JSON.stringify(properties.map(p => ({
 
   const handleExportReport = () => {
     const reportDate = new Date().toLocaleDateString();
-    const content = `HETTETY AI Real Estate & Financial Advisory Report
+    const content = `HETTETY Real Estate Advisory & Project Guide
 =====================================================
-Client: ${userName || 'Valued Investor'}
+Client: ${userName || 'Valued Client'}
 Date: ${reportDate}
-Currency: ${profile.currency}
 
-FINANCIAL PROFILE & PARAMETERS
+REAL ESTATE CONSULTATION PARAMETERS
 -----------------------------------------------------
-- Total Target Budget: ${profile.budget.toLocaleString()} ${profile.currency}
-- Available Cash (Down Payment): ${profile.downPayment.toLocaleString()} ${profile.currency}
-- Max Monthly Installment Capacity: ${profile.monthlyCapacity.toLocaleString()} ${profile.currency}/month
-- Investment Objective: ${profile.purpose}
-- Target District: ${profile.preferredLocation}
-- Delivery Timeline: ${profile.deliveryTimeline}
+- Target District: ${profile.preferredLocation === 'all' ? 'All Districts' : profile.preferredLocation}
+- Property Type: ${profile.propertyType === 'All' ? 'All Types' : profile.propertyType}
+- Purchase Objective: ${profile.purpose}
+- Handover / Delivery Status: ${profile.deliveryTimeline}
+- Preferred Payment Strategy: ${profile.preferredPaymentPlan || 'All Plans'}
+- Bedrooms / Space: ${profile.bedrooms || 'All'}
 
-MACRO YIELD & ROI PROJECTIONS
+STRATEGIC ADVISORY PILLARS
 -----------------------------------------------------
-- Average Annual Rental Yield: ${stats.avgYield}%
-- Projected Capital Growth: ~20%
-- Estimated 5-Year Rental Return: ${Math.round(profile.budget * (Number(stats.avgYield) / 100) * 5).toLocaleString()} ${profile.currency}
-- Estimated 5-Year Asset Value: ~${Math.round(profile.budget * 1.75).toLocaleString()} ${profile.currency}
+1. Developer Track Record: Licensed projects with verified execution and delivery history.
+2. Strategic Location: Direct connectivity to main transit arteries, international schools, and commercial centres.
+3. Handover & Construction Status: On-site construction verification and approved architectural finishing specs.
+4. Flexible Payment Terms: Multi-year developer installments, low down payment options, and transparent contracts.
 
-SUITABILITY MATCHING SUMMARY
+EVALUATED PROPERTIES SUMMARY
 -----------------------------------------------------
-Total Evaluated Properties: ${evaluatedProperties.length}
-* Perfect Matches (مناسب تماماً): ${stats.perfectCount}
-* Stretch Matches (فرص واعدة / تعديل بسيط): ${stats.stretchCount}
-* Mismatched / Out of Scope (غير متوافق حالياً): ${stats.mismatchCount}
+Total Properties Evaluated: ${evaluatedProperties.length}
+* Highly Recommended Matches: ${stats.perfectCount}
+* Promising Opportunities: ${stats.stretchCount}
+* Alternative Options: ${stats.mismatchCount}
 
 TOP RECOMMENDED PROPERTIES:
 ${evaluatedProperties.slice(0, 8).map((p, idx) => `
 ${idx + 1}. [${p.category.toUpperCase()}] ${p.property.title}
-   - Price: ${p.property.price.toLocaleString()} ${p.property.currency || 'EGP'}
    - Location: ${p.property.location}
-   - Required Down Payment: ${p.downPaymentRequired.toLocaleString()}
-   - Monthly Installment: ${p.monthlyInstallment.toLocaleString()}
-   - Est. Rental Yield: ${p.rentalYieldPercent}%
-   - Suitability Score: ${p.matchScore}%
-   - Key Factors: ${p.reasons.join(' | ')}
+   - Property Type: ${p.property.propertyType}
+   - Price: ${p.property.price ? `${p.property.price.toLocaleString()} ${p.property.currency || 'EGP'}` : 'On Request'}
+   - Handover Status: ${p.property.deliveryTimeline || p.property.status}
+   - Match Score: ${p.matchScore}%
+   - Key Advisory Factors: ${p.reasons.join(' | ')}
 `).join('')}
 
 -----------------------------------------------------
-Disclaimer: Generated by HETTETY AI Advisor for financial planning purposes based on Egyptian market benchmarks. Legal documentation and ownership must be verified with official departments.
+Disclaimer: Provided by HETTETY Smart Real Estate Advisor for property selection and guidance purposes. Contract terms and property deeds must be verified through the official Real Estate Publicity Department (الشهر العقاري).
 `;
 
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `hettety-advisory-report-${new Date().toISOString().slice(0, 10)}.txt`;
+    link.download = `hettety-real-estate-report-${new Date().toISOString().slice(0, 10)}.txt`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -547,41 +577,47 @@ Disclaimer: Generated by HETTETY AI Advisor for financial planning purposes base
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="font-heading font-black text-base sm:text-lg tracking-tight">
-                  {t.advisor_title || 'المستشار العقاري والمالي'}
+                  {t.advisor_title || (isRtl ? 'المستشار العقاري الذكي' : 'Smart Real Estate Advisor')}
                 </h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-accent-100 dark:bg-accent-900/30 text-accent-700 dark:text-accent-300">
-                  AI Advisor Pro
+                  {isRtl ? 'مستشار حِتّتي المعتمد' : 'Hettety Advisor'}
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 font-medium line-clamp-1">
-                {t.advisor_subtitle || 'تخطيط ذكي للميزانية، حساب العائد السنوي والنمو الرأسمالي، وفحص دقيق لملاءمة العقارات.'}
+                {t.advisor_subtitle || (isRtl ? 'مستشارك العقاري الموثوق لاختيار أفضل العقارات، مقارنة المشروعات، وفحص خطط السداد وتاريخ المطورين.' : 'Your dedicated real estate consultant for choosing ideal properties, comparing projects, and evaluating payment plans.')}
               </p>
             </div>
           </div>
 
-          {/* Quick Metrics Capsule */}
-          <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto w-full md:w-auto pb-1 md:pb-0 text-xs">
+          {/* Real Estate Indicators Capsule */}
+          <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto w-full md:w-auto pb-1 md:pb-0 text-xs">
             <div className="bg-slate-100 dark:bg-slate-800/70 px-3 py-1.5 rounded-xl border border-slate-200/60 dark:border-slate-700 flex items-center gap-2 shrink-0">
-              <DollarSign size={14} className="text-brand-500" />
+              <Compass size={14} className="text-brand-500" />
               <div>
-                <span className="text-slate-400 block text-[9px] font-bold">{isRtl ? 'الميزانية' : 'Budget'}</span>
-                <span className="font-black text-brand-600 dark:text-brand-400">{(profile.budget).toLocaleString()} {profile.currency}</span>
+                <span className="text-slate-400 block text-[9px] font-bold">{isRtl ? 'المنطقة المستهدفة' : 'Target District'}</span>
+                <span className="font-black text-brand-600 dark:text-brand-400">
+                  {profile.preferredLocation === 'all' ? (isRtl ? 'كافة المناطق' : 'All Districts') : profile.preferredLocation}
+                </span>
               </div>
             </div>
 
             <div className="bg-slate-100 dark:bg-slate-800/70 px-3 py-1.5 rounded-xl border border-slate-200/60 dark:border-slate-700 flex items-center gap-2 shrink-0">
-              <TrendingUp size={14} className="text-emerald-500" />
+              <Building2 size={14} className="text-blue-500" />
               <div>
-                <span className="text-slate-400 block text-[9px] font-bold">{isRtl ? 'متوسط العائد' : 'Avg Yield'}</span>
-                <span className="font-black text-emerald-600 dark:text-emerald-400">~{stats.avgYield}% {isRtl ? 'سنوياً' : '/yr'}</span>
+                <span className="text-slate-400 block text-[9px] font-bold">{isRtl ? 'نوع العقار' : 'Property Type'}</span>
+                <span className="font-black text-blue-600 dark:text-blue-400">
+                  {profile.propertyType === 'All' ? (isRtl ? 'كافة الأنواع' : 'All Types') : profile.propertyType}
+                </span>
               </div>
             </div>
 
             <div className="bg-slate-100 dark:bg-slate-800/70 px-3 py-1.5 rounded-xl border border-slate-200/60 dark:border-slate-700 flex items-center gap-2 shrink-0">
-              <CheckCircle2 size={14} className="text-green-500" />
+              <CheckCircle2 size={14} className="text-emerald-500" />
               <div>
-                <span className="text-slate-400 block text-[9px] font-bold">{isRtl ? 'عقارات مناسبة' : 'Matches'}</span>
-                <span className="font-black text-green-600 dark:text-green-400">{stats.perfectCount} {isRtl ? 'عقار' : 'units'}</span>
+                <span className="text-slate-400 block text-[9px] font-bold">{isRtl ? 'عقارات مطابقة' : 'Matching Units'}</span>
+                <span className="font-black text-emerald-600 dark:text-emerald-400">
+                  {filteredProperties.length} {isRtl ? 'عقار متاح' : 'units'}
+                </span>
               </div>
             </div>
 
@@ -592,30 +628,30 @@ Disclaimer: Generated by HETTETY AI Advisor for financial planning purposes base
                 onClick={() => setActiveView('split')}
                 className={`hidden lg:flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${activeView === 'split' ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'}`}
               >
-                <Layers size={13} /> {t.advisor_tab_split || 'عرض منقسم'}
+                <Layers size={13} /> {t.advisor_tab_split || (isRtl ? 'عرض منقسم' : 'Split View')}
               </button>
               <button
                 type="button"
                 onClick={() => setActiveView('dashboard')}
                 className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${activeView === 'dashboard' ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'}`}
               >
-                <PieChart size={13} /> {t.advisor_tab_dashboard || 'الداش بورد'}
+                <PieChart size={13} /> {t.advisor_tab_dashboard || (isRtl ? 'دليل العقارات' : 'Projects Guide')}
               </button>
               <button
                 type="button"
                 onClick={() => setActiveView('chat')}
                 className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${activeView === 'chat' ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'}`}
               >
-                <MessageSquare size={13} /> {t.advisor_tab_chat || 'الشات'}
+                <MessageSquare size={13} /> {t.advisor_tab_chat || (isRtl ? 'المحادثة' : 'Chat')}
               </button>
             </div>
 
-            {/* Export Plan Report Button */}
+            {/* Export Report Button */}
             <button
               type="button"
               onClick={handleExportReport}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer bg-brand-50 hover:bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-800 shrink-0"
-              title={isRtl ? 'تحميل تقرير الاستشارة المالي' : 'Export Financial Advisory Report'}
+              title={isRtl ? 'تحميل تقرير الاستشارة العقارية' : 'Export Real Estate Report'}
             >
               <Download size={13} />
               <span className="hidden sm:inline">{isRtl ? 'تصدير التقرير' : 'Export Report'}</span>
@@ -626,21 +662,21 @@ Disclaimer: Generated by HETTETY AI Advisor for financial planning purposes base
 
       {/* Main Container */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* LEFT / MAIN: Financial & Fit Dashboard */}
+        {/* LEFT / MAIN: Real Estate Advisory Dashboard */}
         <div className={`flex-1 flex-col overflow-y-auto custom-scrollbar p-4 sm:p-6 lg:p-8 space-y-8 ${activeView === 'chat' ? 'hidden' : 'flex'} ${activeView === 'split' ? 'lg:w-[55%] xl:w-[60%]' : 'w-full'}`}>
-          {/* Section 1: Financial Profile Controls */}
+          {/* Section 1: Real Estate Search & Advisory Criteria */}
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400">
-                  <Sliders size={18} />
+                  <Compass size={18} />
                 </div>
                 <div>
                   <h2 className="font-heading font-bold text-base text-slate-900 dark:text-white">
-                    {isRtl ? 'محددات ملفك المالي والاستثماري' : 'Your Financial & Investment Parameters'}
+                    {isRtl ? 'محددات البحث والاستشارة العقارية' : 'Real Estate Search & Advisory Criteria'}
                   </h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {isRtl ? 'عدّل القيم بالسلايدر وسيتم تحديث الحسابات والعقارات المتوافقة لحظياً' : 'Adjust sliders below to live recalculate yields and matching properties'}
+                    {isRtl ? 'حدد متطلباتك العقارية لتحليل ومقارنة أفضل المشروعات والمطورين المتاحين' : 'Specify your property preferences to evaluate and compare top projects and developers'}
                   </p>
                 </div>
               </div>
@@ -648,14 +684,16 @@ Disclaimer: Generated by HETTETY AI Advisor for financial planning purposes base
               <button
                 type="button"
                 onClick={() => setProfile({
-                  budget: 5000000,
-                  downPayment: 1000000,
-                  monthlyCapacity: 45000,
+                  budget: 0,
+                  downPayment: 0,
+                  monthlyCapacity: 0,
                   currency: 'EGP',
-                  purpose: 'investment',
+                  purpose: 'all',
                   preferredLocation: 'all',
                   propertyType: 'All',
                   deliveryTimeline: 'all',
+                  preferredPaymentPlan: 'all',
+                  bedrooms: 'all',
                 })}
                 className="text-xs font-bold text-slate-400 hover:text-brand-600 flex items-center gap-1 cursor-pointer transition-colors"
                 title={isRtl ? 'إعادة ضبط' : 'Reset'}
@@ -664,165 +702,17 @@ Disclaimer: Generated by HETTETY AI Advisor for financial planning purposes base
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Total Budget */}
-              <div className="space-y-2 bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-                <div className="flex justify-between items-center text-xs font-bold">
-                  <span className="text-slate-600 dark:text-slate-300">{t.advisor_budget_label || 'الميزانية المستهدفة'}</span>
-                  <span className="text-brand-600 dark:text-brand-400 font-black text-sm">
-                    {profile.budget.toLocaleString()} {profile.currency}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={500000}
-                  max={100000000}
-                  step={250000}
-                  value={profile.budget}
-                  onChange={(e) => setProfile(prev => ({ ...prev, budget: Number(e.target.value) }))}
-                  className="w-full accent-brand-600 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-slate-400 font-medium">
-                  <span>500k</span>
-                  <span>25M</span>
-                  <span>50M</span>
-                  <span>100M+</span>
-                </div>
-              </div>
-
-              {/* Available Down Payment */}
-              <div className="space-y-2 bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-                <div className="flex justify-between items-center text-xs font-bold">
-                  <span className="text-slate-600 dark:text-slate-300">{t.advisor_down_payment_label || 'الكاش المتاح (المقدم)'}</span>
-                  <span className="text-brand-600 dark:text-brand-400 font-black text-sm">
-                    {profile.downPayment.toLocaleString()} {profile.currency}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={100000}
-                  max={Math.min(profile.budget, 50000000)}
-                  step={100000}
-                  value={profile.downPayment}
-                  onChange={(e) => setProfile(prev => ({ ...prev, downPayment: Number(e.target.value) }))}
-                  className="w-full accent-brand-600 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-slate-400 font-medium">
-                  <span>100k</span>
-                  <span>{Math.round((profile.downPayment / (profile.budget || 1)) * 100)}% {isRtl ? 'من الميزانية' : 'of budget'}</span>
-                  <span>50M</span>
-                </div>
-              </div>
-
-              {/* Monthly Installment Capacity */}
-              <div className="space-y-2 bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-                <div className="flex justify-between items-center text-xs font-bold">
-                  <span className="text-slate-600 dark:text-slate-300">{t.advisor_monthly_capacity_label || 'أقصى قسط شهري'}</span>
-                  <span className="text-brand-600 dark:text-brand-400 font-black text-sm">
-                    {profile.monthlyCapacity.toLocaleString()} {profile.currency}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={10000}
-                  max={1000000}
-                  step={10000}
-                  value={profile.monthlyCapacity}
-                  onChange={(e) => setProfile(prev => ({ ...prev, monthlyCapacity: Number(e.target.value) }))}
-                  className="w-full accent-brand-600 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-slate-400 font-medium">
-                  <span>10k/mo</span>
-                  <span>250k/mo</span>
-                  <span>1M/mo</span>
-                </div>
-              </div>
-            </div>
-
-            {/* 5-Year Wealth Accumulation & Financial Projection Banner */}
-            <div className="bg-gradient-to-r from-slate-900 via-brand-950 to-slate-900 text-white p-5 rounded-2xl border border-brand-800/40 shadow-md">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-white/10 pb-3 mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 rounded-xl bg-brand-500/20 text-brand-300">
-                    <Landmark size={20} />
-                  </div>
-                  <div>
-                    <h3 className="font-heading font-black text-sm sm:text-base text-white">
-                      {isRtl ? 'العائد التراكمي المتوقع خلال 5 سنوات' : 'Projected 5-Year Wealth Accumulation'}
-                    </h3>
-                    <p className="text-[11px] text-slate-300">
-                      {isRtl ? `بناءً على ميزانية ${profile.budget.toLocaleString()} ${profile.currency} ومؤشرات السوق المصرية الحالية` : `Based on your ${profile.budget.toLocaleString()} ${profile.currency} budget and Egyptian market benchmarks`}
-                    </p>
-                  </div>
-                </div>
-                <div className="text-end">
-                  <span className="text-[10px] text-slate-400 block font-bold">{isRtl ? 'القيمة المستقبلية التقديرية للأصل' : 'Est. Future Asset Value'}</span>
-                  <span className="text-lg font-black text-emerald-400">
-                    ~{Math.round(profile.budget * 1.75).toLocaleString()} {profile.currency}
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                <div className="bg-white/5 p-3 rounded-xl border border-white/5">
-                  <span className="text-slate-400 text-[10px] block font-semibold">{isRtl ? 'إجمالي الأقساط الموزعة' : 'Installments Financed'}</span>
-                  <span className="font-black text-white text-sm">
-                    {Math.max(0, profile.budget - profile.downPayment).toLocaleString()} {profile.currency}
-                  </span>
-                  <span className="text-[10px] text-slate-400 block mt-0.5">
-                    {isRtl ? `على مدار 6-8 سنوات مريحة` : `over 6-8 flexible years`}
-                  </span>
-                </div>
-
-                <div className="bg-white/5 p-3 rounded-xl border border-white/5">
-                  <span className="text-slate-400 text-[10px] block font-semibold">{isRtl ? 'صافي إيجار متوقع (5 سنوات)' : 'Est. Rental Income (5 Yrs)'}</span>
-                  <span className="font-black text-emerald-400 text-sm">
-                    +{Math.round(profile.budget * (Number(stats.avgYield) / 100) * 5).toLocaleString()} {profile.currency}
-                  </span>
-                  <span className="text-[10px] text-slate-400 block mt-0.5">
-                    {isRtl ? `بمتوسط ${stats.avgYield}% سنوياً` : `at ~${stats.avgYield}% annual yield`}
-                  </span>
-                </div>
-
-                <div className="bg-white/5 p-3 rounded-xl border border-white/5">
-                  <span className="text-slate-400 text-[10px] block font-semibold">{isRtl ? 'مكاسب إعادة البيع والنمو' : 'Projected Capital Gain'}</span>
-                  <span className="font-black text-cyan-400 text-sm">
-                    +{Math.round(profile.budget * 0.75).toLocaleString()} {profile.currency}
-                  </span>
-                  <span className="text-[10px] text-slate-400 block mt-0.5">
-                    {isRtl ? `حماية كاملة من انخفاض الجنيه` : `currency inflation hedge`}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Target Criteria Selectors */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {/* Target District */}
               <div>
-                <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
-                  {t.advisor_purpose_label || 'الهدف الاستثماري'}
-                </label>
-                <select
-                  value={profile.purpose}
-                  onChange={(e) => setProfile(prev => ({ ...prev, purpose: e.target.value as InvestmentPurpose }))}
-                  className="w-full px-3 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500"
-                >
-                  <option value="all">{t.advisor_purpose_all || 'كافة الأهداف'}</option>
-                  <option value="residential">{t.advisor_purpose_residential || 'سكن عائلي واستقرار'}</option>
-                  <option value="investment">{t.advisor_purpose_investment || 'استثمار وتأجير سنوي'}</option>
-                  <option value="resale">{t.advisor_purpose_resale || 'إعادة بيع ونمو رأسمالي'}</option>
-                  <option value="coastal">{t.advisor_purpose_coastal || 'مصيف وتأجير سياحي'}</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
-                  {isRtl ? 'المنطقة المفضلة' : 'Target District'}
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <MapPin size={13} className="text-brand-500" />
+                  {isRtl ? 'المنطقة المستهدفة' : 'Target District'}
                 </label>
                 <select
                   value={profile.preferredLocation}
                   onChange={(e) => setProfile(prev => ({ ...prev, preferredLocation: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full px-3 py-2.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500 transition-all cursor-pointer"
                 >
                   <option value="all">{isRtl ? 'كافة المناطق' : 'All Districts'}</option>
                   <option value="New Cairo">{isRtl ? 'التجمع الخامس والقاهرة الجديدة' : 'New Cairo'}</option>
@@ -830,100 +720,243 @@ Disclaimer: Generated by HETTETY AI Advisor for financial planning purposes base
                   <option value="North Coast">{isRtl ? 'الساحل الشمالي' : 'North Coast (Sahel)'}</option>
                   <option value="New Capital">{isRtl ? 'العاصمة الإدارية الجديدة' : 'New Administrative Capital'}</option>
                   <option value="Maadi">{isRtl ? 'المعادي' : 'Maadi'}</option>
-                  <option value="Shorouk">{isRtl ? 'الشروق ومدينتي' : 'Shorouk & Madinaty'}</option>
+                  <option value="Shorouk">{isRtl ? 'الشروق ومدينتي والمستقبل' : 'Shorouk & Madinaty'}</option>
                 </select>
               </div>
 
+              {/* Property Type */}
               <div>
-                <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
-                  {t.advisor_timeline_label || 'موعد الاستلام'}
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <Building2 size={13} className="text-blue-500" />
+                  {isRtl ? 'نوع العقار' : 'Property Type'}
+                </label>
+                <select
+                  value={profile.propertyType}
+                  onChange={(e) => setProfile(prev => ({ ...prev, propertyType: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500 transition-all cursor-pointer"
+                >
+                  <option value="All">{isRtl ? 'كافة الأنواع' : 'All Types'}</option>
+                  <option value="Apartment">{isRtl ? 'شقق سكنية' : 'Apartments'}</option>
+                  <option value="Penthouse">{isRtl ? 'بنتهاوس ودوبلكس' : 'Penthouses & Duplexes'}</option>
+                  <option value="Villa">{isRtl ? 'فيلات وتاون هاوس' : 'Villas & Townhouses'}</option>
+                  <option value="Commercial">{isRtl ? 'تجاري وإداري وعيادات' : 'Commercial & Administrative'}</option>
+                  <option value="Chalet">{isRtl ? 'شاليهات ساحلية' : 'Coastal Chalets'}</option>
+                </select>
+              </div>
+
+              {/* Purchase Objective */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <ShieldCheck size={13} className="text-emerald-500" />
+                  {t.advisor_purpose_label || (isRtl ? 'الهدف العقاري' : 'Purchase Objective')}
+                </label>
+                <select
+                  value={profile.purpose}
+                  onChange={(e) => setProfile(prev => ({ ...prev, purpose: e.target.value as InvestmentPurpose }))}
+                  className="w-full px-3 py-2.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500 transition-all cursor-pointer"
+                >
+                  <option value="all">{t.advisor_purpose_all || (isRtl ? 'كافة الأهداف' : 'All Objectives')}</option>
+                  <option value="residential">{t.advisor_purpose_residential || (isRtl ? 'سكن عائلي واستقرار' : 'Family Home / Residence')}</option>
+                  <option value="investment">{t.advisor_purpose_investment || (isRtl ? 'استثمار وتأجير سنوي' : 'Rental Income Investment')}</option>
+                  <option value="resale">{t.advisor_purpose_resale || (isRtl ? 'إعادة بيع ونمو رأسمالي' : 'Capital Appreciation / Resale')}</option>
+                  <option value="coastal">{t.advisor_purpose_coastal || (isRtl ? 'مصيف وتأجير سياحي' : 'Summer / Coastal Vacation')}</option>
+                </select>
+              </div>
+
+              {/* Delivery Timeline */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <Clock size={13} className="text-amber-500" />
+                  {t.advisor_timeline_label || (isRtl ? 'موعد وجاهزية الاستلام' : 'Delivery Status')}
                 </label>
                 <select
                   value={profile.deliveryTimeline}
                   onChange={(e) => setProfile(prev => ({ ...prev, deliveryTimeline: e.target.value as any }))}
-                  className="w-full px-3 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full px-3 py-2.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500 transition-all cursor-pointer"
                 >
-                  <option value="all">{t.advisor_timeline_all || 'أي موعد'}</option>
-                  <option value="ready">{t.advisor_timeline_ready || 'استلام فوري جاهز'}</option>
-                  <option value="1-2years">{t.advisor_timeline_1_2 || 'خلال 1 - 2 سنة'}</option>
-                  <option value="3+years">{t.advisor_timeline_3_plus || 'تحت الإنشاء (3 سنين فأكثر)'}</option>
+                  <option value="all">{t.advisor_timeline_all || (isRtl ? 'أي موعد استلام' : 'Any Delivery Date')}</option>
+                  <option value="ready">{t.advisor_timeline_ready || (isRtl ? 'استلام فوري جاهز' : 'Immediate Delivery (Ready to Move)')}</option>
+                  <option value="1-2years">{t.advisor_timeline_1_2 || (isRtl ? 'خلال 1 - 2 سنة' : 'Within 1 - 2 Years')}</option>
+                  <option value="3+years">{t.advisor_timeline_3_plus || (isRtl ? 'تحت الإنشاء (3 سنوات فأكثر)' : 'Under Construction (3+ Years)')}</option>
                 </select>
+              </div>
+
+              {/* Preferred Payment Strategy */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <KeyRound size={13} className="text-purple-500" />
+                  {isRtl ? 'خطة ونظام السداد المفضل' : 'Preferred Payment Strategy'}
+                </label>
+                <select
+                  value={profile.preferredPaymentPlan || 'all'}
+                  onChange={(e) => setProfile(prev => ({ ...prev, preferredPaymentPlan: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500 transition-all cursor-pointer"
+                >
+                  <option value="all">{isRtl ? 'كافة خطط السداد' : 'All Payment Plans'}</option>
+                  <option value="cash">{isRtl ? 'كاش مع خصم فوري' : 'Cash (With Immediate Discount)'}</option>
+                  <option value="installments">{isRtl ? 'أقساط مريحة طويلة الأجل' : 'Long-Term Installments'}</option>
+                  <option value="lowDown">{isRtl ? 'أقل مقدم حجز ممكن' : 'Low Down Payment'}</option>
+                  <option value="readyInstallments">{isRtl ? 'استلام فوري مع تقسيط' : 'Ready to Move with Installments'}</option>
+                </select>
+              </div>
+
+              {/* Bedrooms & Space */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <Bed size={13} className="text-cyan-500" />
+                  {isRtl ? 'عدد الغرف والمساحة' : 'Bedrooms & Space'}
+                </label>
+                <select
+                  value={profile.bedrooms || 'all'}
+                  onChange={(e) => setProfile(prev => ({ ...prev, bedrooms: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500 transition-all cursor-pointer"
+                >
+                  <option value="all">{isRtl ? 'أي عدد غرف' : 'Any Bedrooms'}</option>
+                  <option value="1">{isRtl ? 'استوديو / غرفة واحدة' : '1 Bedroom / Studio'}</option>
+                  <option value="2">{isRtl ? 'غرفتين نوم' : '2 Bedrooms'}</option>
+                  <option value="3">{isRtl ? '3 غرف نوم' : '3 Bedrooms'}</option>
+                  <option value="4+">{isRtl ? '4 غرف فأكثر / فيلا' : '4+ Bedrooms / Villa'}</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Real Estate Advisory Guidance & Quality Pillars Banner */}
+            <div className="bg-gradient-to-r from-slate-900 via-brand-950 to-slate-900 text-white p-5 rounded-2xl border border-brand-800/40 shadow-md">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-white/10 pb-3 mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-brand-500/20 text-brand-300">
+                    <ShieldCheck size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-heading font-black text-sm sm:text-base text-white">
+                      {isRtl ? 'دعائم الاستشارة والتقييم العقاري الشامل' : 'Comprehensive Real Estate Advisory & Due Diligence'}
+                    </h3>
+                    <p className="text-[11px] text-slate-300">
+                      {isRtl ? 'منهجية حِتّتي لمساعدتك في اختيار أنسب قرار عقاري بأعلى معايير الأمان والشفافية' : 'HETTETY advisory methodology for informed, secure real estate acquisition'}
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  {isRtl ? 'استشارة مستقلة 100%' : '100% Unbiased Advisory'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="bg-white/5 p-3 rounded-xl border border-white/5 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-white text-xs">
+                    <Building2 size={14} className="text-brand-400" />
+                    <span>{isRtl ? 'سابقة أعمال المطور' : 'Developer Track Record'}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    {isRtl ? 'فحص تاريخ المشروعات المسلمة ومعدل إنجاز الأعمال الإنشائية بالموقع الفعلي.' : 'Review of delivered projects, construction pace, and verified on-site milestones.'}
+                  </p>
+                </div>
+
+                <div className="bg-white/5 p-3 rounded-xl border border-white/5 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-white text-xs">
+                    <MapPin size={14} className="text-emerald-400" />
+                    <span>{isRtl ? 'الموقع والمحاور الحيوية' : 'Strategic Location'}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    {isRtl ? 'تقييم سهولة الوصول، القرب من المدارس والجامعات، ومحاور الطرق الرئيسية.' : 'Proximity to primary transit corridors, lifestyle hubs, and essential infrastructure.'}
+                  </p>
+                </div>
+
+                <div className="bg-white/5 p-3 rounded-xl border border-white/5 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-white text-xs">
+                    <FileText size={14} className="text-cyan-400" />
+                    <span>{isRtl ? 'فحص العقود والشهر العقاري' : 'Legal & Contract Audit'}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    {isRtl ? 'التأكد من سلامة التراخيص وتوافق بنود السداد دون أي أعباء خفية.' : 'Verification of land licenses, title validity, and payment terms without hidden clauses.'}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Section 2: Macro Yield & Financial Return Overview */}
+          {/* Section 2: Strategic Real Estate Advisory Indicators */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-950/40 dark:to-emerald-900/20 border border-emerald-200/80 dark:border-emerald-800/60 p-4 rounded-2xl flex flex-col justify-between">
               <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
-                <Percent size={14} /> {t.advisor_metric_yield || 'العائد الإيجاري المتوقع'}
+                <MapPin size={14} /> {t.advisor_metric_yield || (isRtl ? 'الموقع والوصول الاستراتيجي' : 'Location & Strategic Advantage')}
               </span>
               <div className="mt-2">
-                <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
-                  {stats.avgYield}%
+                <div className="text-lg sm:text-xl font-black text-emerald-600 dark:text-emerald-400 truncate">
+                  {profile.preferredLocation === 'all' ? (isRtl ? 'كافة المناطق' : 'All Hubs') : profile.preferredLocation}
                 </div>
                 <span className="text-[10px] text-emerald-700/80 dark:text-emerald-400/80 font-medium">
-                  {isRtl ? `يصل إلى ${stats.maxYield}% بالتجاري/الساحلي` : `Up to ${stats.maxYield}% in commercial/sahel`}
+                  {isRtl ? 'قرب مباشر من المحاور الرئيسية' : 'Direct access to main corridors'}
                 </span>
               </div>
             </div>
 
             <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-950/40 dark:to-blue-900/20 border border-blue-200/80 dark:border-blue-800/60 p-4 rounded-2xl flex flex-col justify-between">
               <span className="text-[11px] font-bold text-blue-800 dark:text-blue-300 flex items-center gap-1.5">
-                <TrendingUp size={14} /> {t.advisor_metric_growth || 'النمو الرأسمالي السنوي'}
+                <Building2 size={14} /> {t.advisor_metric_growth || (isRtl ? 'جودة التشطيب وجاهزية الاستلام' : 'Finishing & Delivery Quality')}
               </span>
               <div className="mt-2">
-                <div className="text-2xl font-black text-blue-600 dark:text-blue-400">
-                  ~20%
+                <div className="text-lg sm:text-xl font-black text-blue-600 dark:text-blue-400 truncate">
+                  {profile.deliveryTimeline === 'ready' 
+                    ? (isRtl ? 'استلام فوري جاهز' : 'Ready to Move') 
+                    : profile.deliveryTimeline === '1-2years' 
+                    ? (isRtl ? 'تسليم 1 - 2 سنة' : '1 - 2 Years')
+                    : profile.deliveryTimeline === '3+years'
+                    ? (isRtl ? 'تحت الإنشاء' : 'Under Construction')
+                    : (isRtl ? 'خيارات متعددة' : 'Diverse Options')}
                 </div>
                 <span className="text-[10px] text-blue-700/80 dark:text-blue-400/80 font-medium">
-                  {isRtl ? 'حماية ممتازة من التضخم' : 'Strong inflation hedge'}
+                  {isRtl ? 'فحص دقيق لمواصفات التسليم' : 'Verified handover specs'}
                 </span>
               </div>
             </div>
 
             <div className="bg-gradient-to-br from-brand-50 to-brand-100/50 dark:from-brand-950/40 dark:to-brand-900/20 border border-brand-200/80 dark:border-brand-800/60 p-4 rounded-2xl flex flex-col justify-between">
               <span className="text-[11px] font-bold text-brand-800 dark:text-brand-300 flex items-center gap-1.5">
-                <Landmark size={14} /> {t.advisor_metric_total_return || 'إجمالي العائد السنوي'}
+                <ShieldCheck size={14} /> {t.advisor_metric_total_return || (isRtl ? 'سمعة المطور وسابقة الأعمال' : 'Developer Track Record')}
               </span>
               <div className="mt-2">
-                <div className="text-2xl font-black text-brand-600 dark:text-brand-400">
-                  ~{(Number(stats.avgYield) + 20).toFixed(1)}%
+                <div className="text-lg sm:text-xl font-black text-brand-600 dark:text-brand-400 truncate">
+                  {isRtl ? 'مطورون معتمدون' : 'Verified Developers'}
                 </div>
                 <span className="text-[10px] text-brand-700/80 dark:text-brand-400/80 font-medium">
-                  {isRtl ? 'إيجار + زيادة سعر الأصل' : 'Rental yield + capital appreciation'}
+                  {isRtl ? 'فحص التراخيص وسجل الإنجاز' : 'Licensed with proven completion'}
                 </span>
               </div>
             </div>
 
             <div className="bg-gradient-to-br from-purple-50 to-purple-100/50 dark:from-purple-950/40 dark:to-purple-900/20 border border-purple-200/80 dark:border-purple-800/60 p-4 rounded-2xl flex flex-col justify-between">
               <span className="text-[11px] font-bold text-purple-800 dark:text-purple-300 flex items-center gap-1.5">
-                <TrendingUp size={14} /> {t.advisor_metric_payback || 'فترة استرداد رأس المال'}
+                <KeyRound size={14} /> {t.advisor_metric_payback || (isRtl ? 'مرونة خطط وأقساط السداد' : 'Payment Plan Flexibility')}
               </span>
               <div className="mt-2">
-                <div className="text-2xl font-black text-purple-600 dark:text-purple-400">
-                  3.5 - 4.5
+                <div className="text-lg sm:text-xl font-black text-purple-600 dark:text-purple-400 truncate">
+                  {profile.preferredPaymentPlan === 'cash' 
+                    ? (isRtl ? 'كاش مع خصم' : 'Cash Discount')
+                    : profile.preferredPaymentPlan === 'installments'
+                    ? (isRtl ? 'أقساط ممتدة' : 'Extended Years')
+                    : (isRtl ? 'أنظمة متعددة' : 'Multiple Plans')}
                 </div>
                 <span className="text-[10px] text-purple-700/80 dark:text-purple-400/80 font-medium">
-                  {isRtl ? 'سنوات (بالعائد المركّب)' : 'Years (compounded)'}
+                  {isRtl ? 'خطط دفع مريحة بدون فوائد' : 'Interest-free flexible plans'}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Section 3: Property Matching & Fit Evaluation */}
+          {/* Section 3: Property Matching & Due Diligence Review */}
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div>
                 <h2 className="font-heading font-black text-lg text-slate-900 dark:text-white flex items-center gap-2">
                   <Building2 className="text-brand-500" size={20} />
-                  {isRtl ? 'العقارات المفحوصة والمطابقة لميزانيتك' : 'Properties Evaluated for Your Profile'}
+                  {isRtl ? 'العقارات والمشروعات المفحوصة' : 'Properties Evaluated for You'}
                   <span className="text-xs bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded-full font-bold">
                     {filteredProperties.length}
                   </span>
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {isRtl ? 'تحليل ذكي ومباشر لكل عقار: الأقساط، المقدم، والعائد التقديري' : 'Live feasibility analysis for each unit based on your financial constraints'}
+                  {isRtl ? 'فحص شامل لمواصفات كل عقار، موقعه، جاهزية الاستلام، ومطابقته لمتطلباتك' : 'Comprehensive analysis of each property, location, delivery timeline, and feature fit'}
                 </p>
               </div>
 
@@ -941,21 +974,21 @@ Disclaimer: Generated by HETTETY AI Advisor for financial planning purposes base
                   onClick={() => setFitCategoryFilter('perfect')}
                   className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${fitCategoryFilter === 'perfect' ? 'bg-green-600 text-white shadow-sm' : 'text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/40'}`}
                 >
-                  <CheckCircle2 size={13} /> {isRtl ? 'مناسب معاك' : 'Perfect'} ({stats.perfectCount})
+                  <CheckCircle2 size={13} /> {t.advisor_perfect_title || (isRtl ? 'مناسب تماماً' : 'Perfect Match')} ({stats.perfectCount})
                 </button>
                 <button
                   type="button"
                   onClick={() => setFitCategoryFilter('stretch')}
                   className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${fitCategoryFilter === 'stretch' ? 'bg-amber-600 text-white shadow-sm' : 'text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40'}`}
                 >
-                  <AlertTriangle size={13} /> {isRtl ? 'فرص قريبة' : 'Stretch'} ({stats.stretchCount})
+                  <AlertTriangle size={13} /> {t.advisor_stretch_title || (isRtl ? 'فرص مميزة' : 'Recommended Opportunities')} ({stats.stretchCount})
                 </button>
                 <button
                   type="button"
                   onClick={() => setFitCategoryFilter('mismatch')}
                   className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${fitCategoryFilter === 'mismatch' ? 'bg-red-600 text-white shadow-sm' : 'text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40'}`}
                 >
-                  <XCircle size={13} /> {isRtl ? 'مش مناسب معاك' : 'Mismatch'} ({stats.mismatchCount})
+                  <XCircle size={13} /> {t.advisor_mismatch_title || (isRtl ? 'خيارات بديلة' : 'Alternative Options')} ({stats.mismatchCount})
                 </button>
               </div>
             </div>
@@ -968,13 +1001,14 @@ Disclaimer: Generated by HETTETY AI Advisor for financial planning purposes base
                   {isRtl ? 'لا توجد عقارات تطابق هذا الفلتر حالياً' : 'No properties match this filter currently'}
                 </h3>
                 <p className="text-xs text-slate-400 max-w-md mx-auto">
-                  {isRtl ? 'يمكنك زيادة نطاق الميزانية أو تجربة اختيار مناطق إضافية في محددات الملف المالي بالأعلى.' : 'Try expanding your budget parameters or choosing additional districts above.'}
+                  {isRtl ? 'يمكنك اختيار مناطق أو أنواع عقارات إضافية في محددات البحث بالأعلى.' : 'Try selecting additional districts or property types in the search criteria above.'}
                 </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {filteredProperties.map(fit => {
-                  const { property, matchScore, category, reasons, downPaymentRequired, monthlyInstallment, rentalYieldPercent, estimatedAnnualRent } = fit;
+                  const { property, matchScore, category, reasons } = fit;
+                  const has3D = !!(property.panoramas?.length || property.digitalTwinUrl || (property.images && property.images.length > 1));
 
                   return (
                     <div
@@ -987,30 +1021,36 @@ Disclaimer: Generated by HETTETY AI Advisor for financial planning purposes base
                           : 'border-slate-200 dark:border-slate-800 opacity-80'
                       }`}
                     >
-                      {/* Header with image & badge */}
+                      {/* Header with status badge */}
                       <div>
                         <div className="flex items-start justify-between gap-3 mb-2">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
                               {category === 'perfect' && (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800">
-                                  <CheckCircle2 size={12} /> {isRtl ? 'مناسب معاك تماماً' : 'Perfect Match'} ({matchScore}%)
+                                  <CheckCircle2 size={12} /> {t.advisor_perfect_title || (isRtl ? 'مناسب تماماً' : 'Perfect Match')} ({matchScore}%)
                                 </span>
                               )}
                               {category === 'stretch' && (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                                  <AlertTriangle size={12} /> {isRtl ? 'فرصة واعدة (تعديل بسيط)' : 'Stretch Match'} ({matchScore}%)
+                                  <AlertTriangle size={12} /> {t.advisor_stretch_title || (isRtl ? 'فرصة مميزة' : 'Recommended')} ({matchScore}%)
                                 </span>
                               )}
                               {category === 'mismatch' && (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
-                                  <XCircle size={12} /> {isRtl ? 'مش مناسب معاك' : 'Mismatched'} ({matchScore}%)
+                                  <XCircle size={12} /> {t.advisor_mismatch_title || (isRtl ? 'خيار بديل' : 'Alternative')} ({matchScore}%)
                                 </span>
                               )}
 
                               {property.yallaSahel && (
                                 <span className="text-[10px] font-bold bg-cyan-50 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 px-2 py-0.5 rounded">
-                                  🌊 {isRtl ? 'ساحل حتتي' : 'Sahel'}
+                                  🌊 {isRtl ? 'ساحل حِتّتي' : 'Sahel'}
+                                </span>
+                              )}
+
+                              {has3D && (
+                                <span className="text-[10px] font-bold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded flex items-center gap-1">
+                                  <Box size={10} /> 3D
                                 </span>
                               )}
                             </div>
@@ -1031,43 +1071,49 @@ Disclaimer: Generated by HETTETY AI Advisor for financial planning purposes base
                             <div className="text-base font-black text-brand-600 dark:text-brand-400">
                               {property.price ? `${property.price.toLocaleString()} ${property.currency || 'EGP'}` : (isRtl ? 'عند الطلب' : 'On Request')}
                             </div>
-                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                              ★ {rentalYieldPercent}% {isRtl ? 'عائد سنوي' : 'Yield'}
+                            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block">
+                              {property.propertyType || (isRtl ? 'وحدة سكنية' : 'Property')}
                             </span>
                           </div>
                         </div>
 
-                        {/* Breakdown Metrics Table */}
+                        {/* Real Estate Specifications Grid */}
                         <div className="grid grid-cols-3 gap-2 bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl text-center border border-slate-100 dark:border-slate-800 my-3">
                           <div>
-                            <span className="block text-[9px] text-slate-400 font-bold">{isRtl ? 'المقدم المطلوب' : 'Req. Down'}</span>
-                            <span className="text-xs font-black text-slate-800 dark:text-slate-200">
-                              {downPaymentRequired.toLocaleString()}
+                            <span className="block text-[9px] text-slate-400 font-bold">{isRtl ? 'نوع العقار' : 'Type'}</span>
+                            <span className="text-xs font-black text-slate-800 dark:text-slate-200 truncate block">
+                              {property.propertyType || (isRtl ? 'سكني' : 'Residential')}
                             </span>
                           </div>
                           <div>
-                            <span className="block text-[9px] text-slate-400 font-bold">{isRtl ? 'القسط الشهري' : 'Monthly'}</span>
-                            <span className="text-xs font-black text-slate-800 dark:text-slate-200">
-                              {monthlyInstallment.toLocaleString()}/m
+                            <span className="block text-[9px] text-slate-400 font-bold">{isRtl ? 'الغرف والمساحة' : 'Bedrooms & Area'}</span>
+                            <span className="text-xs font-black text-slate-800 dark:text-slate-200 block">
+                              {property.bedrooms ? `${property.bedrooms} ${isRtl ? 'غرف' : 'beds'}` : '-'} • {property.area ? `${property.area} م²` : '-'}
                             </span>
                           </div>
                           <div>
-                            <span className="block text-[9px] text-slate-400 font-bold">{isRtl ? 'الإيجار السنوي المتوقع' : 'Est. Rent/yr'}</span>
-                            <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">
-                              +{estimatedAnnualRent.toLocaleString()}
+                            <span className="block text-[9px] text-slate-400 font-bold">{isRtl ? 'جاهزية الاستلام' : 'Handover'}</span>
+                            <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 block truncate">
+                              {property.deliveryTimeline || (property.status === 'ready' ? (isRtl ? 'استلام فوري' : 'Ready') : (isRtl ? 'تحت الإنشاء' : 'Off-Plan'))}
                             </span>
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 px-1 font-semibold mb-2">
-                          <span>
-                            {isRtl ? 'التدفق الشهري المتوقع:' : 'Est. Monthly Rent:'}{' '}
-                            <strong className="text-emerald-600 dark:text-emerald-400">+{Math.round(estimatedAnnualRent / 12).toLocaleString()} {property.currency || 'EGP'}</strong>
+                        {/* Payment Plan & Features Line */}
+                        <div className="flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300 px-1 font-semibold mb-2">
+                          <span className="flex items-center gap-1">
+                            <KeyRound size={12} className="text-purple-500" />
+                            {property.paymentPlans && property.paymentPlans.length > 0 ? (
+                              <span>{property.paymentPlans[0].downPayment}% {isRtl ? 'مقدم' : 'down'} • {property.paymentPlans[0].years} {isRtl ? 'سنوات تقسيط' : 'yrs'}</span>
+                            ) : (
+                              <span>{isRtl ? 'أنظمة سداد مرنة متاحة' : 'Flexible Payment Plans'}</span>
+                            )}
                           </span>
-                          <span>
-                            {isRtl ? 'استرداد الاستثمار:' : 'Payback:'}{' '}
-                            <strong className="text-purple-600 dark:text-purple-400">~{fit.paybackYears} {isRtl ? 'سنوات' : 'yrs'}</strong>
-                          </span>
+                          {has3D && (
+                            <span className="text-brand-600 dark:text-brand-400 flex items-center gap-1 text-[10px]">
+                              <Box size={12} /> {isRtl ? 'معاينة 3D متوفرة' : '3D Tour Ready'}
+                            </span>
+                          )}
                         </div>
 
                         {/* Evaluation Reasons Checklist */}
@@ -1095,10 +1141,10 @@ Disclaimer: Generated by HETTETY AI Advisor for financial planning purposes base
                           className="flex-1 py-2 px-3 rounded-xl bg-brand-50 hover:bg-brand-100 dark:bg-brand-900/30 dark:hover:bg-brand-900/50 text-brand-700 dark:text-brand-300 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                         >
                           <Sparkles size={14} />
-                          {isRtl ? 'استشر الذكاء الاصطناعي' : 'Ask Advisor'}
+                          {t.advisor_ask_ai_unit || (isRtl ? 'استشر المستشار العقاري' : 'Ask Advisor')}
                         </button>
 
-                        {onShow3D && (property.panoramas?.length || property.digitalTwinUrl || (property.images && property.images.length > 1)) && (
+                        {onShow3D && has3D && (
                           <button
                             type="button"
                             onClick={() => onShow3D(property.id)}
@@ -1137,11 +1183,11 @@ Disclaimer: Generated by HETTETY AI Advisor for financial planning purposes base
               </div>
               <div>
                 <h3 className="font-heading font-bold text-sm text-slate-900 dark:text-white">
-                  {isRtl ? 'محادثة المستشار الاستثماري' : 'Advisor Consultation Chat'}
+                  {isRtl ? 'محادثة المستشار العقاري' : 'Real Estate Consultation Chat'}
                 </h3>
                 <span className="text-[10px] text-emerald-500 font-bold flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  {isRtl ? 'متصل وجاهز للتحليل المالي' : 'Online & Analyzing'}
+                  {isRtl ? 'متصل وجاهز للاستشارة' : 'Online & Ready'}
                 </span>
               </div>
             </div>
@@ -1167,22 +1213,22 @@ Disclaimer: Generated by HETTETY AI Advisor for financial planning purposes base
                 </div>
                 <div>
                   <h4 className="font-heading font-black text-base text-slate-900 dark:text-white">
-                    {isRtl ? 'مستشارك العقاري الذكي في خدمتك' : 'Your AI Real Estate Advisor'}
+                    {isRtl ? 'مستشارك العقاري الموثوق في خدمتك' : 'Your Trusted Real Estate Advisor'}
                   </h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs leading-relaxed">
                     {isRtl
-                      ? 'شاركني ميزانيتك، قدرتك الشهرية، والمنطقة التي تفضلها وسأحسب لك العائد الإيجاري المتوقع وأصنف لك أنسب العقارات.'
-                      : 'Tell me your budget, monthly cashflow, or desired location, and I will compute expected yields and match ideal properties.'}
+                      ? 'شاركني منطقتك المفضلة، نوع العقار، وموعد الاستلام المناسب، وسأقدم لك استشارة عقارية شاملة ومقارنة بين أفضل المشروعات والمطورين.'
+                      : 'Share your preferred district, property type, and delivery timeline, and I will guide you with comprehensive real estate advice and project comparisons.'}
                   </p>
                 </div>
 
-                {/* Quick Consultation Chips */}
+                {/* Quick Consultation Chips (No Hardcoded Numbers) */}
                 <div className="w-full space-y-2 pt-2">
                   {[
-                    isRtl ? 'معايا مليون مقدم وبقدر أدفع 40 ألف شهرياً، إيه أنسب شقق في التجمع؟' : 'I have 1M down payment and 40k monthly, what units fit best in New Cairo?',
-                    isRtl ? 'عايز استثمار تجاري أو إداري بعائد سنوي أعلى من 12%.' : 'I want a commercial/admin unit with an annual yield above 12%.',
-                    isRtl ? 'قارن لي بين العائد الإيجاري في التجمع والشيخ زايد والساحل.' : 'Compare rental yields between New Cairo, Sheikh Zayed and Sahel.',
-                    isRtl ? 'إيه أفضل خطط تقسيط متاحة بدون فوائد للاستثمار الفوري؟' : 'What are the best interest-free installment plans for instant investment?',
+                    isRtl ? 'قارن لي بين أفضل كمبوندات التجمع الخامس والشيخ زايد من حيث سابقة أعمال المطورين والخدمات.' : 'Compare top compounds in New Cairo and Sheikh Zayed regarding developer track record and amenities.',
+                    isRtl ? 'عايز شقة استلام فوري في القاهرة الجديدة متوفر فيها جولة افتراضية 3D.' : 'I want a ready-to-move apartment in New Cairo with an interactive 3D virtual tour.',
+                    isRtl ? 'ما هي مميزات وعيوب شراء وحدة تحت الإنشاء مقارنة بالاستلام الفوري في العاصمة الإدارية؟' : 'What are the pros and cons of buying off-plan vs ready-to-move in the New Capital?',
+                    isRtl ? 'إيه هي أهم المعايير القانونية والفنية اللي لازم أتأكد منها قبل توقيع عقد الشراء في مصر؟' : 'What are the essential legal and technical checks before signing a purchase contract in Egypt?',
                   ].map((chip, idx) => (
                     <button
                       key={idx}
@@ -1238,7 +1284,7 @@ Disclaimer: Generated by HETTETY AI Advisor for financial planning purposes base
                     handleSend();
                   }
                 }}
-                placeholder={t.advisor_chat_placeholder || (isRtl ? 'اسأل المستشار المالي (مثال: ميزانيتي 4 مليون وعايز أعلى عائد استثماري)...' : 'Ask advisor (e.g. I have 4M budget, recommend highest yield)...')}
+                placeholder={t.advisor_chat_placeholder || (isRtl ? 'اسأل مستشارك العقاري (مثال: قارن بين أفضل كمبوندات زايد، أو شقق 3 غرف استلام فوري)...' : 'Ask your real estate advisor (e.g. compare top compounds in Zayed, or find 3-bedroom ready to move)...')}
                 rows={2}
                 className="w-full bg-transparent border-none outline-none text-xs sm:text-sm text-slate-900 dark:text-white resize-none p-1"
               />

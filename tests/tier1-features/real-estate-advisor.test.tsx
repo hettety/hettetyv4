@@ -135,8 +135,8 @@ describe('Real Estate Advisor & Financial Intelligence Engine', () => {
     });
   });
 
-  describe('3. RealEstateAdvisor Component UI & Financial Dashboard', () => {
-    it('renders financial inputs, sliders, and macro metric cards', () => {
+  describe('3. RealEstateAdvisor Component UI & Real Estate Advisory Guide', () => {
+    it('renders real estate criteria selectors and strategic advisory indicators', () => {
       render(
         <RealEstateAdvisor
           t={TRANSLATIONS.en}
@@ -150,15 +150,18 @@ describe('Real Estate Advisor & Financial Intelligence Engine', () => {
       expect(screen.getByText(TRANSLATIONS.en.advisor_title)).toBeInTheDocument();
       expect(screen.getByText(TRANSLATIONS.en.advisor_subtitle)).toBeInTheDocument();
 
-      // Verify financial inputs
-      expect(screen.getByText(TRANSLATIONS.en.advisor_budget_label)).toBeInTheDocument();
-      expect(screen.getByText(TRANSLATIONS.en.advisor_down_payment_label)).toBeInTheDocument();
-      expect(screen.getByText(TRANSLATIONS.en.advisor_monthly_capacity_label)).toBeInTheDocument();
+      // Verify real estate criteria selectors
+      expect(screen.getAllByText('Target District').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('Property Type').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText(TRANSLATIONS.en.advisor_purpose_label)).toBeInTheDocument();
+      expect(screen.getByText(TRANSLATIONS.en.advisor_timeline_label)).toBeInTheDocument();
+      expect(screen.getByText('Preferred Payment Strategy')).toBeInTheDocument();
+      expect(screen.getByText('Bedrooms & Space')).toBeInTheDocument();
 
-      // Verify ROI metric cards
+      // Verify strategic advisory indicators
       expect(screen.getByText(TRANSLATIONS.en.advisor_metric_yield)).toBeInTheDocument();
       expect(screen.getByText(TRANSLATIONS.en.advisor_metric_growth)).toBeInTheDocument();
-      expect(screen.getByText(TRANSLATIONS.en.advisor_metric_total_return)).toBeInTheDocument();
+      expect(screen.getAllByText(TRANSLATIONS.en.advisor_metric_total_return).length).toBeGreaterThanOrEqual(1);
       expect(screen.getByText(TRANSLATIONS.en.advisor_metric_payback)).toBeInTheDocument();
     });
 
@@ -173,21 +176,21 @@ describe('Real Estate Advisor & Financial Intelligence Engine', () => {
       );
 
       // Category filter buttons
-      const perfectTabs = screen.getAllByRole('button', { name: /Perfect/i });
+      const perfectTabs = screen.getAllByRole('button', { name: new RegExp(TRANSLATIONS.en.advisor_perfect_title, 'i') });
       expect(perfectTabs.length).toBeGreaterThan(0);
 
-      const mismatchTabs = screen.getAllByRole('button', { name: /Mismatch/i });
-      expect(mismatchTabs.length).toBeGreaterThan(0);
+      const allTabs = screen.getAllByRole('button', { name: /All/i });
+      expect(allTabs.length).toBeGreaterThan(0);
 
-      // Switch to mismatch tab
-      fireEvent.click(mismatchTabs[0]);
+      // Switch to perfect tab
+      fireEvent.click(perfectTabs[0]);
 
       // Verify chat interaction with "Ask Advisor"
       const askUnitBtns = screen.queryAllByRole('button', { name: /Ask Advisor/i });
       if (askUnitBtns.length > 0) {
         fireEvent.click(askUnitBtns[0]);
         // The chat conversation will have the dispatched advisory inquiry message
-        expect(await screen.findByText(/I need your advisory evaluation for this unit/i)).toBeInTheDocument();
+        expect(await screen.findByText(/I need your real estate consultation/i)).toBeInTheDocument();
       }
     });
 
@@ -218,7 +221,7 @@ describe('Real Estate Advisor & Financial Intelligence Engine', () => {
       expect(mockShow3D).toHaveBeenCalled();
     });
 
-    it('renders 5-year wealth projection banner and exports advisory report', () => {
+    it('renders real estate advisory guidance banner and exports advisory report', () => {
       // Mock URL methods for file download
       const mockCreateObjectURL = vi.fn().mockReturnValue('blob:mock-url');
       const mockRevokeObjectURL = vi.fn();
@@ -234,10 +237,11 @@ describe('Real Estate Advisor & Financial Intelligence Engine', () => {
         />
       );
 
-      // Verify 5-Year Projection Banner exists
-      expect(screen.getByText('Projected 5-Year Wealth Accumulation')).toBeInTheDocument();
-      expect(screen.getByText('Est. Future Asset Value')).toBeInTheDocument();
-      expect(screen.getByText('Installments Financed')).toBeInTheDocument();
+      // Verify Real Estate Advisory Guidance Banner exists
+      expect(screen.getByText('Comprehensive Real Estate Advisory & Due Diligence')).toBeInTheDocument();
+      expect(screen.getAllByText('Developer Track Record').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('Strategic Location').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText('Legal & Contract Audit')).toBeInTheDocument();
 
       // Click Export Report button
       const exportBtn = screen.getByRole('button', { name: /Export Report/i });

@@ -165,6 +165,8 @@ export interface AdvisorFinancialProfile {
   preferredLocation: string;
   propertyType: string;
   deliveryTimeline: 'all' | 'ready' | '1-2years' | '3+years';
+  preferredPaymentPlan?: string;
+  bedrooms?: string;
 }
 
 export interface AdvisorPropertyFit {
